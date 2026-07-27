@@ -1,0 +1,5 @@
+在flink-conf.yaml 添加如下内容
+# jobmanager debug端口
+env.java.opts.jobmanager: "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5006"
+# # taskmanager debug端口
+env.java.opts.taskmanager: "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=25005"
