@@ -1,1 +1,4 @@
-./mvnw clean package -DskipTests -Djdk21 -Pjava21-target
+./mvnw clean package -DskipTests -Drat.skip=true -Djdk21 -Pjava21-target
+
+添加pekko
+mvn clean package -pl flink-rpc/flink-rpc-akka,flink-rpc/flink-rpc-akka-loader -DskipTests -Denforcer.skip=true -Drat.skip=true -Djdk21 -Pjava21-target

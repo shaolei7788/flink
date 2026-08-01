@@ -31,6 +31,7 @@ import javax.annotation.Nonnull;
 import java.util.Optional;
 import java.util.concurrent.RejectedExecutionException;
 
+//向邮箱投递Mail
 /** Implementation of an executor service build around a mailbox-based execution model. */
 @Internal
 public final class MailboxExecutorImpl implements MailboxExecutor {
@@ -73,6 +74,7 @@ public final class MailboxExecutorImpl implements MailboxExecutor {
             final String descriptionFormat,
             final Object... descriptionArgs) {
         try {
+            //
             mailbox.put(
                     new Mail(
                             mailOptions,

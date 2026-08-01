@@ -34,6 +34,7 @@ import java.util.concurrent.Future;
 public class Mail {
     private final MailOptionsImpl mailOptions;
 
+    // 1. 核心：具体要执行的业务逻辑
     /** The action to execute. */
     private final ThrowingRunnable<? extends Exception> runnable;
 
@@ -41,11 +42,13 @@ public class Mail {
      * The priority of the mail. The priority does not determine the order, but helps to hide
      * upstream mails from downstream processors to avoid live/deadlocks.
      */
+    // 2. 优先级：决定这封信是否可以“插队”
+    // CheckpointBarrier 相关的 Mail 优先级极高，需要立即插队处理；而普通的定时器 Mail 则是常规优先级，按顺序排队
     private final int priority;
 
     /** The description of the mail that is used for debugging and error-reporting. */
     private final String descriptionFormat;
-
+    // 3. 描述：用于 Debug 和日志排查
     private final Object[] descriptionArgs;
 
     private final StreamTaskActionExecutor actionExecutor;
@@ -65,10 +68,12 @@ public class Mail {
 
     public Mail(
             MailboxExecutor.MailOptions mailOptions,
+            //邮件的具体执行逻辑
             ThrowingRunnable<? extends Exception> runnable,
             int priority,
             String descriptionFormat,
             Object... descriptionArgs) {
+        //
         this(
                 mailOptions,
                 runnable,

@@ -115,6 +115,7 @@ public class TaskMailboxImpl implements TaskMailbox {
 
     @Override
     public Optional<Mail> tryTake(int priority) {
+        //
         return tryTake(priority, false);
     }
 
@@ -128,7 +129,7 @@ public class TaskMailboxImpl implements TaskMailbox {
         checkTakeStateConditions();
 
         moveUrgentMailsToBatchIfNeeded(true);
-
+        //batch 有数据就直接取 直至取完 （无锁获取）
         Mail head = takeOrNull(batch, priority, ignoreDeferrable);
         if (head != null) {
             return Optional.of(head);
@@ -136,6 +137,7 @@ public class TaskMailboxImpl implements TaskMailbox {
         if (!hasNewMail) {
             return Optional.empty();
         }
+        //加锁从queue获取
         final ReentrantLock lock = this.lock;
         lock.lock();
         try {
@@ -285,6 +287,7 @@ public class TaskMailboxImpl implements TaskMailbox {
         checkIsMailboxThread();
         checkTakeStateConditions();
         moveUrgentMailsToBatchIfNeeded(true);
+        //从队列弹出第一个元素
         return Optional.ofNullable(batch.pollFirst());
     }
 
@@ -292,6 +295,7 @@ public class TaskMailboxImpl implements TaskMailbox {
 
     @Override
     public void put(@Nonnull Mail mail) {
+        //判断是否是紧急邮件 是入队首 不是入队尾
         if (mail.getMailOptions().isUrgent()) {
             putFirst(mail);
         } else {

@@ -23,8 +23,11 @@ import org.apache.flink.annotation.Internal;
 @Internal
 public class MailOptionsImpl implements MailboxExecutor.MailOptions {
 
+    //默认 邮件会被放入 queue 队列的尾部（Tail），严格遵循先进先出（FIFO）的原则
     static final MailboxExecutor.MailOptions DEFAULT = new MailOptionsImpl(false, false);
+    //可延迟 如果当前主线程非常忙（比如正在疯狂处理上游积压的数据，或者队列里还有很多普通邮件），这封邮件会被暂时“挂起”或放到最后执行
     static final MailboxExecutor.MailOptions DEFERRABLE = new MailOptionsImpl(false, true);
+    //紧急。底层 TaskMailboxImpl 会绕过普通的 FIFO 排队规则，直接把这封邮件插入到 queue 队列的头部（Head）
     static final MailboxExecutor.MailOptions URGENT = new MailOptionsImpl(true, false);
 
     private final boolean isUrgent;

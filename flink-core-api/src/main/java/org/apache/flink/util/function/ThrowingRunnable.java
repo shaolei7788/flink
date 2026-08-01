@@ -24,6 +24,11 @@ import org.apache.flink.annotation.PublicEvolving;
  * Similar to a {@link Runnable}, this interface is used to capture a block of code to be executed.
  * In contrast to {@code Runnable}, this interface allows throwing checked exceptions.
  */
+
+/**
+ * 接口的作用是提供一个允许抛出受检异常（Checked Exception）的函数式接口
+ * 它和 Java 原生的 Runnable 一样，只是一个“任务的描述”
+ */
 @PublicEvolving
 @FunctionalInterface
 public interface ThrowingRunnable<E extends Throwable> {

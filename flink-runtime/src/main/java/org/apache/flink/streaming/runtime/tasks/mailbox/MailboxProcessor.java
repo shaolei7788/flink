@@ -223,11 +223,14 @@ public class MailboxProcessor implements Closeable {
         assert localMailbox.getState() == TaskMailbox.State.OPEN : "Mailbox must be opened!";
 
         final MailboxController mailboxController = new MailboxController(this);
-
+        System.out.println(Thread.currentThread().getName() + " 处理runMailboxLoop");
+        //如果它返回 true，主线程就继续处理邮件或读取数据；如果返回 false，主线程就会立刻退出死循环，从而启动 Task 的关闭流程
         while (isNextLoopPossible()) {
             // The blocking `processMail` call will not return until default action is available.
+            // 1. 如果邮箱里有紧急信令或普通 Mail，优先把邮箱“清空”
             processMail(localMailbox, false);
             if (isNextLoopPossible()) {
+                // 2. 邮箱空了，执行“默认行为”——也就是源源不断地读取并处理 upstream 流数据
                 mailboxDefaultAction.runDefaultAction(
                         mailboxController); // lock is acquired inside default action as needed
             }
@@ -356,9 +359,11 @@ public class MailboxProcessor implements Closeable {
         // Doing this check is an optimization to only have a volatile read in the expected hot
         // path, locks are only
         // acquired after this point.
+        //判断batch 是否不为空
         boolean isBatchAvailable = mailbox.createBatch();
 
         // Take mails in a non-blockingly and execute them.
+        //非阻塞处理邮件
         boolean processed = isBatchAvailable && processMailsNonBlocking(singleStep);
         if (singleStep) {
             return processed;
@@ -375,6 +380,7 @@ public class MailboxProcessor implements Closeable {
         boolean processedSomething = false;
         Optional<Mail> maybeMail;
         while (!isDefaultActionAvailable() && isNextLoopPossible()) {
+            //
             maybeMail = mailbox.tryTake(MIN_PRIORITY);
             if (!maybeMail.isPresent()) {
                 maybeMail = Optional.of(mailbox.take(MIN_PRIORITY));
@@ -392,7 +398,7 @@ public class MailboxProcessor implements Closeable {
     private boolean processMailsNonBlocking(boolean singleStep) throws Exception {
         long processedMails = 0;
         Optional<Mail> maybeMail;
-
+        // mailbox.tryTakeFromBatch()  batch 只有主线程自己能碰，这一步完全不需要加锁 batch 里面有邮件，直接弹出执行
         while (isNextLoopPossible() && (maybeMail = mailbox.tryTakeFromBatch()).isPresent()) {
             if (processedMails++ == 0) {
                 maybePauseIdleTimer();
