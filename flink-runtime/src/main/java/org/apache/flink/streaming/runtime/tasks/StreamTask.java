@@ -411,8 +411,16 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
                     .getIOMetricGroup()
                     .registerMailboxSizeSupplier(() -> mailbox.size());
 
+            // this::processInput =
+            //new MailboxDefaultAction() {
+            //     @Override
+            //     public void runDefaultAction(Controller controller) throws Exception {
+            //         this.processInput(); // 调用当前类的 processInput 读数据
+            //     }
+            // }
             this.mailboxProcessor =
                     new MailboxProcessor(
+                            //this::processInput 把读数据的函数作为“默认行为”传给邮箱处理器
                             this::processInput, mailbox, actionExecutor, mailboxMetricsControl);
 
             // Should be closed last.
@@ -643,6 +651,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
      * @throws Exception on any problems in the action.
      */
     protected void processInput(MailboxDefaultAction.Controller controller) throws Exception {
+        //StreamOneInputProcessor#processInput
         DataInputStatus status = inputProcessor.processInput();
         switch (status) {
             case MORE_AVAILABLE:
@@ -666,6 +675,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
                 // after all records processed by the downstream tasks. We also suspend the default
                 // actions to avoid repeat executing the empty default operation (namely process
                 // records).
+                //todo 挂起默认行为
                 controller.suspendDefaultAction();
                 mailboxProcessor.suspend();
                 return;
@@ -677,9 +687,12 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         if (!recordWriter.isAvailable()) {
             timer = new GaugePeriodTimer(ioMetrics.getSoftBackPressuredTimePerSecond());
             resumeFuture = recordWriter.getAvailableFuture();
-        } else if (!inputProcessor.isAvailable()) {
-            timer = new GaugePeriodTimer(ioMetrics.getIdleTimeMsPerSecond());
-            resumeFuture = inputProcessor.getAvailableFuture();
+        } else if (!inputProcessor.isAvailable()) {//
+            // 暂时无数据可读会走到这里
+            timer = new GaugePeriodTimer(ioMetrics.getIdleTimeMsPerSecond());//todo
+            // StreamTaskNetworkInput#getAvailableFuture
+            // 最终获取的是AvailabilityHelper#getAvailableFuture 也就是CompletableFuture对象
+            resumeFuture = inputProcessor.getAvailableFuture();//
         } else if (changelogWriterAvailabilityProvider != null
                 && !changelogWriterAvailabilityProvider.isAvailable()) {
             // waiting for changelog availability is reported as busy
@@ -689,8 +702,13 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
             // data availability has changed in the meantime; retry immediately
             return;
         }
+        //这行代码是 Flink 在处理“数据流断流/空闲”或“下游背压导致无法写入”时，用来控制主线程休眠与唤醒、同时精准统计指标（Metrics）的核心点
+        //当未来有数据可读（或下游通道可用）时，触发这个恢复器，把刚才暂停的默认行为（处理数据）重新拉起来。
         assertNoException(
+                // 当有数据可读取 会调用AvailabilityHelper#getUnavailableToResetAvailable
+                // 就会执行 ResumeWrapper#run()
                 resumeFuture.thenRun(
+                        // suspendDefaultAction  暂停默认行为
                         new ResumeWrapper(controller.suspendDefaultAction(timer), timer)));
     }
 
@@ -922,9 +940,8 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
 
         // let the task do its work
         getEnvironment().getMetricGroup().getIOMetricGroup().markTaskStart();
-        //todo
-
-        runMailboxLoop();
+        //todo 循环处理邮箱
+        runMailboxLoop();//
 
         // if this left the run() method cleanly despite the fact that this was canceled,
         // make sure the "clean shutdown" is not attempted
@@ -987,7 +1004,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
     }
 
     public void runMailboxLoop() throws Exception {
-        mailboxProcessor.runMailboxLoop();
+        mailboxProcessor.runMailboxLoop();//
     }
 
     protected void afterInvoke() throws Exception {
@@ -1876,6 +1893,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         public ResumeWrapper(Suspension suspendedDefaultAction, @Nullable PeriodTimer timer) {
             this.suspendedDefaultAction = suspendedDefaultAction;
             if (timer != null) {
+                //开始计时 它记录了主线程从这一刻开始进入了“闲置（Idle）”或“背压（Backpressured）”状态
                 timer.markStart();
             }
             this.timer = timer;
@@ -1884,8 +1902,12 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         @Override
         public void run() {
             if (timer != null) {
+                // 1. 掐表！停止计时。Task 的闲置/背压时间结算完毕。
                 timer.markEnd();
             }
+            // 2. 激活凭证！通知 Mailbox 恢复默认动作。
+            // 会向 Mailbox 投递一封“恢复默认动作”的控制信
+            //这封邮件的作用并不是直接去执行 processInput，它的唯一目的就是把卡在锁等待上的主线程“唤醒”
             suspendedDefaultAction.resume();
         }
     }

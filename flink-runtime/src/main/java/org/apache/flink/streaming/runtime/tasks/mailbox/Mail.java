@@ -125,6 +125,8 @@ public class Mail {
     }
 
     public void run() throws Exception {
+        // actionExecutor = StreamTaskActionExecutor.IMMEDIATE
+        // 即调用 StreamTaskActionExecutor.IMMEDIATE#runThrowing
         actionExecutor.runThrowing(runnable);
     }
 }

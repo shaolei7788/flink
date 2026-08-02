@@ -143,6 +143,7 @@ public class CheckpointedInputGate implements PullingAsyncDataInput<BufferOrEven
 
     @Override
     public CompletableFuture<?> getAvailableFuture() {
+        // InputGateWithMetrics#getAvailableFuture
         return inputGate.getAvailableFuture();
     }
 

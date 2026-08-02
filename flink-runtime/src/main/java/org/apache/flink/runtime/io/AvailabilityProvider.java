@@ -49,7 +49,7 @@ public interface AvailabilityProvider {
      * @return true if this instance is available for further processing.
      */
     default boolean isAvailable() {
-        CompletableFuture<?> future = getAvailableFuture();
+        CompletableFuture<?> future = getAvailableFuture();//
         return future == AVAILABLE || future.isDone();
     }
 
@@ -130,6 +130,7 @@ public interface AvailabilityProvider {
          */
         public CompletableFuture<?> getUnavailableToResetAvailable() {
             CompletableFuture<?> toNotify = availableFuture;
+            //todo AVAILABLE = CompletableFuture.completedFuture(null)
             availableFuture = AVAILABLE;
             return toNotify;
         }

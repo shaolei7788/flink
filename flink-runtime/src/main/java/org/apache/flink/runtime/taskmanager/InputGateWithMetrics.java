@@ -53,6 +53,7 @@ public class InputGateWithMetrics extends IndexedInputGate {
 
     @Override
     public CompletableFuture<?> getAvailableFuture() {
+        // SingleInputGate#getAvailableFuture
         return inputGate.getAvailableFuture();
     }
 

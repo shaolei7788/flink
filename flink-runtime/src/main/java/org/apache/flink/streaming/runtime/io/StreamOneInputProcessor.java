@@ -57,20 +57,26 @@ public final class StreamOneInputProcessor<IN> implements StreamInputProcessor {
 
     @Override
     public CompletableFuture<?> getAvailableFuture() {
+        // StreamTaskNetworkInput#getAvailableFuture
         return input.getAvailableFuture();
     }
 
     @Override
     public DataInputStatus processInput() throws Exception {
+        //StreamTaskNetworkInput#emitNext
+        //负责从上游网络输入层（InputGate）读取下一个网络数据缓冲块（Buffer），
+        //对其进行解包/反序列化，并将解析出的数据一条条发射（emit）给下游的算子（Operator）进行处理
         DataInputStatus status = input.emitNext(output);
 
         if (status == DataInputStatus.END_OF_DATA) {
+            //数据读完了
             endOfInputAware.endInput(input.getInputIndex() + 1);
             output = new FinishedDataOutput<>();
         } else if (status == DataInputStatus.END_OF_RECOVERY) {
             if (input instanceof RecoverableStreamTaskInput) {
                 input = ((RecoverableStreamTaskInput<IN>) input).finishRecovery();
             }
+            //后面还有数据
             return DataInputStatus.MORE_AVAILABLE;
         }
 

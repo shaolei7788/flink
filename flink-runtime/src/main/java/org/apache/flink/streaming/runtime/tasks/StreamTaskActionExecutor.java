@@ -44,9 +44,10 @@ public interface StreamTaskActionExecutor {
                     runnable.run();
                 }
 
+                //todo 被Mail run 方法调用
                 @Override
-                public <E extends Throwable> void runThrowing(ThrowingRunnable<E> runnable)
-                        throws E {
+                public <E extends Throwable> void runThrowing(ThrowingRunnable<E> runnable) throws E { //被Mail run 方法调用
+                    //如果是恢复读取操作 会调用 DefaultActionSuspension#resumeInternal
                     runnable.run();
                 }
 

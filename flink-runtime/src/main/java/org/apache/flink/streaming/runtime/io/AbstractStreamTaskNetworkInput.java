@@ -174,8 +174,10 @@ public abstract class AbstractStreamTaskNetworkInput<
                 // data after the barrier before checkpoint is performed for unaligned checkpoint
                 // mode
                 if (bufferOrEvent.get().isBuffer()) {
+                    //处理数据缓冲块 上游发送过来的真实业务数据
                     processBuffer(bufferOrEvent.get());
                 } else {
+                    //处理特殊事件/控制信令
                     DataInputStatus status = processEvent(bufferOrEvent.get(), output);
                     if (status == DataInputStatus.MORE_AVAILABLE && canEmitBatchOfRecords.check()) {
                         continue;
@@ -288,6 +290,7 @@ public abstract class AbstractStreamTaskNetworkInput<
     protected void processBuffer(BufferOrEvent bufferOrEvent) throws IOException {
         lastChannel = bufferOrEvent.getChannelInfo();
         checkState(lastChannel != null);
+        // currentRecordDeserializer = SpillingAdaptiveSpanningRecordDeserializer
         currentRecordDeserializer = getActiveSerializer(bufferOrEvent.getChannelInfo());
         checkState(
                 currentRecordDeserializer != null,
@@ -310,6 +313,7 @@ public abstract class AbstractStreamTaskNetworkInput<
         if (currentRecordDeserializer != null) {
             return AVAILABLE;
         }
+        // CheckpointedInputGate#getAvailableFuture
         return checkpointedInputGate.getAvailableFuture();
     }
 

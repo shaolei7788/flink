@@ -129,6 +129,7 @@ public class MailboxProcessor implements Closeable {
                         new DescriptiveStatisticsHistogram(10), new SimpleCounter()));
     }
 
+    //
     public MailboxProcessor(
             MailboxDefaultAction mailboxDefaultAction,
             TaskMailbox mailbox,
@@ -213,26 +214,34 @@ public class MailboxProcessor implements Closeable {
      */
     public void runMailboxLoop() throws Exception {
         suspended = !mailboxLoopRunning;
-
+        //获取最新的TaskMailbox，并设置为本地TaskMailbox
+        // mailbox = TaskMailboxImpl
         final TaskMailbox localMailbox = mailbox;
-
+        //检查是否是Mailbox主线程
         checkState(
                 localMailbox.isMailboxThread(),
                 "Method must be executed by declared mailbox thread!");
 
         assert localMailbox.getState() == TaskMailbox.State.OPEN : "Mailbox must be opened!";
-
+        //创建MailboxController，可以控制Mailbox的循环，临时暂停和恢复mailboxDefaultAction(默认动作)
         final MailboxController mailboxController = new MailboxController(this);
         System.out.println(Thread.currentThread().getName() + " 处理runMailboxLoop");
         //如果它返回 true，主线程就继续处理邮件或读取数据；如果返回 false，主线程就会立刻退出死循环，从而启动 Task 的关闭流程
+        // 【第一道关卡】只要 Task 没死没被 Cancel，大循环就能一直转
         while (isNextLoopPossible()) {
             // The blocking `processMail` call will not return until default action is available.
             // 1. 如果邮箱里有紧急信令或普通 Mail，优先把邮箱“清空”
-            processMail(localMailbox, false);
+            //一次性处理完所有“积压在本地缓冲”的 Mail，而不是只处理一条
+            //3. 精妙的设计：Flink 是如何做到平衡的？结合我们之前学过的 queue (主队列) 和 batch (本地批次队列) 的设计，主线程的真实行为如下：
+            // 1 一锅端（搬运）：当主线程发现本地 batch 队列空了，它会短暂加锁，把那一瞬间积压在 queue 里的 5 封邮件（比如 3 个定时器，2 个异步 I/O 回调）全部转移到自己的私有 batch 队列中。
+            // 2 狂飙清理（不给数据机会）：进入 processMail 的内部 while 循环，一口气把这 5 封邮件全部执行完。在执行这 5 封邮件的期间，主线程绝对不会去调用 emitNext 读数据。
+            // 3 退场交人：当这 5 封邮件全部消灭干净、tryTakeFromBatch() 返回空时，内部的 while 循环打破，processMail 方法结束。
+            // 4 轮到数据：控制权回到外层，主线程高高兴兴地去执行 runDefaultAction，读取并处理一小批/一条网络流数据。
+            processMail(localMailbox, false);//
             if (isNextLoopPossible()) {
                 // 2. 邮箱空了，执行“默认行为”——也就是源源不断地读取并处理 upstream 流数据
-                mailboxDefaultAction.runDefaultAction(
-                        mailboxController); // lock is acquired inside default action as needed
+                // 执行mailboxDefaultAction.runDefaultAction方法 就是执行 processInput
+                mailboxDefaultAction.runDefaultAction(mailboxController); // lock is acquired inside default action as needed
             }
         }
     }
@@ -250,7 +259,7 @@ public class MailboxProcessor implements Closeable {
     @VisibleForTesting
     public boolean runSingleMailboxLoop() throws Exception {
         suspended = !mailboxLoopRunning;
-        boolean processed = processMail(mailbox, true);
+        boolean processed = processMail(mailbox, true);//just test
         if (isDefaultActionAvailable() && isNextLoopPossible()) {
             mailboxDefaultAction.runDefaultAction(new MailboxController(this));
             processed = true;
@@ -267,7 +276,7 @@ public class MailboxProcessor implements Closeable {
     public boolean runMailboxStep() throws Exception {
         suspended = !mailboxLoopRunning;
 
-        if (processMail(mailbox, true)) {
+        if (processMail(mailbox, true)) {//just test
             return true;
         }
         if (isDefaultActionAvailable() && isNextLoopPossible()) {
@@ -338,13 +347,13 @@ public class MailboxProcessor implements Closeable {
      */
     private void sendControlMail(
             RunnableWithException mail, String descriptionFormat, Object... descriptionArgs) {
-        mailbox.put(
-                new Mail(
-                        MailboxExecutor.MailOptions.urgent(),
-                        mail,
-                        Integer.MAX_VALUE /*not used with putFirst*/,
-                        descriptionFormat,
-                        descriptionArgs));
+        Mail m = new Mail(
+                MailboxExecutor.MailOptions.urgent(),
+                mail,
+                Integer.MAX_VALUE /*not used with putFirst*/,
+                descriptionFormat,
+                descriptionArgs);
+        mailbox.put(m);
     }
 
     /**
@@ -363,8 +372,9 @@ public class MailboxProcessor implements Closeable {
         boolean isBatchAvailable = mailbox.createBatch();
 
         // Take mails in a non-blockingly and execute them.
-        //非阻塞处理邮件
+        //todo 非阻塞从batch队列拿所有邮件并处理
         boolean processed = isBatchAvailable && processMailsNonBlocking(singleStep);
+        // singleStep 一定是false
         if (singleStep) {
             return processed;
         }
@@ -376,18 +386,41 @@ public class MailboxProcessor implements Closeable {
         return processed;
     }
 
+    //默认行为不可用时的专属阻塞等待
     private boolean processMailsWhenDefaultActionUnavailable() throws Exception {
         boolean processedSomething = false;
         Optional<Mail> maybeMail;
+        //!isDefaultActionAvailable()  默认动作挂起
+        // isDefaultActionAvailable
+        //它关心的是当前的数据流状态和网络状态（是 AVAILABLE 还是 SUSPENDED）。
+        // 什么时候返回 false？
+        //    断流/空闲（Idle）：上游暂时没有新数据发过来。
+        //    下游背压（Backpressured）：下游的网络缓冲区满了，当前算子处理完了数据也发不出去，必须停手。
+        // 返回 false 的后果：它返回 false 绝对不会导致线程退出或死掉。主线程只是暂停去调用 processInput 读数据，但它依然会保持清醒，继续在原地排队、死等并高频消费 Mailbox 里的系统控制邮件（如 Checkpoint 邮件或 Timer 邮件）
+
+        //isNextLoopPossible方法说明
+        //控制的是整个 Task 的生命周期
+        //内部检查的状态：它只关心 Mailbox 整体处于什么状态（OPEN、QUIESCED 还是 CLOSED）。
+        // 什么时候返回 false？用户手动 Cancel（取消） 了作业。上游数据彻底发完了（收到 EndOfPartitionEvent），Task 准备正常退出。算子抛出了未捕获的严重异常，作业崩溃。
+        // 返回 false 的后果：一旦它返回 false，主线程会彻底粉碎退出最外层的 runMailboxLoop() 死循环，整个 Task 线程直接进入销毁和收尾阶段
         while (!isDefaultActionAvailable() && isNextLoopPossible()) {
-            //
+            //分别从 batch、queue队列获取邮件
             maybeMail = mailbox.tryTake(MIN_PRIORITY);
             if (!maybeMail.isPresent()) {
+                //todo flink 2.2 版本做了修改  之前是take 会阻塞。现在不会阻塞
+                //目前是在while循环里 take是从batch获取邮件 所以会处理完batch队列所有的邮件
+                //非阻塞式获取邮件
                 maybeMail = Optional.of(mailbox.take(MIN_PRIORITY));
             }
             maybePauseIdleTimer();
 
-            runMail(maybeMail.get());
+            Mail mail = maybeMail.get();
+            System.out.println("processMailsWhenDefaultActionUnavailable:  " +  mail);
+            if("resume default action".equals(mail.toString())){
+                System.out.println(mail);
+            }
+            //运行邮件。 DefaultActionSuspension#resumeInternal
+            runMail(mail);
 
             maybeRestartIdleTimer();
             processedSomething = true;
@@ -398,12 +431,15 @@ public class MailboxProcessor implements Closeable {
     private boolean processMailsNonBlocking(boolean singleStep) throws Exception {
         long processedMails = 0;
         Optional<Mail> maybeMail;
-        // mailbox.tryTakeFromBatch()  batch 只有主线程自己能碰，这一步完全不需要加锁 batch 里面有邮件，直接弹出执行
+        // mailbox.tryTakeFromBatch() 从batch队列拿邮件 batch 只有主线程自己能碰，这一步完全不需要加锁 batch 里面有邮件，直接弹出执行
         while (isNextLoopPossible() && (maybeMail = mailbox.tryTakeFromBatch()).isPresent()) {
             if (processedMails++ == 0) {
                 maybePauseIdleTimer();
             }
-            runMail(maybeMail.get());
+            Mail mail = maybeMail.get();
+            System.out.println("processMailsNonBlocking : " + mail);
+            //运行邮件
+            runMail(mail);
             if (singleStep) {
                 break;
             }
@@ -418,6 +454,7 @@ public class MailboxProcessor implements Closeable {
 
     private void runMail(Mail mail) throws Exception {
         mailboxMetricsControl.getMailCounter().inc();
+        //Mail#run()
         mail.run();
         if (!suspended) {
             // start latency measurement on first mail that is not suspending mailbox execution,
@@ -466,6 +503,10 @@ public class MailboxProcessor implements Closeable {
         return suspendedDefaultAction == null;
     }
 
+    //控制的是整个 Task 的生命周期
+    //内部检查的状态：它只关心 Mailbox 整体处于什么状态（OPEN、QUIESCED 还是 CLOSED）。
+    // 什么时候返回 false？用户手动 Cancel（取消） 了作业。上游数据彻底发完了（收到 EndOfPartitionEvent），Task 准备正常退出。算子抛出了未捕获的严重异常，作业崩溃。
+    // 返回 false 的后果：一旦它返回 false，主线程会彻底粉碎退出最外层的 runMailboxLoop() 死循环，整个 Task 线程直接进入销毁和收尾阶段
     private boolean isNextLoopPossible() {
         // 'Suspended' can be false only when 'mailboxLoopRunning' is true.
         return !suspended;
@@ -526,14 +567,15 @@ public class MailboxProcessor implements Closeable {
                 resumeInternal();
             } else {
                 try {
-                    sendControlMail(this::resumeInternal, "resume default action");
+                    //
+                    sendControlMail(this::resumeInternal, "resume default action");//Thread.currentThread().getName() =
                 } catch (MailboxClosedException ex) {
                     // Ignored
                 }
             }
         }
 
-        private void resumeInternal() {
+        private void resumeInternal() {//
             if (suspendedDefaultAction == this) {
                 suspendedDefaultAction = null;
             }

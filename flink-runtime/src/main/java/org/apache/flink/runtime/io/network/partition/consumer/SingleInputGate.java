@@ -1154,7 +1154,7 @@ public class SingleInputGate extends IndexedInputGate {
     // ------------------------------------------------------------------------
     // Channel notifications
     // ------------------------------------------------------------------------
-
+    //通知数据不为空 告知 InputGate 当前 channel 有数据
     void notifyChannelNonEmpty(InputChannel channel) {
         if (enabledTieredStorage()) {
             TieredStorageConsumerSpec tieredStorageConsumerSpec =
@@ -1164,7 +1164,8 @@ public class SingleInputGate extends IndexedInputGate {
                             tieredStorageConsumerSpec.getPartitionId(),
                             tieredStorageConsumerSpec.getInputChannelId());
         } else {
-            queueChannel(checkNotNull(channel), null, false);
+            //todo 某个channel有可写数据了
+            queueChannel(checkNotNull(channel), null, false);//
         }
     }
 
@@ -1208,8 +1209,7 @@ public class SingleInputGate extends IndexedInputGate {
 
     private void queueChannel(
             InputChannel channel, @Nullable Integer prioritySequenceNumber, boolean forcePriority) {
-        try (GateNotificationHelper notification =
-                new GateNotificationHelper(this, inputChannelsWithData)) {
+        try (GateNotificationHelper notification = new GateNotificationHelper(this, inputChannelsWithData)) {
             synchronized (inputChannelsWithData) {
                 boolean priority = prioritySequenceNumber != null || forcePriority;
 
@@ -1223,7 +1223,7 @@ public class SingleInputGate extends IndexedInputGate {
                     // buffer enqueuing), so just ignore the notification
                     return;
                 }
-
+                //todo 将通道入队列
                 if (!queueChannelUnsafe(channel, priority)) {
                     return;
                 }
@@ -1232,6 +1232,7 @@ public class SingleInputGate extends IndexedInputGate {
                     notification.notifyPriority();
                 }
                 if (inputChannelsWithData.size() == 1) {
+                    //todo 通知数据可用
                     notification.notifyDataAvailable();
                 }
             }

@@ -28,7 +28,7 @@ public class WordCountStream {
         // 1. 创建流式执行环境 flink run -d -t yarn-per-job
 		// env =  StreamContextEnvironment 如果是本地 LocalStreamEnvironment
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-		env.setParallelism(2);
+		env.setParallelism(1);
 
 		// 开启 checkpoint，并设置间隔 ms
 		//env.enableCheckpointing(1000 * 30);

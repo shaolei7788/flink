@@ -128,6 +128,7 @@ public abstract class InputGate
      */
     @Override
     public CompletableFuture<?> getAvailableFuture() {
+        //
         return availabilityHelper.getAvailableFuture();
     }
 

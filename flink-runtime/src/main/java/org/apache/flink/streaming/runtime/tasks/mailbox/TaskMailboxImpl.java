@@ -93,6 +93,7 @@ public class TaskMailboxImpl implements TaskMailbox {
 
     @Override
     public boolean isMailboxThread() {
+        // taskMailboxThread = Source: Socket Stream -> Flat Map -> Map (1/1)#0
         return Thread.currentThread() == taskMailboxThread;
     }
 
@@ -158,7 +159,7 @@ public class TaskMailboxImpl implements TaskMailbox {
         checkTakeStateConditions();
 
         moveUrgentMailsToBatchIfNeeded(true);
-
+        //从batch获取邮件
         Mail head = takeOrNull(batch, priority, false);
         if (head != null) {
             return head;
@@ -168,6 +169,8 @@ public class TaskMailboxImpl implements TaskMailbox {
         try {
             Mail headMail;
             while ((headMail = takeOrNull(queue, priority, false)) == null) {
+                //【重点】数据为空则一直等待 直到被唤醒
+                // 该地方做了变动 老版本是  notEmpty.await();
                 // to ease debugging
                 notEmpty.await(1, TimeUnit.SECONDS);
             }
@@ -297,8 +300,10 @@ public class TaskMailboxImpl implements TaskMailbox {
     public void put(@Nonnull Mail mail) {
         //判断是否是紧急邮件 是入队首 不是入队尾
         if (mail.getMailOptions().isUrgent()) {
+            //紧急邮箱放队首
             putFirst(mail);
         } else {
+            //非紧急邮箱放队尾 有唤醒操作
             putLast(mail);
         }
     }
@@ -311,6 +316,7 @@ public class TaskMailboxImpl implements TaskMailbox {
             checkPutStateConditions();
             queue.addLast(mail);
             hasNewMail = true;
+            //todo 唤醒
             notEmpty.signal();
         } finally {
             lock.unlock();
@@ -320,6 +326,7 @@ public class TaskMailboxImpl implements TaskMailbox {
     /** Adds the given action to the head of the mailbox. */
     private void putFirst(@Nonnull Mail mail) {
         Mail peek = batch.peek();
+        // isMailboxThread() 判断是否为邮箱主线程
         if (isMailboxThread()
                 && peek != null
                 && !peek.getMailOptions().isUrgent()
