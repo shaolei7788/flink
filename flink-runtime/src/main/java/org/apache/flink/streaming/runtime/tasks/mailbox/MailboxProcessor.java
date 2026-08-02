@@ -227,7 +227,7 @@ public class MailboxProcessor implements Closeable {
         final MailboxController mailboxController = new MailboxController(this);
         System.out.println(Thread.currentThread().getName() + " 处理runMailboxLoop");
         //如果它返回 true，主线程就继续处理邮件或读取数据；如果返回 false，主线程就会立刻退出死循环，从而启动 Task 的关闭流程
-        // 【第一道关卡】只要 Task 没死没被 Cancel，大循环就能一直转
+        // 【第一道关卡】只要Task 没死没被 Cancel，大循环就能一直转
         while (isNextLoopPossible()) {
             // The blocking `processMail` call will not return until default action is available.
             // 1. 如果邮箱里有紧急信令或普通 Mail，优先把邮箱“清空”
