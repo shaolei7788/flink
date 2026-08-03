@@ -99,6 +99,7 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
     // ------------------------------------------------------------------------
 
     /** RPC service to be used to start the RPC server and to obtain rpc gateways. */
+    //RPC 服务的总入口，内部封装了 Pekko 的 ActorSystem，负责 Actor 的创建、生命周期管理以及地址解析
     private final RpcService rpcService;
 
     /** Unique identifier for this rpc endpoint. */
@@ -199,6 +200,7 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
      * endpoint is ready to process remote procedure calls.
      */
     public final void start() {
+        //
         rpcServer.start();
     }
 
@@ -211,6 +213,7 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
     public final void internalCallOnStart() throws Exception {
         validateRunsInMainThread();
         isRunning = true;
+        //
         onStart();
     }
 

@@ -18,6 +18,7 @@
 
 package org.apache.flink.runtime.rpc;
 
+//客户端调用的接口代理。调用方无需持有远程 Endpoint 的实例，只需持有其 RpcGateway 即可
 /** Rpc gateway interface which has to be implemented by Rpc gateways. */
 public interface RpcGateway {
 

@@ -323,12 +323,11 @@ public class PekkoRpcServiceUtils {
         }
 
         public PekkoRpcService createAndStart() throws Exception {
-            return createAndStart(PekkoRpcService::new);
+            //
+            return createAndStart(PekkoRpcService::new);//
         }
 
-        public PekkoRpcService createAndStart(
-                TriFunction<ActorSystem, PekkoRpcServiceConfiguration, ClassLoader, PekkoRpcService>
-                        constructor)
+        public PekkoRpcService createAndStart(TriFunction<ActorSystem, PekkoRpcServiceConfiguration, ClassLoader, PekkoRpcService> constructor)
                 throws Exception {
             if (actorSystemExecutorConfiguration == null) {
                 actorSystemExecutorConfiguration =
@@ -343,6 +342,7 @@ public class PekkoRpcServiceUtils {
             // make sure it uses the plugin class loader
             try (TemporaryClassLoaderContext ignored =
                     TemporaryClassLoaderContext.of(getClass().getClassLoader())) {
+                //外部可达地址
                 if (externalAddress == null) {
                     // create local actor system
                     actorSystem =

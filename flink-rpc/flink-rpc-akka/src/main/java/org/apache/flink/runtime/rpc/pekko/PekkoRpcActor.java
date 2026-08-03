@@ -83,6 +83,7 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  *
  * @param <T> Type of the {@link RpcEndpoint}
  */
+//实际的 Pekko Actor 节点，负责接收并解析 RpcInvocation 消息，通过反射机制调用对应 RpcEndpoint 中的业务逻辑
 class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
 
     protected final Logger log = LoggerFactory.getLogger(getClass());
@@ -158,6 +159,7 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
 
     @Override
     public Receive createReceive() {
+        //
         return ReceiveBuilder.create()
                 .match(RemoteHandshakeMessage.class, this::handleHandshakeMessage)
                 .match(ControlMessages.class, this::handleControlMessage)

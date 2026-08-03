@@ -93,6 +93,7 @@ public class TaskManagerOptions {
         Documentation.Sections.COMMON_HOST_PORT,
         Documentation.Sections.ALL_TASK_MANAGER
     })
+    //默认值为0 也就是会随机端口
     public static final ConfigOption<String> RPC_PORT =
             key("taskmanager.rpc.port")
                     .stringType()

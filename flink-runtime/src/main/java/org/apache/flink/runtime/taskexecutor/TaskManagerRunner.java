@@ -133,6 +133,17 @@ public class TaskManagerRunner implements FatalErrorHandler {
     @GuardedBy("lock")
     private DeterminismEnvelope<ResourceID> resourceId;
 
+    /**
+     * TaskExecutor 继承自 RpcEndpoint，它所有的 RPC 请求（如 submitTask、cancelTask、requestSlot）和心跳响应都在一个固定的单线程信箱（Mailbox） 中串行处理。
+     *
+     * 如果在这个单线程中执行任何耗时操作（如读写磁盘文件、发起远程网络请求、加载大 Jar 包），就会把这个 Main Thread 彻底卡死，导致：
+     *
+     * 心跳超时（Heartbeat Timeout）：ResourceManager 或 JobManager 以为该 TM 挂了，将其踢出集群。
+     *
+     * RPC 响应停滞：后续发给该 TM 的指令全部阻塞在信箱里。
+     *
+     * 因此，所有耗时或阻塞的物理操作，都必须通过 ExecutorService 异步提交到专门的线程池中去执行
+     */
     /** Executor used to run future callbacks. */
     @GuardedBy("lock")
     private ExecutorService executor;
@@ -155,6 +166,27 @@ public class TaskManagerRunner implements FatalErrorHandler {
     @GuardedBy("lock")
     private DeterminismEnvelope<WorkingDirectory> workingDirectory;
 
+    /**
+     * 一、 taskExecutorService 的核心作用与职责
+     * 拆解来看，它在 TaskManager 内部主要承担以下四大核心职责：
+     *
+     * 1. 为 Task 线程提供物理执行线程池（Task Thread Pool）
+     * 在 Flink 中，一个 Slot 内运行的每个算子任务（如 SourceTask、OneInputStreamTask）都是一个独立的线程（Task 线程）。
+     *
+     * taskExecutorService 内部维护着用于拉起和管理这些 Task 线程的 ExecutorService（通常是定制的线程池）。
+     *
+     * 当 JobMaster 通过 RPC 发送 submitTask 指令时，TaskManager 并不是无休止地创建原生 Thread，而是将封装好的 Task 提交给 taskExecutorService 托管的线程池去执行。
+     *
+     * 2. 管理异步 I/O 与耗时任务（Async & Off-Main-Thread Tasks）
+     * TaskManager 内部的控制逻辑（TaskExecutor 继承自 RpcEndpoint）运行在一个单线程的 Main Thread（信箱） 中，绝不能被阻塞。
+     *
+     * 任何耗时或可能引起阻塞的操作（例如：向 HDFS/S3 异步写入 Checkpoint 状态数据、关闭本地临时文件、连接远程元数据中心等），都会被分发给 taskExecutorService 关联的异步线程池（如 ioExecutor 或 asyncOperationsExecutor）去并发处理。
+     *
+     * 这样确保了 TaskExecutor 的 RPC 信箱永远保持高响应度。
+     *
+     * 3. 驱动 Task 的完整生命周期管理
+     * Task 提交到 taskExecutorService 后，线程池会调度并监控 Task 的状态演进
+     */
     @GuardedBy("lock")
     private TaskExecutorService taskExecutorService;
 
@@ -184,13 +216,14 @@ public class TaskManagerRunner implements FatalErrorHandler {
 
     private void startTaskManagerRunnerServices() throws Exception {
         synchronized (lock) {
+            //todo
             rpcSystem = RpcSystem.load(configuration);
 
             this.executor =
                     Executors.newScheduledThreadPool(
                             Hardware.getNumberCPUCores(),
                             new ExecutorThreadFactory("taskmanager-future"));
-
+            //用于连接 ZK/K8s 获取 Leader JM 地址
             highAvailabilityServices =
                     HighAvailabilityServicesUtils.createHighAvailabilityServices(
                             configuration,
@@ -200,7 +233,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
                             this);
 
             JMXService.startInstance(configuration.get(JMXServerOptions.JMX_SERVER_PORT));
-
+            //todo
             rpcService = createRpcService(configuration, highAvailabilityServices, rpcSystem);
 
             this.resourceId =
@@ -215,7 +248,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
 
             HeartbeatServices heartbeatServices =
                     HeartbeatServices.fromConfiguration(configuration);
-
+            //初始化 Metric 监控服务
             metricRegistry =
                     new MetricRegistryImpl(
                             MetricRegistryConfiguration.fromConfiguration(
@@ -256,8 +289,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
             final DelegationTokenReceiverRepository delegationTokenReceiverRepository =
                     new DelegationTokenReceiverRepository(configuration, pluginManager);
 
-            taskExecutorService =
-                    taskExecutorServiceFactory.createTaskExecutor(
+            taskExecutorService = taskExecutorServiceFactory.createTaskExecutor(
                             this.configuration,
                             this.resourceId.unwrap(),
                             rpcService,
@@ -301,7 +333,9 @@ public class TaskManagerRunner implements FatalErrorHandler {
 
     public void start() throws Exception {
         synchronized (lock) {
+            //
             startTaskManagerRunnerServices();
+            //
             taskExecutorService.start();
         }
     }
@@ -480,7 +514,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
         } else {
             LOG.info("Cannot determine the maximum number of open file descriptors");
         }
-
+        //
         runTaskManagerProcessSecurely(args);
     }
 
@@ -494,11 +528,13 @@ public class TaskManagerRunner implements FatalErrorHandler {
         final TaskManagerRunner taskManagerRunner;
 
         try {
-            taskManagerRunner =
-                    new TaskManagerRunner(
+            //
+            taskManagerRunner = new TaskManagerRunner(
                             configuration,
                             pluginManager,
+                            //
                             TaskManagerRunner::createTaskExecutorService);
+            //
             taskManagerRunner.start();
         } catch (Exception exception) {
             throw new FlinkException("Failed to start the TaskManagerRunner.", exception);
@@ -522,7 +558,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
             LOG.error("Could not load the configuration.", fpe);
             System.exit(FAILURE_EXIT_CODE);
         }
-
+        //
         runTaskManagerProcessSecurely(checkNotNull(configuration));
     }
 
@@ -541,9 +577,9 @@ public class TaskManagerRunner implements FatalErrorHandler {
         try {
             SecurityUtils.install(new SecurityConfiguration(configuration));
 
-            exitCode =
-                    SecurityUtils.getInstalledContext()
-                            .runSecured(() -> runTaskManager(configuration, pluginManager));
+            exitCode = SecurityUtils.getInstalledContext().runSecured(() ->
+                    //todo 运行TaskManager
+                    runTaskManager(configuration, pluginManager));
         } catch (Throwable t) {
             throwable = ExceptionUtils.stripException(t, UndeclaredThrowableException.class);
             exitCode = FAILURE_EXIT_CODE;
@@ -576,12 +612,12 @@ public class TaskManagerRunner implements FatalErrorHandler {
             FatalErrorHandler fatalErrorHandler,
             DelegationTokenReceiverRepository delegationTokenReceiverRepository)
             throws Exception {
-
+        //
         final TaskExecutor taskExecutor =
                 startTaskManager(
                         configuration,
                         resourceID,
-                        rpcService,
+                        rpcService,//
                         highAvailabilityServices,
                         heartbeatServices,
                         metricRegistry,
@@ -591,7 +627,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
                         workingDirectory,
                         fatalErrorHandler,
                         delegationTokenReceiverRepository);
-
+        //
         return TaskExecutorToServiceAdapter.createFor(taskExecutor);
     }
 
@@ -640,6 +676,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
                         resourceID,
                         taskManagerServicesConfiguration.getSystemResourceMetricsProbingInterval());
 
+        //
         final ExecutorService ioExecutor =
                 Executors.newFixedThreadPool(
                         taskManagerServicesConfiguration.getNumIoThreads(),
@@ -700,13 +737,33 @@ public class TaskManagerRunner implements FatalErrorHandler {
         checkNotNull(configuration);
         checkNotNull(haServices);
 
-        return RpcUtils.createRemoteRpcService(
+        //在当前节点监听 TaskManager 自身暴露给外部调用的 RPC 控制指令与管理消息
+        //创建的底层的 PekkoRpcService 会一直在这个端口上等待来自 JobManager（JobMaster / ResourceManager） 或 客户端 / 其他 TM 发送的以下几类消息
+
+        /* 场景 1：默认本地/直连网络（未配置 BIND_PORT）
+        如果你只配置了 taskmanager.rpc.port（比如配置为 6122），而没有设置 taskmanager.rpc.bind-port：
+        Flink 会默认将 RPC_BIND_PORT 设置为与 RPC_PORT 一样。
+        即：TM 在本地网卡上监听 6122，同时也向 JobManager 宣告自己的 RPC 地址为 IP:6122。
+
+        场景 2：Kubernetes / Docker 容器化与端口映射环境
+        假设你将 Flink TaskManager 运行在 Docker 容器或 K8s Pod 中，并使用了端口映射：
+        容器内部：TM 进程在容器内监听 6122 端口（这是 RPC_BIND_PORT）。
+        宿主机/外网映射：宿主机将容器的 6122 端口映射到了宿主机的 30122 端口（这是 RPC_PORT）。
+        连接过程：
+        TM 在容器内通过 RPC_BIND_PORT=6122 成功拉起 PekkoRpcService 并监听本地网络。
+        TM 向 JobManager 注册时，会携带 RPC_PORT=30122 作为自己的远程访问端口。
+        JobManager 收到注册后，后续需要通过 RPC 回调该 TM（例如发送 submitTask）时，就会连接 宿主机IP:30122，数据包经宿主机端口映射后送达容器内的 6122 端口。 */
+        return RpcUtils.createRemoteRpcService(//
                 rpcSystem,
-                configuration,
+                configuration,//Flink 的全局配置对象
+                //
                 determineTaskManagerBindAddress(configuration, haServices, rpcSystem),
+                //获取 TaskManager 监听 RPC 请求的网络端口配置。集群中其他节点（如 JobManager、其他 TM）通过该端口连接当前 TM
+                //对外宣告的端口
+                //典型应用场景 容器映射端口、NAT 路由器映射端口、外部可达端口
                 configuration.get(TaskManagerOptions.RPC_PORT),
                 configuration.get(TaskManagerOptions.BIND_HOST),
-                configuration.getOptional(TaskManagerOptions.RPC_BIND_PORT));
+                configuration.getOptional(TaskManagerOptions.RPC_BIND_PORT));//TM 进程在本地操作系统套接字（Socket）上真正 Listen 的端口
     }
 
     private static String determineTaskManagerBindAddress(
@@ -714,7 +771,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
             final HighAvailabilityServices haServices,
             RpcSystemUtils rpcSystemUtils)
             throws Exception {
-
+        //配置的
         final String configuredTaskManagerHostname = configuration.get(TaskManagerOptions.HOST);
 
         if (configuredTaskManagerHostname != null) {
@@ -735,7 +792,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
             throws LeaderRetrievalException {
 
         final Duration lookupTimeout = configuration.get(RpcOptions.LOOKUP_TIMEOUT_DURATION);
-
+        // 1. 算出本地套接字真正要绑定的 IP (Bind Address)
         final InetAddress taskManagerAddress =
                 LeaderRetrievalUtils.findConnectingAddress(
                         haServices.getResourceManagerLeaderRetriever(),

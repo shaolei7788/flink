@@ -145,10 +145,9 @@ public class RpcUtils {
             @Nullable String externalAddress,
             String externalPortRange,
             @Nullable String bindAddress,
-            @SuppressWarnings("OptionalUsedAsFieldOrParameterType") Optional<Integer> bindPort)
+            @SuppressWarnings("OptionalUsedAsFieldOrParameterType") Optional<Integer> bindPort)//
             throws Exception {
-        RpcSystem.RpcServiceBuilder rpcServiceBuilder =
-                rpcSystem.remoteServiceBuilder(configuration, externalAddress, externalPortRange);
+        RpcSystem.RpcServiceBuilder rpcServiceBuilder = rpcSystem.remoteServiceBuilder(configuration, externalAddress, externalPortRange);
         if (bindAddress != null) {
             rpcServiceBuilder = rpcServiceBuilder.withBindAddress(bindAddress);
         }

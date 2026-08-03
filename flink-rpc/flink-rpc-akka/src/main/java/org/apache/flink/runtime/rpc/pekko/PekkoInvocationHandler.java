@@ -68,6 +68,7 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  * in an {@link RpcInvocation} message and then sends it to the {@link PekkoRpcActor} where it is
  * executed.
  */
+//基于 Java 动态代理技术。拦截对 RpcGateway 的方法调用，将其封装为 RpcInvocation 消息并发送给底层的 Pekko Actor
 class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, RpcServer {
     private static final Logger LOG = LoggerFactory.getLogger(PekkoInvocationHandler.class);
 
@@ -192,6 +193,7 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
 
     @Override
     public void start() {
+        //
         rpcEndpoint.tell(ControlMessages.START, ActorRef.noSender());
     }
 

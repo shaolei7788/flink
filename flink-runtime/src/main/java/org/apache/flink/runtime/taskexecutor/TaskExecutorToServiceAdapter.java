@@ -26,6 +26,7 @@ import java.util.concurrent.CompletableFuture;
  */
 public class TaskExecutorToServiceAdapter implements TaskManagerRunner.TaskExecutorService {
 
+    //处理 RPC 指令：submitTask, cancelTask, requestSlot 等
     private final TaskExecutor taskExecutor;
 
     private TaskExecutorToServiceAdapter(TaskExecutor taskExecutor) {
@@ -34,6 +35,7 @@ public class TaskExecutorToServiceAdapter implements TaskManagerRunner.TaskExecu
 
     @Override
     public void start() {
+        //
         taskExecutor.start();
     }
 
@@ -48,6 +50,7 @@ public class TaskExecutorToServiceAdapter implements TaskManagerRunner.TaskExecu
     }
 
     public static TaskExecutorToServiceAdapter createFor(TaskExecutor taskExecutor) {
+        //
         return new TaskExecutorToServiceAdapter(taskExecutor);
     }
 }

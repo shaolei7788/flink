@@ -386,6 +386,7 @@ public class ConnectionUtils {
         private Exception exception;
 
         public InetAddress findConnectingAddress(Duration timeout) throws LeaderRetrievalException {
+            //
             return findConnectingAddress(timeout, defaultLoggingDelay);
         }
 
