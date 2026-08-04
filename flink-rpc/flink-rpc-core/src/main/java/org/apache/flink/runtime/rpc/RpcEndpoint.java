@@ -150,7 +150,11 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
         // rpcService = PekkoRpcService
         this.rpcService = checkNotNull(rpcService, "rpcService");
         this.endpointId = checkNotNull(endpointId, "endpointId");
-        //返回的动态代理对象 RpcServer = org.apache.flink.runtime.rpc.pekko.PekkoInvocationHandler@5d01ea21
+        //它是当前组件自身的动态代理对象 RpcServer = org.apache.flink.runtime.rpc.pekko.PekkoInvocationHandler@5d01ea21
+        //维护当前组件的单线程线程安全
+        //职责：维护当前组件的单线程线程安全。
+        //为什么要它？Flink 规定：绝对不允许直接用 this 关键字调用自己的方法，也不允许外部直接调用你的实例方法！因为直接调用会破坏 Pekko 的单线程 Mailbox（信箱）队列，导致多线程并发修改状态而产生死锁或数据错乱。
+        // 经典场景：如果 JobMaster 内部处理完 A 事件后，想给自己发一个延时消息去处理 B 事件，它不能直接调用 this.processB()，必须调用 this.rpcServer.getSelfGateway(JobMasterGateway.class).processB()。这样，这个请求才会规规矩矩地去底层的 PekkoRpcActor 信箱里排队
         this.rpcServer = rpcService.startServer(this, loggingContext);
         this.resourceRegistry = new CloseableRegistry();
 

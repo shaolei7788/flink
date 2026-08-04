@@ -263,8 +263,7 @@ public class PekkoRpcService implements RpcService {
             C rpcEndpoint, Map<String, String> loggingContext) {
         checkNotNull(rpcEndpoint, "rpc endpoint");
 
-        final SupervisorActor.ActorRegistration actorRegistration =
-                registerRpcActor(rpcEndpoint, loggingContext);
+        final SupervisorActor.ActorRegistration actorRegistration = registerRpcActor(rpcEndpoint, loggingContext);
         final ActorRef actorRef = actorRegistration.getActorRef();
         final CompletableFuture<Void> actorTerminationFuture =
                 actorRegistration.getTerminationFuture();
