@@ -334,13 +334,25 @@ public class TaskManagerServices {
 
         // pre-start checks
         checkTempDirs(taskManagerServicesConfiguration.getTmpDirPaths());
-
+        //任务线程池与执行器
+        //作用：管理任务（Task）运行时的线程资源与事件分发。
+        //场景：
+        //提供 TaskEventDispatcher，用于在上游 Task 和下游 Task 之间反向传递自定义事件（如迭代计算中的控制事件）。
+        //初始化异步任务执行器、IO 执行器等线程池
         final TaskEventDispatcher taskEventDispatcher = new TaskEventDispatcher();
 
         // start the I/O manager, it will create some temp directories.
-        final IOManager ioManager =
-                new IOManagerAsync(taskManagerServicesConfiguration.getTmpDirPaths(), ioExecutor);
+        //作用：提供高效的本地磁盘读写与临时文件管理服务。
+        //场景：
+        //当内存中的数据（如大窗口聚合、Sort-Merge 算子）超出容量时，提供异步落盘（Spill to disk）和读取机制。
+        //自动清理 Task 运行过程中在本地临时目录产生的垃圾文件
+        final IOManager ioManager = new IOManagerAsync(taskManagerServicesConfiguration.getTmpDirPaths(), ioExecutor);
 
+        //作用：构建 TaskManager 节点间以及节点内部进行 Data Shuffle（数据交换）的网络底座。
+        //包含组件：
+        //NettyShuffleEnvironment：基于 Netty 实现的高性能节点间数据传输网络。
+        //NetworkBufferPool：专门管理网络传输缓冲区的内存池（Network Memory）。
+        //ResultPartitionManager & SingleInputGate：分别负责输出数据分片管理和输入数据闸门接收
         final ShuffleEnvironment<?, ?> shuffleEnvironment =
                 createShuffleEnvironment(
                         taskManagerServicesConfiguration,
@@ -353,7 +365,11 @@ public class TaskManagerServices {
         LOG.info(
                 "TaskManager data connection initialized successfully; listening internally on port: {}",
                 listeningDataPort);
-
+        //状态后端与本地恢复
+        //作用：提供 Task 级别的本地状态存储与快速恢复机制（Local Recovery）。
+        //场景：
+        //在 Task 制作 Checkpoint 时，除了将状态持久化到远程分布式存储（如 S3/HDFS），TaskLocalStateStore 会在 TaskManager 本地磁盘同步保存一份副本。
+        //当 Task 发生单节点故障重启时，直接从本地磁盘加载状态，避免从远程存储跨网络下载几百 GB 的 Checkpoint 数据，大幅缩短 Failover 时间
         final KvStateService kvStateService =
                 KvStateService.fromConfiguration(taskManagerServicesConfiguration);
         kvStateService.start();
@@ -370,17 +386,36 @@ public class TaskManagerServices {
                         taskManagerServicesConfiguration.getNodeId());
 
         final BroadcastVariableManager broadcastVariableManager = new BroadcastVariableManager();
-
+        //todo
         final TaskSlotTable<Task> taskSlotTable =
                 createTaskSlotTable(
-                        taskManagerServicesConfiguration.getNumberOfSlots(),
+                        taskManagerServicesConfiguration.getNumberOfSlots(),//1
+                        // taskManagerServicesConfiguration.getTaskExecutorResourceSpec().getCpuCores() =
+                        // taskManagerServicesConfiguration.getTaskExecutorResourceSpec().getTaskHeapSize() = 1099511627776
+                        // taskManagerServicesConfiguration.getTaskExecutorResourceSpec().getTaskOffHeapSize() = 1099511627776
+                        // taskManagerServicesConfiguration.getTaskExecutorResourceSpec().getNetworkMemSize() = 64m
+                        // taskManagerServicesConfiguration.getTaskExecutorResourceSpec().getManagedMemorySize() = 128m
+                        // taskManagerServicesConfiguration.getTaskExecutorResourceSpec().getExtendedResources() size = 0
                         taskManagerServicesConfiguration.getTaskExecutorResourceSpec(),
                         taskManagerServicesConfiguration.getTimerServiceShutdownTimeout(),
                         taskManagerServicesConfiguration.getPageSize(),
                         ioExecutor);
 
         final JobTable jobTable = DefaultJobTable.create();
-
+        //JobLeaderService 是负责 管理 TaskManager 与各个 JobMaster（作业主节点）之间的连接与 Leader 监听 的核心服务
+        //帮 TaskManager 盯紧它所参与的所有 Job 的 JobMaster 谁才是真正的“老大”（Leader），并建立/断开对应的 RPC 连接
+        /**
+         * 1. 动态监听 JobMaster 的 Leader 变更（Leader Retrieval）
+         * 当 TaskManager 上分配了某个 Job 的 TaskSlot 时，JobLeaderService 会为该 Job 注册一个 LeaderRetrievalService（如通过 ZooKeeper 或 Kubernetes 的 Leader 选举服务）。
+         * 一旦远端 JobMaster 发生选主（例如原来的 JobMaster 挂了，新的 JobMaster 上任），JobLeaderService 会第一时间感知到新 Leader 的 RPC 地址与 Leader Session ID。
+         * 2. 建立与维护 RPC 连接（Gateway Connection）
+         * 当监听到正确的 JobMaster Leader 地址后，JobLeaderService 会自动通过 RpcService 去连接远端的 JobMaster，获取到该 JobMaster 的 RPC 代理对象（JobMasterGateway）。
+         * 随后它会通知 TaskManager 的核心组件（TaskExecutor）：“* Job XXX 的新 Leader 已经连上了，地址是 YYY，你可以向它汇报 Slot 状态或心跳了。*”
+         *
+         * 3. 处理 Leader 丢失与连接断开（Disconnection & Cleanup）
+         * 当 JobMaster 失去 Leader 身份、网络中断或 Job 结束时，JobLeaderService 会收到通知，并触发 JobLeaderListener.onJobLeaderLost 回调。
+         * 它会及时清理掉已经失效的 JobMasterGateway，避免 TaskManager 继续向旧的、无效的 JobMaster 发送心跳或汇报数据。
+         */
         final JobLeaderService jobLeaderService =
                 new DefaultJobLeaderService(
                         unresolvedTaskManagerLocation,
@@ -474,6 +509,7 @@ public class TaskManagerServices {
         final TimerService<AllocationID> timerService =
                 new DefaultTimerService<>(
                         new ScheduledThreadPoolExecutor(1), timerServiceShutdownTimeout);
+        //todo
         return new TaskSlotTableImpl<>(
                 numberOfSlots,
                 TaskExecutorResourceUtils.generateTotalAvailableResourceProfile(

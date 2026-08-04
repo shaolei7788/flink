@@ -516,6 +516,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
 
         if (workerTypeWorkerRegistration.getInstanceID().equals(taskManagerRegistrationId)) {
             SlotManager.RegistrationResult registrationResult =
+                    //
                     slotManager.registerTaskManager(
                             workerTypeWorkerRegistration,
                             slotReport,

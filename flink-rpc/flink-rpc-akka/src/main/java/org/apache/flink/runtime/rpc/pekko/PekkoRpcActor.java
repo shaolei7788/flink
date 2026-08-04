@@ -626,6 +626,7 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
 
             try {
                 runWithContextClassLoader(
+                        // internalCallOnStart
                         () -> pekkoRpcActor.rpcEndpoint.internalCallOnStart(), flinkClassLoader);
             } catch (Throwable throwable) {
                 pekkoRpcActor.stop(

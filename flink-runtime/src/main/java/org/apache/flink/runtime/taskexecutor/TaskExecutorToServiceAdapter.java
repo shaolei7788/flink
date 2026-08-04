@@ -35,7 +35,7 @@ public class TaskExecutorToServiceAdapter implements TaskManagerRunner.TaskExecu
 
     @Override
     public void start() {
-        //
+        // RpcEndpoint#start
         taskExecutor.start();
     }
 

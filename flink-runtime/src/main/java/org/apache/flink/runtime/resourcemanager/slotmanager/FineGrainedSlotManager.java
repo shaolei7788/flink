@@ -416,7 +416,7 @@ public class FineGrainedSlotManager implements SlotManager {
                 return RegistrationResult.SUCCESS;
             }
 
-            checkResourceRequirementsWithDelay();
+            checkResourceRequirementsWithDelay();//
             return RegistrationResult.SUCCESS;
         }
     }
@@ -626,6 +626,7 @@ public class FineGrainedSlotManager implements SlotManager {
                         () ->
                                 mainThreadExecutor.execute(
                                         () -> {
+                                            //todo
                                             checkResourceRequirements();
                                             Preconditions.checkNotNull(requirementsCheckFuture)
                                                     .complete(null);
@@ -668,7 +669,7 @@ public class FineGrainedSlotManager implements SlotManager {
                         missingResources, taskManagerTracker, this::isBlockedTaskManager);
 
         // Allocate slots according to the result
-        allocateSlotsAccordingTo(result.getAllocationsOnRegisteredResources());
+        allocateSlotsAccordingTo(result.getAllocationsOnRegisteredResources());//
 
         final Set<PendingTaskManagerId> failAllocations;
         if (resourceAllocator.isSupported()) {
@@ -748,6 +749,7 @@ public class FineGrainedSlotManager implements SlotManager {
                         tmEntry.getValue().getResourcesWithCount()) {
                     for (int i = 0; i < slotEntry.getValue(); ++i) {
                         allocationFutures.add(
+                                //
                                 slotStatusSyncer.allocateSlot(
                                         instanceID,
                                         jobID,

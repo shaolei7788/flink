@@ -490,6 +490,7 @@ public class MiniCluster implements AutoCloseableAsync {
 
                 resourceManagerLeaderRetriever.start(resourceManagerGatewayRetriever);
                 dispatcherLeaderRetriever.start(dispatcherGatewayRetriever);
+                //todo
                 clusterRestEndpointLeaderRetrievalService.start(webMonitorLeaderRetriever);
             } catch (Exception e) {
                 // cleanup everything

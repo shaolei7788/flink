@@ -367,7 +367,7 @@ public class PekkoRpcServiceUtils {
                                     customConfig);
                 }
             }
-
+            //constructor.apply 会调用 PekkoRpcService::new 即 PekkoRpcService的构造器
             return constructor.apply(
                     actorSystem,
                     PekkoRpcServiceConfiguration.fromConfiguration(configuration),

@@ -224,6 +224,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
                             Hardware.getNumberCPUCores(),
                             new ExecutorThreadFactory("taskmanager-future"));
             //用于连接 ZK/K8s 获取 Leader JM 地址
+            //提供 Leader 选举、服务发现（如找到当前活跃的 ResourceManager 地址）和元数据持久化支持（如 ZooKeeper / Kubernetes HA）
             highAvailabilityServices =
                     HighAvailabilityServicesUtils.createHighAvailabilityServices(
                             configuration,
@@ -233,7 +234,8 @@ public class TaskManagerRunner implements FatalErrorHandler {
                             this);
 
             JMXService.startInstance(configuration.get(JMXServerOptions.JMX_SERVER_PORT));
-            //todo
+            //todo   rpcService = PekkoRpcService  基于 Pekko 初始化底层通信框架，创建 RPC 节点
+            //意义：TaskExecutor 后续需要通过它向 ResourceManager 注册、与 JobMaster 保持心跳和交互
             rpcService = createRpcService(configuration, highAvailabilityServices, rpcSystem);
 
             this.resourceId =
@@ -246,6 +248,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
 
             LOG.info("Using working directory: {}", workingDirectory);
 
+            //创建心跳服务
             HeartbeatServices heartbeatServices =
                     HeartbeatServices.fromConfiguration(configuration);
             //初始化 Metric 监控服务
@@ -274,7 +277,15 @@ public class TaskManagerRunner implements FatalErrorHandler {
                             configuration.get(TaskManagerOptions.BIND_HOST),
                             rpcSystem);
             metricRegistry.startQueryService(metricQueryServiceRpcService, resourceId.unwrap());
+            //二进制大对象缓存服务 是一个极其关键的文件传输与本地缓存组件
+            //它的核心作用是：从 JobManager（的 BlobServer）拉取 Task 执行所需的依赖文件（如用户作业的 JAR 包、配置文件、自定义库等），
+            // 并在本地 TaskManager 节点的磁盘上进行高效缓存与管理
 
+            //延迟按需拉取：TaskManager 在启动时并不会提前下载所有作业的 JAR 包。只有当 TaskManager 被分配到了某个作业的 Task（例如 TaskSlot 分配成功）时，
+            // 才会通过 BlobCacheService 传入对应的 PermanentBlobKey，按需从远端 JobManager 校验并下载对应的 JAR 包。
+            //
+            //本地共享缓存：同一个 TaskManager 上如果运行了属于同一个作业的多个 Task，它们共享同一个下载好的 JAR 包本地副本，
+            // 通过引用计数（Reference Counting）避免重复下载，节省网络带宽和磁盘空间
             blobCacheService =
                     BlobUtils.createBlobCacheService(
                             configuration,
@@ -288,7 +299,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
 
             final DelegationTokenReceiverRepository delegationTokenReceiverRepository =
                     new DelegationTokenReceiverRepository(configuration, pluginManager);
-
+            // taskExecutorService = TaskExecutorToServiceAdapter 包含了 TaskExecutor
             taskExecutorService = taskExecutorServiceFactory.createTaskExecutor(
                             this.configuration,
                             this.resourceId.unwrap(),
@@ -333,9 +344,9 @@ public class TaskManagerRunner implements FatalErrorHandler {
 
     public void start() throws Exception {
         synchronized (lock) {
-            //
+            //实例化并启动 TaskManager 运行所依赖的所有“基础设施服务”（Services），为后续真正拉起 TaskManager 核心节点（TaskExecutor）提供环境与资源支持
             startTaskManagerRunnerServices();
-            //
+            // TaskExecutorToServiceAdapter#start
             taskExecutorService.start();
         }
     }
@@ -532,7 +543,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
             taskManagerRunner = new TaskManagerRunner(
                             configuration,
                             pluginManager,
-                            //
+                            // createTaskExecutorService 在 startTaskManagerRunnerServices 会被调用
                             TaskManagerRunner::createTaskExecutorService);
             //
             taskManagerRunner.start();
@@ -614,6 +625,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
             throws Exception {
         //
         final TaskExecutor taskExecutor =
+                // 创建TaskExecutor服务
                 startTaskManager(
                         configuration,
                         resourceID,
@@ -679,9 +691,10 @@ public class TaskManagerRunner implements FatalErrorHandler {
         //
         final ExecutorService ioExecutor =
                 Executors.newFixedThreadPool(
-                        taskManagerServicesConfiguration.getNumIoThreads(),
+                        taskManagerServicesConfiguration.getNumIoThreads(),//4
                         new ExecutorThreadFactory("flink-taskexecutor-io"));
 
+        //todo 为 TaskExecutor 打包装配好所有核心器官（计算、内存、IO、网络通信、状态存储等）的服务集合类
         TaskManagerServices taskManagerServices =
                 TaskManagerServices.fromConfiguration(
                         taskManagerServicesConfiguration,
@@ -699,13 +712,13 @@ public class TaskManagerRunner implements FatalErrorHandler {
 
         TaskManagerConfiguration taskManagerConfiguration =
                 TaskManagerConfiguration.fromConfiguration(
-                        configuration,
-                        taskExecutorResourceSpec,
-                        externalAddress,
-                        workingDirectory.getTmpDirectory());
+                        configuration,//{taskmanager.memory.network.min=64 mb, taskmanager.cpu.cores=1000000.0, taskmanager.memory.task.off-heap.size=1099511627776 bytes, taskmanager.memory.jvm-metaspace.size=256 mb, execution.target=local, cluster.io-pool.size=4, taskmanager.network.sort-shuffle.min-buffers=16, taskmanager.memory.jvm-overhead.min=1 gb, rest.bind-port=0, taskmanager.memory.network.max=64 mb, taskmanager.memory.framework.off-heap.size=128 mb, execution.attached=true, taskmanager.memory.managed.size=128 mb, taskmanager.memory.framework.heap.size=128 mb, parallelism.default=1, taskmanager.numberOfTaskSlots=1, taskmanager.memory.task.heap.size=1099511627776 bytes, rest.address=localhost, taskmanager.memory.jvm-overhead.max=1 gb, pekko.ask.timeout=PT5M}
+                        taskExecutorResourceSpec,//
+                        externalAddress,//""
+                        workingDirectory.getTmpDirectory());//C:\Users\Administrator\AppData\Local\Temp\minicluster_ea3224d79d50675a75d8c6024cc2eb49\tm_0\tmp
 
         String metricQueryServiceAddress = metricRegistry.getMetricQueryServiceGatewayRpcAddress();
-
+        //
         return new TaskExecutor(
                 rpcService,
                 taskManagerConfiguration,

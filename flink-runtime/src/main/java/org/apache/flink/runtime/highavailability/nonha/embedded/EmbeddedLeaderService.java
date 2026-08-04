@@ -330,7 +330,9 @@ public class EmbeddedLeaderService {
             @Nullable String address,
             @Nullable UUID leaderSessionId,
             LeaderRetrievalListener listener) {
+        //
         return CompletableFuture.runAsync(
+                //通知leader有变动
                 new NotifyOfLeaderCall(address, leaderSessionId, listener, LOG),
                 notificationExecutor);
     }
@@ -352,6 +354,7 @@ public class EmbeddedLeaderService {
 
                 // if we already have a leader, immediately notify this new listener
                 if (currentLeaderConfirmed != null) {
+                    //todo
                     notifyListener(currentLeaderAddress, currentLeaderSessionId, listener);
                 }
             } catch (Throwable t) {
@@ -497,10 +500,11 @@ public class EmbeddedLeaderService {
         volatile LeaderRetrievalListener listener;
 
         volatile boolean running;
-
+        //会被 startTaskExecutorServices() 的resourceManagerLeaderRetriever.start 调用
         @Override
         public void start(LeaderRetrievalListener listener) throws Exception {
             checkNotNull(listener);
+            //todo 添加监听器
             addListener(this, listener);
         }
 
@@ -544,7 +548,8 @@ public class EmbeddedLeaderService {
         @Override
         public void run() {
             try {
-                listener.notifyLeaderAddress(address, leaderSessionId);
+                //todo
+                listener.notifyLeaderAddress(address, leaderSessionId);//
             } catch (Throwable t) {
                 logger.warn("Error notifying leader listener about new leader", t);
                 listener.handleError(t instanceof Exception ? (Exception) t : new Exception(t));

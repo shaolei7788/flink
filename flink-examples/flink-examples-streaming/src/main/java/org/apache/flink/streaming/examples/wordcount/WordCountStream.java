@@ -80,8 +80,8 @@ public class WordCountStream {
         SingleOutputStreamOperator<Tuple2<String, Long>> result = wordAndOneKS.sum(1);
         // 6. 打印
         result.print();
-        // 7. 执行
-        env.execute("WordCountStream");
+        // 7. 执行 LocalStreamEnvironment#execute
+        env.execute("WordCountStream");//
 
 
     }

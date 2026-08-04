@@ -69,6 +69,14 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  * executed.
  */
 //基于 Java 动态代理技术。拦截对 RpcGateway 的方法调用，将其封装为 RpcInvocation 消息并发送给底层的 Pekko Actor
+//PekkoInvocationHandler 实现了 Java 的 InvocationHandler 接口。当客户端在 RPC Proxy 接口上发起方法调用时，invoke() 方法会被触发
+//PekkoInvocationHandler 借助 ActorRef 实现 Pekko 的两种核心通信模式：
+//
+//异步有返回值（ask 模式）：
+//如果调用的 RPC 方法返回 CompletableFuture，Handler 会通过 Patterns.ask(actorRef, rpcInvocation, timeout) 向 ActorRef 发送消息，并返回一个 Future，将 Pekko 的 Future 转为 Java 的 CompletableFuture。
+//
+//单向发送无返回值（tell 模式）：
+//如果方法返回类型为 void 且声明了 @RpcTimeout 或仅需要 Fire-and-Forget 语义，Handler 可以通过 actorRef.tell(rpcInvocation, ActorRef.noSender()) 发送消息。
 class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, RpcServer {
     private static final Logger LOG = LoggerFactory.getLogger(PekkoInvocationHandler.class);
 
@@ -134,8 +142,11 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
                 || declaringClass.equals(StartStoppable.class)
                 || declaringClass.equals(MainThreadExecutable.class)
                 || declaringClass.equals(RpcServer.class)) {
+            //不发起网络请求/Actor消息，直接在本地的 PekkoInvocationHandler 实例上反射执行
+            //本地/基础接口方法  PekkoBasedEndpoint 等 直接在当前 Handler 执行
             result = method.invoke(this, args);
         } else if (declaringClass.equals(FencedRpcGateway.class)) {
+            //非法的 Fenced 拦截
             throw new UnsupportedOperationException(
                     "InvocationHandler does not support the call FencedRpcGateway#"
                             + method.getName()
@@ -143,6 +154,8 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
                             + "fencing token. Please use RpcService#connect(RpcService, F, Time) with F being the fencing token to "
                             + "retrieve a properly FencedRpcGateway.");
         } else {
+            // 业务 RPC 方法 如 JobMasterGateway 等
+            //打包消息发给 ActorRef
             result = invokeRpc(method, args);
         }
 
@@ -223,7 +236,7 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
         Annotation[][] parameterAnnotations = method.getParameterAnnotations();
         Duration futureTimeout =
                 RpcGatewayUtils.extractRpcTimeout(parameterAnnotations, args, timeout);
-
+        //将当前调用的 method（方法名、参数类型）和 args 参数打包成一个 RpcInvocation 消息
         final RpcInvocation rpcInvocation =
                 createRpcInvocationMessage(
                         method.getDeclaringClass().getSimpleName(),
@@ -235,10 +248,10 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
         Class<?> returnType = method.getReturnType();
 
         final Object result;
-
+        //根据 method.getReturnType()（是 CompletableFuture 还是 void）选择通信模式
         if (Objects.equals(returnType, Void.TYPE)) {
+            //无返回值
             tell(rpcInvocation);
-
             result = null;
         } else {
             // Capture the call stack. It is significantly faster to do that via an exception than
@@ -250,6 +263,7 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
 
             // execute an asynchronous call
             final CompletableFuture<?> resultFuture =
+                    //todo 有返回值
                     ask(rpcInvocation, futureTimeout)
                             .thenApply(
                                     resultValue ->

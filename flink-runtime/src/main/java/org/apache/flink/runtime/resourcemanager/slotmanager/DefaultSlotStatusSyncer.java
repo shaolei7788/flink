@@ -128,7 +128,8 @@ public class DefaultSlotStatusSyncer implements SlotStatusSyncer {
 
             // RPC call to the task manager
             CompletableFuture<Acknowledge> requestFuture =
-                    gateway.requestSlot(
+                    //
+                    gateway.requestSlot(//
                             SlotID.getDynamicSlotID(resourceId),
                             jobId,
                             allocationId,

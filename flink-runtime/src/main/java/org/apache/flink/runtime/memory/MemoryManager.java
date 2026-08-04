@@ -68,21 +68,33 @@ public class MemoryManager {
     public static final int MIN_PAGE_SIZE = 4 * 1024;
 
     // ------------------------------------------------------------------------
-
+    //作用：一个 ConcurrentHashMap，以调用者（通常是具体的 Task 拥有者对象）为 Key，记录其分配出的所有 MemorySegment 集合。
+    //意义：用于追踪“谁拿走了多少物理内存页”，在任务销毁时可以安全地进行批量强行回收
     /** Memory segments allocated per memory owner. */
     private final Map<Object, Set<MemorySegment>> allocatedSegments;
 
+    //作用：记录非 MemorySegment 形式的裸内存预留额度（主要用于 RocksDB 状态后端、Python 进程等外置组件）。
+    //意义：只管额度，不分物理对象，为外置 Native 算子提供资源水位控制
     /** Reserved memory per memory owner. */
     private final Map<Object, Long> reservedMemory;
 
+    //作用：定义了单个 MemorySegment（内存段）的字节数（默认由 taskmanager.memory.segment-size 参数决定，通常为 32KB）。
+    //意义：Flink 内存分配的最小物理单元颗粒度
     private final long pageSize;
 
+    //作用：基于总托管内存大小除以 pageSize 计算得出的页面总数。
+    //意义：作为计数边界，限制 Flink 物理内存段的最大分配上限
     private final long totalNumberOfPages;
 
+    //作用：核心的、基于底层非堆（Off-heap）内存边界的原子计数器。
+    //意义：用于原子地申请、释放或预留内存额度。它确保在高并发的 Task 线程同时申请内存时，内存额度的加减操作是线程安全且绝对准确的
     private final UnsafeMemoryBudget memoryBudget;
 
+    //作用：管理跨 Task 共享的长期资源（例如多个 Task 共享同一个 RocksDB 的 Cache 或 WriteBufferManager）。
+    //意义：避免每个 Slot 内的状态后端各自为战，在 Slot 共享或作业级维度上统一管控内存
     private final SharedResources sharedResources;
 
+    //标识当前进程的 MemoryManager 是否已被宣告注销
     /** Flag whether the close() has already been invoked. */
     private volatile boolean isShutDown;
 
@@ -95,8 +107,9 @@ public class MemoryManager {
     MemoryManager(long memorySize, int pageSize) {
         sanityCheck(memorySize, pageSize);
 
-        this.pageSize = pageSize;
+        this.pageSize = pageSize;//32768 32k
         this.memoryBudget = new UnsafeMemoryBudget(memorySize);
+        //4096个   memorySize = 128m
         this.totalNumberOfPages = memorySize / pageSize;
         this.allocatedSegments = new ConcurrentHashMap<>();
         this.reservedMemory = new ConcurrentHashMap<>();
@@ -191,6 +204,8 @@ public class MemoryManager {
      * @throws MemoryAllocationException Thrown, if this memory manager does not have the requested
      *     amount of memory pages any more.
      */
+    //作用：为指定的对象（如一个 Task）批量分配特定数量的 MemorySegment。
+    //内部逻辑：先去 memoryBudget 中扣减额度，成功后通过底层工厂创建并返回一组堆外 ByteBuffer（或 HybridMemorySegment），并记录到 allocatedSegments 中
     public List<MemorySegment> allocatePages(Object owner, int numPages)
             throws MemoryAllocationException {
         List<MemorySegment> segments = new ArrayList<>(numPages);
@@ -267,6 +282,8 @@ public class MemoryManager {
      *
      * @param segment The segment to be released.
      */
+    //作用：释放单个或特定 Task 占有的全部 MemorySegment 页面。
+    //内部逻辑：将回收的内存页占用的字节数归还给 memoryBudget 反哺水位，并清理 allocatedSegments 映射
     public void release(MemorySegment segment) {
         Preconditions.checkState(!isShutDown, "Memory manager has been shut down.");
 
@@ -410,6 +427,8 @@ public class MemoryManager {
      * @throws MemoryReservationException Thrown, if this memory manager does not have the requested
      *     amount of memory any more.
      */
+    //作用：为特定组件（如 RocksDB 状态后端）“占位”预留指定大小的字节额度。
+    //内部逻辑：若 memoryBudget 中剩余额度足够则扣减并注册到 reservedMemory 映射中，若不足则会抛出 MemoryAllocationException 异常，防止内存超期
     public void reserveMemory(Object owner, long size) throws MemoryReservationException {
         checkMemoryReservationPreconditions(owner, size);
         if (size == 0L) {
@@ -432,6 +451,7 @@ public class MemoryManager {
      * @param owner The owner to associate with the memory reservation, for the fallback release.
      * @param size size of memory to release.
      */
+    //作用：释放之前预留的逻辑内存额度，降低 memoryBudget 的当前水位线
     public void releaseMemory(Object owner, long size) {
         checkMemoryReservationPreconditions(owner, size);
         if (size == 0L) {
@@ -665,8 +685,8 @@ public class MemoryManager {
      * @param memorySize The total size of the off-heap memory to be managed by this memory manager.
      * @param pageSize The size of the pages handed out by the memory manager.
      */
-    public static MemoryManager create(long memorySize, int pageSize) {
-        return new MemoryManager(memorySize, pageSize);
+    public static MemoryManager create(long memorySize, int pageSize) {//
+        return new MemoryManager(memorySize, pageSize);//
     }
 
     private static void validateFraction(double fraction) {

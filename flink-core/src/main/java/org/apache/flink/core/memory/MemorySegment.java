@@ -66,6 +66,9 @@ import static org.apache.flink.core.memory.MemoryUtils.getByteBufferAddress;
  * different memory types with inheritance, to avoid the overhead from looking for concrete
  * implementations on invocations of abstract methods.
  */
+//MemorySegment 是最底层的“内存块”（类似于 C 语言里的 void* 连续内存）。
+//当这个内存块被分配给 Network 模块 用来传数据时，它穿上了外衣，变成了 Network Buffer。
+//当这个内存块被分配给 Managed Memory 用来做 SQL 排序、Join 或缓存时，它直接作为 MemorySegment 在计算引擎内部高效运转
 @Internal
 public final class MemorySegment {
 

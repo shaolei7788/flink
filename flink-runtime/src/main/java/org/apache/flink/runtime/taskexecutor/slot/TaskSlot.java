@@ -61,12 +61,79 @@ import java.util.stream.Collectors;
  *
  * @param <T> type of the {@link TaskSlotPayload} stored in this slot
  */
+// 是单个资源的“物理容器/格子”（对应一个具体的 Slot）
+    //一个 TaskManager 上有 多个（由 taskmanager.numberOfTaskSlots 配置）
+    //隔离并持有该 Slot 分配到的内存/CPU资源
+//
+//主要职责
+//  记录当前 Slot 内运行了哪些 Task（支持 Task 共享/Slot Sharing）
+//  维护 Slot 自身状态（Free, Allocated, Active 等）
+//生命周期  随 Slot 的分配与释放动态创建或重置状态
+
+//1. 资源隔离与划分（主要针对内存）一个 TaskManager 是一个独立的 JVM 进程，可以包含一个或多个 TaskSlot。
+//      内存均分：TaskManager 启动时会将自己的 【托管内存】（Managed Memory）和【堆内存】均匀平分给每个 TaskSlot。
+//      资源保护：通过将内存划分为固定的 Slot，可以防止某个 Task/Subtask 无节制地抢占整个 TaskManager 的内存，从而避免内存溢出（OOM）影响其他 Task 的运行。
+//      注意：TaskSlot 目前主要隔离内存，并不对 CPU 进行强隔离（即多个 Slot 共享 TaskManager JVM 进程中的 CPU 核心和 CPU 线程池）。
+//2. 决定集群的最大并发能力（Parallelism）
+//      TaskSlot 的总数量直接决定了 Flink 集群能同时运行多少个并行任务（Subtask）。
+//      如果一个 TaskManager 配置了 taskmanager.numberOfTaskSlots: 3，且集群有 3 个 TaskManager，那么整个集群共有 $3 \times 3 = 9$ 个 TaskSlot。
+//      这意味着该集群最多能支持并发度为 9 的作业任务执行。
+//3. 任务（Subtask）的执行容器Flink 作业在提交后会被拆分为多个算子子任务（Subtask）。每个 Subtask 最终都需要被调度并分发到一个特定的 TaskSlot 中，作为 TaskManager 进程内的一个线程（Thread）来执行
+//4. 槽位共享（Slot Sharing）与资源高效利用Flink 默认支持并鼓励槽位共享（Slot Sharing Group）：
+//      多算子共存：同一个作业中、属于不同算子的 Subtask（例如 Source -> Map -> Sink），只要它们位于同一个 Slot Sharing Group 内，就可以共享同一个 TaskSlot。
+//      优点：避免资源浪费：轻量级算子（如 Map）与重量级/含状态算子（如 Window / Join）共享 Slot，能大幅提升 CPU 与内存的利用率。
+//      降低部署复杂度：计算作业所需的总 Slot 数量仅取决于整个 Job 中最大算子的并行度（Max Parallelism），而不需要把每个算子的并行度累加
+
+
+//1. 堆内存（Heap Memory）的作用
+//堆内存是标准的 JVM 堆空间，由 JVM 的垃圾回收器（GC）自动管理。
+//
+//核心作用与用途：
+//运行 用户自定义代码（UDF）：你在 MapFunction、FlatMapFunction 或 ProcessFunction 中创建的 Java/Scala 对象，全部存在堆内存中。
+//
+//Flink 框架自身运行：TaskManager 进程内部的数据结构、元数据、RPC 通信组件以及调度逻辑等。
+//
+//JVM 堆内状态后端（Heap StateBackend / HashMapStateBackend）：
+//
+//如果使用的是默认的堆内状态后端，所有算子的 Keyed State（如 ValueState、ListState）都会直接以 Java 对象的形式保存在堆内存中。
+//
+//数据流转的临时缓冲区：某些算子在处理数据时产生的临时对象。
+//
+//特点与风险：使用简单且读写极快（因为是 native Java 对象），但如果状态极其庞大或频繁创建大量短生命周期对象，容易引发严重或频繁的 JVM GC 停顿（Stop-The-World），甚至导致 OOM。
+//
+//2. 托管内存（Managed Memory）的作用
+//托管内存是 Flink 专门划出来、直接进行内存管理（Memory Management） 的区域（默认占 TaskManager 总内存的 40%左右），绝大部分情况下分配在堆外（Off-Heap）。
+//
+//Flink 引入托管内存的主要目的就是：摆脱 JVM GC 的限制，并实现超大状态和高性能计算的极致优化。
+//
+//核心作用与用途：
+//① RocksDB 状态后端（EmbeddedRocksDBStateBackend）
+//当开启 RocksDB 作为状态后端时，RocksDB 运行在 JVM 之外的 C++ 进程层。
+//
+//托管内存会被分配给 RocksDB 作为 Block Cache 和 Write Buffer (MemTable)，用来加速状态的读取与写入。
+//
+//关键优势：由于直接分配给堆外的 C++ 空间，RocksDB 的状态数据完全不占用 JVM 堆，彻底避免了因为大状态导致的 GC 停顿。
+//
+//② 批处理与内置算子的内存缓存（Batch & Sorting/Hashing）
+//针对 Batch 作业（或 Streaming 中的某些排序/窗口算子），Flink 会将数据序列化为二进制字节数组（MemorySegment）存放在托管内存中。
+//
+//Flink 可以直接对这些二进制数据进行排序、哈希连接（Hash Join）和分组，无需反序列化成 Java 对象。
+//
+//③ Table API & SQL 运行时
+//Flink SQL 运行时的很多内置算子（如流式 Group Aggregation、TopN、Join）都需要消耗托管内存来进行高效的数据缓存和计算。
+//
+//④ Python API 支持（PyFlink）
+//如果作业使用了 Python UDF，托管内存会被划出一部分专门作为 Python 进程与 JVM 进程通信和数据交换的缓冲区。
 public class TaskSlot<T extends TaskSlotPayload> implements AutoCloseableAsync {
     private static final Logger LOG = LoggerFactory.getLogger(TaskSlot.class);
 
+    //当前 TaskSlot 在 TaskManager 内部的唯一数字编号（例如 0, 1, 2...）
     /** Index of the task slot. */
     private final int index;
 
+
+    //作用：定义该 TaskSlot 拥有的具体物理资源大小，包括 托管内存 (Managed Memory)、网络内存 (Network Memory) 以及 CPU 核心数 等。
+    //意义：Flink 目前主要利用它实现内存的严格隔离，防止不同 Slot 之间因内存竞争导致 OOM 崩溃
     /** Resource characteristics for this slot. */
     private final ResourceProfile resourceProfile;
 
@@ -75,12 +142,18 @@ public class TaskSlot<T extends TaskSlotPayload> implements AutoCloseableAsync {
 
     private final MemoryManager memoryManager;
 
+    //作用：标识 Slot 当前的生命周期状态（如 FREE 空闲、ALLOCATED 已分配、ACTIVE 激活运行中）。
+    //意义：调度器据此判断该 Slot 是否能接受新的计算任务
     /** State of this slot. */
     private TaskSlotState state;
 
+    //作用：记录当前 Slot 属于哪一个正在运行的 Flink Job。
+    //意义：以便在 Job 结束或异常失败时，TaskManager 能够批量释放或回收该 Job 占用的所有槽位
     /** Job id to which the slot has been allocated. */
     private final JobID jobId;
 
+    //作用：由 ResourceManager 分配的全局唯一标识符，用于追踪该 Slot 究竟被分配给了哪一个具体的作业请求。
+    //意义：区分当前 Slot 的占用权，确保资源分配的准确性
     /** Allocation id of this slot. */
     private final AllocationID allocationId;
 
@@ -107,8 +180,9 @@ public class TaskSlot<T extends TaskSlotPayload> implements AutoCloseableAsync {
 
         this.jobId = jobId;
         this.allocationId = allocationId;
-
-        this.memoryManager = createMemoryManager(resourceProfile, memoryPageSize);
+        // resourceProfile = ResourceProfile{taskHeapMemory=1024.000gb (1099511627776 bytes), taskOffHeapMemory=1024.000gb (1099511627776 bytes), managedMemory=128.000mb (134217728 bytes), networkMemory=64.000mb (67108864 bytes)}
+        // memoryPageSize = 32768  创建内存管理对象
+        this.memoryManager = createMemoryManager(resourceProfile, memoryPageSize);//
 
         this.closingFuture = new CompletableFuture<>();
     }
@@ -346,6 +420,7 @@ public class TaskSlot<T extends TaskSlotPayload> implements AutoCloseableAsync {
 
     private static MemoryManager createMemoryManager(
             ResourceProfile resourceProfile, int pageSize) {
-        return MemoryManager.create(resourceProfile.getManagedMemory().getBytes(), pageSize);
+        //创建内存管理   resourceProfile.getManagedMemory().getBytes() = 128m
+        return MemoryManager.create(resourceProfile.getManagedMemory().getBytes(), pageSize);//
     }
 }

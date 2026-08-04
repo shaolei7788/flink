@@ -202,8 +202,7 @@ public final class DefaultJobTable implements JobTable {
             verifyJobIsNotClosed();
             Preconditions.checkState(connection == null);
 
-            connection =
-                    new EstablishedConnection(
+            connection = new EstablishedConnection(
                             resourceId,
                             jobMasterGateway,
                             taskManagerActions,

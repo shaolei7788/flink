@@ -62,12 +62,7 @@ public class DefaultJobLeaderService implements JobLeaderService {
     private final UnresolvedTaskManagerLocation ownLocation;
 
     /** The leader retrieval service and listener for each registered job. */
-    private final Map<
-                    JobID,
-                    Tuple2<
-                            LeaderRetrievalService,
-                            DefaultJobLeaderService.JobManagerLeaderListener>>
-            jobLeaderServices;
+    private final Map<JobID, Tuple2<LeaderRetrievalService, DefaultJobLeaderService.JobManagerLeaderListener>> jobLeaderServices;
 
     private final RetryingRegistrationConfiguration retryingRegistrationConfiguration;
 
@@ -90,6 +85,8 @@ public class DefaultJobLeaderService implements JobLeaderService {
     /** Job leader listener listening for job leader changes. */
     private JobLeaderListener jobLeaderListener;
 
+
+    //核心作用是：帮助 TaskExecutor 统一管理、监听多个不同作业的 JobManager（JobMaster）Leader 状态变更，并在确定新的 Leader 后负责与其建立 RPC 通信连接
     public DefaultJobLeaderService(
             UnresolvedTaskManagerLocation location,
             RetryingRegistrationConfiguration retryingRegistrationConfiguration) {
@@ -193,9 +190,8 @@ public class DefaultJobLeaderService implements JobLeaderService {
 
         final LeaderRetrievalService leaderRetrievalService =
                 highAvailabilityServices.getJobManagerLeaderRetriever(jobId, defaultTargetAddress);
-
-        DefaultJobLeaderService.JobManagerLeaderListener jobManagerLeaderListener =
-                new JobManagerLeaderListener(jobId);
+        //
+        DefaultJobLeaderService.JobManagerLeaderListener jobManagerLeaderListener = new JobManagerLeaderListener(jobId);
 
         final Tuple2<LeaderRetrievalService, JobManagerLeaderListener> oldEntry =
                 jobLeaderServices.put(
@@ -291,9 +287,15 @@ public class DefaultJobLeaderService implements JobLeaderService {
             }
         }
 
+        //被NotifyOfLeaderCall#run 调用
+        //是一个极其关键的异步回调方法
+        //核心作用是：当底层的分布式协调服务（如 ZooKeeper、Kubernetes ConfigMap）检测到某个组件（如 JobManager、ResourceManager）的 Leader 发生切换或首次上线时，
+        // 该方法会被触发，用来接收新 Leader 的网络地址和 Session ID，并驱动本地组件发起 RPC 握手连接
+        // leaderAddress  (新 Leader 地址)：新晋升为 Leader 的组件的 Akka/Netty RPC 物理通信 URL
+        // leaderAddress = pekko://flink/user/rpc/jobmanager_3
+        // leaderId = dd60d21b-46d6-43b0-b445-29cdcb40bd7f
         @Override
-        public void notifyLeaderAddress(
-                @Nullable final String leaderAddress, @Nullable final UUID leaderId) {
+        public void notifyLeaderAddress(@Nullable final String leaderAddress, @Nullable final UUID leaderId) {
             Optional<JobMasterId> jobManagerLostLeadership = Optional.empty();
 
             synchronized (lock) {
@@ -313,6 +315,7 @@ public class DefaultJobLeaderService implements JobLeaderService {
                             jobMasterId);
 
                     if (leaderAddress == null || leaderAddress.isEmpty()) {
+                        //说明当前没有任何活动的 Leader（旧 Leader 挂了，新 Leader 还没选出来）。此时，方法会触发“失去领导权”的逻辑（如触发 jobManagerLostLeadership），断开现有连接，冻结资源
                         // the leader lost leadership but there is no other leader yet.
                         jobManagerLostLeadership = Optional.ofNullable(currentJobMasterId);
                         closeRpcConnection();
@@ -323,7 +326,9 @@ public class DefaultJobLeaderService implements JobLeaderService {
                                     "Ongoing attempt to connect to leader of job {}. Ignoring duplicate leader information.",
                                     jobId);
                         } else {
+                            //关闭连接
                             closeRpcConnection();
+                            //todo 建立新的连接
                             openRpcConnectionTo(leaderAddress, jobMasterId);
                         }
                     }
@@ -343,14 +348,17 @@ public class DefaultJobLeaderService implements JobLeaderService {
                     "Cannot open a new rpc connection if the previous connection has not been closed.");
 
             currentJobMasterId = jobMasterId;
-            rpcConnection =
-                    new JobManagerRegisteredRpcConnection(
+            // 跟jobmanager注册连接
+            // leaderAddress = pekko://flink/user/rpc/jobmanager_3
+            // jobMasterId = 8a52e19bb5e66f5925ec8903c0244a9c
+            rpcConnection = new JobManagerRegisteredRpcConnection(
                             LOG, leaderAddress, jobMasterId, rpcService.getScheduledExecutor());
 
             LOG.info(
                     "Try to register at job manager {} with leader id {}.",
                     leaderAddress,
                     jobMasterId.toUUID());
+            // 开始向远端 JobManager 拨号
             rpcConnection.start();
         }
 
@@ -378,8 +386,7 @@ public class DefaultJobLeaderService implements JobLeaderService {
         }
 
         /** Rpc connection for the job manager <--> task manager connection. */
-        private final class JobManagerRegisteredRpcConnection
-                extends RegisteredRpcConnection<
+        private final class JobManagerRegisteredRpcConnection extends RegisteredRpcConnection<
                         JobMasterId,
                         JobMasterGateway,
                         JMTMRegistrationSuccess,
@@ -395,8 +402,7 @@ public class DefaultJobLeaderService implements JobLeaderService {
                             JobMasterId,
                             JobMasterGateway,
                             JMTMRegistrationSuccess,
-                            JMTMRegistrationRejection>
-                    generateRegistration() {
+                            JMTMRegistrationRejection> generateRegistration() {
                 return new DefaultJobLeaderService.JobManagerRetryingRegistration(
                         LOG,
                         rpcService,
@@ -412,13 +418,14 @@ public class DefaultJobLeaderService implements JobLeaderService {
 
             @Override
             protected void onRegistrationSuccess(JMTMRegistrationSuccess success) {
+                //当收到 JobManager 允许注册的握手信号后，该方法被触发。它会提取出 JobManager 的 Gateway，并通知外部的监听器（JobLeaderListener）
                 runIfValidRegistrationAttemptOrElse(
                         () -> {
                             log.info(
                                     "Successful registration at job manager {} for job {}.",
                                     getTargetAddress(),
                                     jobId);
-
+                            //
                             jobLeaderListener.jobManagerGainedLeadership(
                                     jobId, getTargetGateway(), success);
                         },
@@ -437,7 +444,7 @@ public class DefaultJobLeaderService implements JobLeaderService {
                                     "Rejected registration at job manager {} for job {}.",
                                     getTargetAddress(),
                                     jobId);
-
+                            //TaskManager 尝试向新 Leader 注册时，被明确拒绝（如标识错误、Job 正在销毁等情况）
                             jobLeaderListener.jobManagerRejectedRegistration(
                                     jobId, getTargetAddress(), rejection);
                         },
@@ -449,6 +456,7 @@ public class DefaultJobLeaderService implements JobLeaderService {
                                         getTargetLeaderId()));
             }
 
+            //注册发生致命失败时的回调
             @Override
             protected void onRegistrationFailure(Throwable failure) {
                 runIfValidRegistrationAttemptOrElse(

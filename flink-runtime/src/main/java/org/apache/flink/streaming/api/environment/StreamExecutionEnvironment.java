@@ -1843,6 +1843,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
         }
 
         try {
+            //todo
             return execute(streamGraph);
         } catch (Throwable t) {
             Optional<ClusterDatasetCorruptedException> clusterDatasetCorruptedException =
@@ -1869,7 +1870,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      */
     @Internal
     public JobExecutionResult execute(StreamGraph streamGraph) throws Exception {
-        final JobClient jobClient = executeAsync(streamGraph);
+        final JobClient jobClient = executeAsync(streamGraph);//
 
         try {
             final JobExecutionResult jobExecutionResult;
@@ -1988,9 +1989,9 @@ public class StreamExecutionEnvironment implements AutoCloseable {
     public JobClient executeAsync(StreamGraph streamGraph) throws Exception {
         checkNotNull(streamGraph, "StreamGraph cannot be null.");
         final PipelineExecutor executor = getPipelineExecutor();
-
+        //todo
         CompletableFuture<JobClient> jobClientFuture =
-                executor.execute(streamGraph, configuration, userClassloader);
+                executor.execute(streamGraph, configuration, userClassloader);//
 
         try {
             JobClient jobClient = jobClientFuture.get();

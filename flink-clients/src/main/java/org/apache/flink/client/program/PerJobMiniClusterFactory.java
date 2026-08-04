@@ -73,6 +73,7 @@ public final class PerJobMiniClusterFactory {
         MiniClusterConfiguration miniClusterConfig =
                 getMiniClusterConfig(executionPlan.getMaximumParallelism());
         MiniCluster miniCluster = miniClusterFactory.apply(miniClusterConfig);
+        //todo
         miniCluster.start();
 
         return miniCluster

@@ -100,7 +100,7 @@ public class TaskExecutorToResourceManagerConnection
                 "Successful registration at resource manager {} under registration id {}.",
                 getTargetAddress(),
                 success.getRegistrationId());
-
+        //todo
         registrationListener.onRegistrationSuccess(this, success);
     }
 

@@ -48,7 +48,7 @@ public class FencedPekkoInvocationHandler<F extends Serializable> extends PekkoI
 
     private final Supplier<F> fencingTokenSupplier;
 
-    public FencedPekkoInvocationHandler(
+    public FencedPekkoInvocationHandler(//
             String address,
             String hostname,
             ActorRef rpcEndpoint,

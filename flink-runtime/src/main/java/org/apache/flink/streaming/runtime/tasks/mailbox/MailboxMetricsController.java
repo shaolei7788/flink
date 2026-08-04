@@ -133,6 +133,7 @@ public class MailboxMetricsController {
     public void measureMailboxLatency() {
         assert mailboxExecutor != null;
         long startTime = SystemClock.getInstance().relativeTimeMillis();
+        //投递邮件
         mailboxExecutor.execute(
                 () -> {
                     long endTime = SystemClock.getInstance().relativeTimeMillis();
@@ -145,6 +146,10 @@ public class MailboxMetricsController {
 
     private void scheduleLatencyMeasurement() {
         assert timerService != null;
+        // measurementInterval = 1000
+        // registerTimer是 基于时间触发的定时任务  当系统时间（Processing Time）或水印时间（Event Time）达到该时间点时，Flink 会自动触发对应算子的定时器回调方法
+        // 时间到了出触发 measureMailboxLatency 方法的执行
+        // measureMailboxLatency 又会调用scheduleLatencyMeasurement  相当于递归调用
         timerService.registerTimer(
                 timerService.getCurrentProcessingTime() + measurementInterval,
                 timestamp -> measureMailboxLatency());
