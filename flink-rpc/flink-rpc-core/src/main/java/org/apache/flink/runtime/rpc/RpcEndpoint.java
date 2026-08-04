@@ -100,6 +100,10 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
 
     /** RPC service to be used to start the RPC server and to obtain rpc gateways. */
     //RPC 服务的总入口，内部封装了 Pekko 的 ActorSystem，负责 Actor 的创建、生命周期管理以及地址解析
+    //它是整个 RPC 系统的“发动机”，具体的实现类通常是 PekkoRpcService。
+    //  核心职责：连接别人：通过 rpcService.connect(address, Gateway.class) 去连接远端的其他节点，拿到对方的电话号码。
+    //  包装自己：通过 rpcService.startServer(rpcEndpoint)，为刚诞生的业务组件在底层 Pekko 系统中注册一个 Actor，并套上一层 RpcServer 外壳。
+    //  提供线程池：为所有的通信、定时任务（Scheduled Tasks）提供底层的线程支撑
     private final RpcService rpcService;
 
     /** Unique identifier for this rpc endpoint. */
@@ -118,6 +122,7 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
      * The main thread executor to be used to execute future callbacks in the main thread of the
      * executing rpc server.
      */
+    //Flink 规定，为了保证线程安全，RpcEndpoint 子类里面的所有成员变量修改，都必须在这个单线程里执行，不允许加锁
     private final MainThreadExecutor mainThreadExecutor;
 
     /**
@@ -142,9 +147,10 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
      */
     protected RpcEndpoint(
             RpcService rpcService, String endpointId, Map<String, String> loggingContext) {
+        // rpcService = PekkoRpcService
         this.rpcService = checkNotNull(rpcService, "rpcService");
         this.endpointId = checkNotNull(endpointId, "endpointId");
-
+        //返回的动态代理对象 RpcServer = org.apache.flink.runtime.rpc.pekko.PekkoInvocationHandler@5d01ea21
         this.rpcServer = rpcService.startServer(this, loggingContext);
         this.resourceRegistry = new CloseableRegistry();
 
