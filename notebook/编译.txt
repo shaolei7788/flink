@@ -7,3 +7,5 @@ mvn clean package -o  -DskipTests -Djdk21 -Pjava21-target -Drat.skip=true -Dchec
 mvn clean package -o -pl flink-rpc/flink-rpc-akka,flink-rpc/flink-rpc-akka-loader -DskipTests -Dcheckstyle.skip -Dcheckstyle.failOnViolation=false -Dspotbugs.skip=true -Denforcer.skip=true -Dspotless.skip=true -Djdk21 -Pjava21-target -Dmaven.repo.local=D:\apache-maven-3.8.4\repository
 
 
+idea 运行 standalone模型
+https://blog.csdn.net/qq_20672231/article/details/147017660
