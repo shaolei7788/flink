@@ -290,13 +290,17 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
                     //todo 有返回值
                     ask(rpcInvocation, futureTimeout)
                             .thenApply(
+                                    // resultValue 是ask方法返回的结果
+                                    // 对返回结果进行反序列化
                                     // 先执行这里 再执行 completableFuture.complete(resultValue)
                                     resultValue -> deserializeValueIfNeeded(resultValue, method, flinkClassLoader));
 
             final CompletableFuture<Object> completableFuture = new CompletableFuture<>();
             resultFuture.whenComplete(
+                    //无论正常执行还是失败 都会执行
                     (resultValue, failure) -> {
                         if (failure != null) {
+                            //执行错误
                             completableFuture.completeExceptionally(
                                     resolveTimeoutException(
                                             ExceptionUtils.stripCompletionException(failure),
@@ -304,6 +308,7 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
                                             address,
                                             rpcInvocation));
                         } else {
+                            //执行成功
                             completableFuture.complete(resultValue);
                         }
                     });

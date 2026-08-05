@@ -152,6 +152,7 @@ import static org.apache.flink.util.Preconditions.checkState;
  * </ul>
  */
 //负责管理单一的具体作业（管 Task 调度）
+    // 启动的时候会向ResourceManager进行注册 申请资源
 public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         implements JobMasterGateway, JobMasterService {
 
