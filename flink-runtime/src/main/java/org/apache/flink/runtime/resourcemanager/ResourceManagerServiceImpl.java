@@ -200,6 +200,8 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
                                 newLeaderSessionID);
 
                         try {
+                            //todo
+                            System.out.println("startNewLeaderResourceManager:   "+ Thread.currentThread().getName());
                             startNewLeaderResourceManager(newLeaderSessionID);
                         } catch (Throwable t) {
                             fatalErrorHandler.onFatalError(
@@ -250,8 +252,7 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
         stopLeaderResourceManager();
 
         this.leaderSessionID = newLeaderSessionID;
-        this.leaderResourceManager =
-                resourceManagerFactory.createResourceManager(rmProcessContext, newLeaderSessionID);
+        this.leaderResourceManager = resourceManagerFactory.createResourceManager(rmProcessContext, newLeaderSessionID);
 
         final ResourceManager<?> newLeaderResourceManager = this.leaderResourceManager;
 
@@ -266,6 +267,8 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
                 .thenAcceptAsync(
                         (isStillLeader) -> {
                             if (isStillLeader) {
+                                //todo 确认成为leader
+                                // EmbeddedLeaderElection#confirmLeadershipAsync
                                 leaderElection.confirmLeadershipAsync(
                                         newLeaderSessionID, newLeaderResourceManager.getAddress());
                             }

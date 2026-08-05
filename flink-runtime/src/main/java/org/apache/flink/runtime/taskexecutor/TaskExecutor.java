@@ -199,6 +199,10 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  * TaskExecutor implementation. The task executor is responsible for the execution of multiple
  * {@link Task}.
  */
+// 会向 ResourceManager 和 JobMaster 注册
+//TaskExecutor 没有继承 FencedRpcEndpoint（而是直接继承了普通的 RpcEndpoint），是因为它的角色定位是“打工人（Worker）”，而不是“管理者（Master）”。
+//在分布式系统中，只有存在“领导者选举（Leader Election）”和“主备切换（Active-Standby）”的组件，才会面临“脑裂（Split-Brain）”的风险，
+// 才需要 Fencing 机制来验明正身
 public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 
     public static final String TASK_MANAGER_NAME = "taskmanager";
@@ -400,6 +404,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
         this.shuffleDescriptorsCache = taskExecutorServices.getShuffleDescriptorCache();
     }
 
+    //跟ResourceManager的心跳管理
     private HeartbeatManager<Void, TaskExecutorHeartbeatPayload>
             createResourceManagerHeartbeatManager(
                     HeartbeatServices heartbeatServices, ResourceID resourceId) {
@@ -407,6 +412,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
                 resourceId, new ResourceManagerHeartbeatListener(), getMainThreadExecutor(), log);
     }
 
+    //跟JobMaster的心跳管理
     private HeartbeatManager<AllocatedSlotReport, TaskExecutorToJobManagerHeartbeatPayload>
             createJobManagerHeartbeatManager(
                     HeartbeatServices heartbeatServices, ResourceID resourceId) {
@@ -484,6 +490,8 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
     private void startTaskExecutorServices() throws Exception {
         try {
             // start by connecting to the ResourceManager
+            // 获取resourceManager
+            // EmbeddedLeaderService$EmbeddedLeaderRetrievalService#start()
             resourceManagerLeaderRetriever.start(new ResourceManagerLeaderListener());
 
             // tell the task slot table who's responsible for the task slot actions
@@ -493,6 +501,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
             // getAddress() = pekko://flink/user/rpc/taskmanager_0
             // getRpcService() = PekkoRpcService
             // DefaultJobLeaderService#start
+            // 获取JobMaster
             jobLeaderService.start(getAddress(), getRpcService(), haServices, new JobLeaderListenerImpl());
 
             fileCache =
@@ -1521,8 +1530,8 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 
     private void notifyOfNewResourceManagerLeader(
             String newLeaderAddress, ResourceManagerId newResourceManagerId) {
-        resourceManagerAddress =
-                createResourceManagerAddress(newLeaderAddress, newResourceManagerId);
+        //pekko://flink/user/rpc/resourcemanager_1
+        resourceManagerAddress = createResourceManagerAddress(newLeaderAddress, newResourceManagerId);
         //
         reconnectToResourceManager(
                 new FlinkException(
@@ -1545,7 +1554,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
     private void reconnectToResourceManager(Exception cause) {
         closeResourceManagerConnection(cause);
         startRegistrationTimeout();
-        //todo
+        //todo  连接ResourceManager
         tryConnectToResourceManager();
     }
 
@@ -1562,7 +1571,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
         assert (resourceManagerConnection == null);
 
         log.info("Connecting to ResourceManager {}.", resourceManagerAddress);
-
+        //创建TaskExecutorRegistration 对象
         final TaskExecutorRegistration taskExecutorRegistration =
                 new TaskExecutorRegistration(
                         getAddress(),
@@ -1721,7 +1730,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 
         if (taskSlotTable.hasAllocatedSlots(jobId)) {
             log.info("Offer reserved slots to the leader of job {}.", jobId);
-
+            //跟JobMaster 进行通信
             final JobMasterGateway jobMasterGateway = jobManagerConnection.getJobManagerGateway();
 
             final Iterator<TaskSlot<Task>> reservedSlotsIterator =
@@ -2526,8 +2535,10 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
                     () ->
                             //
                             notifyOfNewResourceManagerLeader(
-                                    leaderAddress,
-                                    ResourceManagerId.fromUuidOrNull(leaderSessionID)));
+                                    leaderAddress,//pekko://flink/user/rpc/resourcemanager_1
+                                    //leaderSessionID = e13f3204-9762-45e0-a0c3-bde53c8e90dd
+                                    // ResourceManagerId.fromUuidOrNull(leaderSessionID)) = a0c3bde53c8e90dde13f3204976245e0
+                                    ResourceManagerId.fromUuidOrNull(leaderSessionID)));//
         }
 
         @Override
@@ -2538,6 +2549,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 
     private final class JobLeaderListenerImpl implements JobLeaderListener {
 
+        //TaskExecutor 获知了某个 JobMaster 的 Leader 地址
         @Override
         public void jobManagerGainedLeadership(
                 final JobID jobId,
@@ -2599,6 +2611,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
             final ResourceID resourceManagerId = success.getResourceManagerId();
             final InstanceID taskExecutorRegistrationId = success.getRegistrationId();
             final ClusterInformation clusterInformation = success.getClusterInformation();
+            // 用来跟ResourceManager进行通信
             final ResourceManagerGateway resourceManagerGateway = connection.getTargetGateway();
 
             byte[] tokens = success.getInitialTokens();

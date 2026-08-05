@@ -82,6 +82,7 @@ import static org.apache.flink.util.Preconditions.checkState;
  * Pekko based {@link RpcService} implementation. The RPC service starts an actor to receive RPC
  * invocations from a {@link RpcGateway}.
  */
+//充当了 Flink 代码与底层 Pekko Actor 模型之间的桥梁
 @ThreadSafe
 public class PekkoRpcService implements RpcService {
 
@@ -91,7 +92,10 @@ public class PekkoRpcService implements RpcService {
 
     private final Object lock = new Object();
 
+    //这是最核心的属性。它是 Pekko 提供的一个重量级对象，负责管理所有的 Actor（每个 Flink 的 RpcEndpoint 底层都对应一个 Pekko Actor）。
+    // 它控制了线程池（Dispatcher）、网络通信（Remoting）以及消息的序列化
     private final ActorSystem actorSystem;
+    //RPC 服务的配置项合集。包含了通信的超时时间（timeout）、最大消息体积（maximum framesize，防止大消息打爆网络）、以及心跳间隔等重要参数
     private final PekkoRpcServiceConfiguration configuration;
 
     private final ClassLoader flinkClassLoader;
@@ -99,13 +103,16 @@ public class PekkoRpcService implements RpcService {
     @GuardedBy("lock")
     private final Map<ActorRef, RpcEndpoint> actors = CollectionUtil.newHashMapWithExpectedSize(4);
 
+    //当前 RPC 服务的绑定地址和端口
     private final String address;
     private final int port;
 
     private final boolean captureAskCallstacks;
 
+    //内部的定时任务调度器。由于网络通信经常涉及“超时重试”、“周期性心跳”，这个调度器用来向底层的 Actor 系统提交定时任务
     private final ScheduledExecutor internalScheduledExecutor;
 
+    //一个异步凭证，用于追踪当前 RPC 服务是否已经完全关闭。Flink 很多组件的优雅退出依赖于这个 Future
     private final CompletableFuture<Void> terminationFuture;
 
     private final Supervisor supervisor;
@@ -174,7 +181,7 @@ public class PekkoRpcService implements RpcService {
                 SupervisorActor.startSupervisorActor(
                         actorSystem,
                         withContextClassLoader(terminationFutureExecutor, flinkClassLoader));
-
+        //
         return Supervisor.create(actorRef, terminationFutureExecutor);
     }
 
@@ -210,17 +217,19 @@ public class PekkoRpcService implements RpcService {
         }
     }
 
+    //作用：连接到远程的 RPC 节点，并生成一个客户端代理（Gateway）。
+    //底层逻辑：如果 TaskManager 知道了 JobManager 的地址，就会调用此方法。Pekko 会解析地址，并返回一个 RpcGateway（比如 ResourceManagerGateway）。
+    // TaskManager 拿着这个 Gateway 调用方法（比如 registerTaskManager），实际上是在底层把方法名和参数序列化成网络消息发给了 JobManager
     // this method does not mutate state and is thus thread-safe
     @Override
-    public <C extends RpcGateway> CompletableFuture<C> connect(
-            final String address, final Class<C> clazz) {
+    public <C extends RpcGateway> CompletableFuture<C> connect(final String address, final Class<C> clazz) {
 
         return connectInternal(
                 address,
                 clazz,
                 (ActorRef actorRef) -> {
                     Tuple2<String, String> addressHostname = extractAddressHostname(actorRef);
-
+                    //
                     return new PekkoInvocationHandler(
                             addressHostname.f0,
                             addressHostname.f1,
@@ -234,16 +243,17 @@ public class PekkoRpcService implements RpcService {
                 });
     }
 
+    //作用：与 connect 类似，但带有 FencingToken（隔离令牌）。
+    //底层逻辑：这是 Flink 解决脑裂（Split-Brain）问题的关键。连接高可用（HA）组件时必须带上当前的 Leader Token，如果 Token 不匹配，消息会被直接丢弃
     // this method does not mutate state and is thus thread-safe
     @Override
-    public <F extends Serializable, C extends FencedRpcGateway<F>> CompletableFuture<C> connect(
-            String address, F fencingToken, Class<C> clazz) {
+    public <F extends Serializable, C extends FencedRpcGateway<F>> CompletableFuture<C> connect(String address, F fencingToken, Class<C> clazz) {
         return connectInternal(
                 address,
                 clazz,
                 (ActorRef actorRef) -> {
                     Tuple2<String, String> addressHostname = extractAddressHostname(actorRef);
-
+                    //
                     return new FencedPekkoInvocationHandler<>(
                             addressHostname.f0,
                             addressHostname.f1,
@@ -258,11 +268,14 @@ public class PekkoRpcService implements RpcService {
                 });
     }
 
-    @Override
-    public <C extends RpcEndpoint & RpcGateway> RpcServer startServer(
-            C rpcEndpoint, Map<String, String> loggingContext) {
-        checkNotNull(rpcEndpoint, "rpc endpoint");
 
+    //作用：将 Flink 的业务组件（如 TaskManager、ResourceManager）启动为 RPC 服务。
+    //底层逻辑：它会把传入的 RpcEndpoint 包装成一个 PekkoRpcActor 并注册到 ActorSystem 中。
+    // 随后返回一个 RpcServer（动态代理），组件通过这个代理就可以接收网络消息了
+    @Override
+    public <C extends RpcEndpoint & RpcGateway> RpcServer startServer(C rpcEndpoint, Map<String, String> loggingContext) {
+        checkNotNull(rpcEndpoint, "rpc endpoint");
+        //todo ?  它会把传入的 RpcEndpoint 包装成一个 PekkoRpcActor 并注册到 ActorSystem 中
         final SupervisorActor.ActorRegistration actorRegistration = registerRpcActor(rpcEndpoint, loggingContext);
         final ActorRef actorRef = actorRegistration.getActorRef();
         final CompletableFuture<Void> actorTerminationFuture =
@@ -289,9 +302,14 @@ public class PekkoRpcService implements RpcService {
         implementedRpcGateways.add(PekkoBasedEndpoint.class);
 
         final InvocationHandler invocationHandler;
-
+        System.out.println(rpcEndpoint.getClass().getName());
         if (rpcEndpoint instanceof FencedRpcEndpoint) {
             // a FencedRpcEndpoint needs a FencedPekkoInvocationHandler
+            // JobMaster
+            // Dispatcher
+            // ResourceManager
+            // StandaloneResourceManager
+            // 这四个继承了 FencedRpcEndpoint
             invocationHandler =
                     new FencedPekkoInvocationHandler<>(
                             address,
@@ -305,17 +323,18 @@ public class PekkoRpcService implements RpcService {
                             captureAskCallstacks,
                             flinkClassLoader);
         } else {
+            // TaskExecutor 没有继承 FencedRpcEndpoint
             invocationHandler =
                     new PekkoInvocationHandler(
-                            address,
-                            hostname,
-                            actorRef,
-                            configuration.getTimeout(),
-                            configuration.getMaximumFramesize(),
+                            address,//pekko://flink/user/rpc/taskmanager_0
+                            hostname,//localhost
+                            actorRef,// Actor[pekko://flink/user/rpc/taskmanager_0#1857661143]
+                            configuration.getTimeout(),//300
+                            configuration.getMaximumFramesize(),//
                             configuration.isForceRpcInvocationSerialization(),
                             actorTerminationFuture,
-                            captureAskCallstacks,
-                            flinkClassLoader);
+                            captureAskCallstacks,//true
+                            flinkClassLoader);//
         }
 
         // Rather than using the System ClassLoader directly, we derive the ClassLoader
@@ -379,6 +398,9 @@ public class PekkoRpcService implements RpcService {
         }
     }
 
+    //作用：停止指定的 RPC 服务节点。它会向底层的 Actor 发送毒药消息（PoisonPill 或 stop 指令），让其停止接收新消息并销毁。
+    //stopService() / closeAsync()
+    //作用：关闭整个 PekkoRpcService。通常在 JVM 退出或 TaskManager/JobManager 进程销毁时调用，它会关闭整个 ActorSystem，释放绑定的端口和网络资源
     @Override
     public void stopServer(RpcServer selfGateway) {
         if (selfGateway instanceof PekkoBasedEndpoint) {
@@ -517,8 +539,8 @@ public class PekkoRpcService implements RpcService {
                 actorRefFuture.thenCombineAsync(
                         handshakeFuture,
                         (ActorRef actorRef, HandshakeSuccessMessage ignored) -> {
-                            InvocationHandler invocationHandler =
-                                    invocationHandlerFactory.apply(actorRef);
+                            //通过工厂获取InvocationHandler 对象
+                            InvocationHandler invocationHandler = invocationHandlerFactory.apply(actorRef);
 
                             // Rather than using the System ClassLoader directly, we derive the
                             // ClassLoader from this class.
@@ -584,8 +606,7 @@ public class PekkoRpcService implements RpcService {
 
         @Override
         public CompletableFuture<Void> closeAsync() {
-            return ExecutorUtils.nonBlockingShutdown(
-                    30L, TimeUnit.SECONDS, terminationFutureExecutor);
+            return ExecutorUtils.nonBlockingShutdown(30L, TimeUnit.SECONDS, terminationFutureExecutor);
         }
     }
 }

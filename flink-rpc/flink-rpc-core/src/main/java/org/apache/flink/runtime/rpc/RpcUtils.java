@@ -154,7 +154,7 @@ public class RpcUtils {
         if (bindPort.isPresent()) {
             rpcServiceBuilder = rpcServiceBuilder.withBindPort(bindPort.get());
         }
-        return rpcServiceBuilder.createAndStart();
+        return rpcServiceBuilder.createAndStart();//
     }
 
     // We don't want this class to be instantiable

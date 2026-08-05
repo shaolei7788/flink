@@ -225,8 +225,7 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
 
         try {
             FlinkSecurityManager.setFromConfiguration(configuration);
-            PluginManager pluginManager =
-                    PluginUtils.createPluginManagerFromRootFolder(configuration);
+            PluginManager pluginManager = PluginUtils.createPluginManagerFromRootFolder(configuration);
             configureFileSystems(configuration, pluginManager);
 
             SecurityContext securityContext = installSecurityContext(configuration);
@@ -724,6 +723,7 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
 
         final String clusterEntrypointName = clusterEntrypoint.getClass().getSimpleName();
         try {
+            //todo 启动集群
             clusterEntrypoint.startCluster();
         } catch (ClusterEntrypointException e) {
             LOG.error(

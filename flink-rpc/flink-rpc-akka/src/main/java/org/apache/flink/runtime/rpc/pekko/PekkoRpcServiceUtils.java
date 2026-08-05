@@ -86,7 +86,7 @@ public class PekkoRpcServiceUtils {
 
         bindPort.ifPresent(rpcServiceBuilder::withBindPort);
 
-        return rpcServiceBuilder.createAndStart();
+        return rpcServiceBuilder.createAndStart();//
     }
 
     static PekkoRpcServiceBuilder remoteServiceBuilder(
@@ -322,6 +322,7 @@ public class PekkoRpcServiceUtils {
             return this;
         }
 
+        //创建PekkoRpcService 并启动     wordcount 会被MiniCluster#createLocalRpcService 调用
         public PekkoRpcService createAndStart() throws Exception {
             //
             return createAndStart(PekkoRpcService::new);//
@@ -340,13 +341,11 @@ public class PekkoRpcServiceUtils {
 
             // pekko internally caches the context class loader
             // make sure it uses the plugin class loader
-            try (TemporaryClassLoaderContext ignored =
-                    TemporaryClassLoaderContext.of(getClass().getClassLoader())) {
+            try (TemporaryClassLoaderContext ignored = TemporaryClassLoaderContext.of(getClass().getClassLoader())) {
                 //外部可达地址
                 if (externalAddress == null) {
                     // create local actor system
-                    actorSystem =
-                            ActorSystemBootstrapTools.startLocalActorSystem(
+                    actorSystem = ActorSystemBootstrapTools.startLocalActorSystem(
                                     configuration,
                                     actorSystemName,
                                     logger,

@@ -160,8 +160,9 @@ public abstract class RetryingRegistration<
                     rpcGatewayFuture.thenAcceptAsync(
                             (G rpcGateway) -> {
                                 log.info("Resolved {} address, beginning registration", targetName);
+                                //tod 注册
                                 register(
-                                        rpcGateway,
+                                        rpcGateway,//resourcemanager 网关对象
                                         1,
                                         retryingRegistrationConfiguration
                                                 .getInitialRegistrationTimeoutMillis());
@@ -218,8 +219,15 @@ public abstract class RetryingRegistration<
                     targetName,
                     attempt,
                     timeoutMillis);
-            CompletableFuture<RegistrationResponse> registrationFuture =
-                    invokeRegistration(gateway, fencingToken, timeoutMillis);
+            //todo 向resourcemanager 进行注册  gateway = org.apache.flink.runtime.rpc.pekko.FencedPekkoInvocationHandler@14d4970f
+            //会有三个注册
+            // this = TaskExecutorToResourceManagerConnection$ResourceManagerRegistration
+            //      【TaskManager向ResourceManager注册】 向资源管理器报到，汇报自己拥有的 Slot
+            // this = JobMaster$ResourceManagerConnection
+            //      【JobMaster向ResourceManager】 WordCount 作业启动时，负责管理该作业的 JobMaster 向资源管理器报到，并向其申请 Slot 资源来运行 WordCount
+            // this = DefaultJobLeaderService$JobManagerRetryingRegistration
+            //      【TaskManager向JobMaster注册】 TaskManager 必须知道具体是谁（哪个 JobMaster）成为了这个作业的 Leader
+            CompletableFuture<RegistrationResponse> registrationFuture = invokeRegistration(gateway, fencingToken, timeoutMillis);
 
             // if the registration was successful, let the TaskExecutor know
             CompletableFuture<Void> registrationAcceptFuture =
@@ -227,15 +235,16 @@ public abstract class RetryingRegistration<
                             (RegistrationResponse result) -> {
                                 if (!isCanceled()) {
                                     if (result instanceof RegistrationResponse.Success) {
+                                        //注册成功
                                         log.debug(
                                                 "Registration with {} at {} was successful.",
                                                 targetName,
                                                 targetAddress);
                                         S success = (S) result;
                                         completionFuture.complete(
-                                                RetryingRegistrationResult.success(
-                                                        gateway, success));
+                                                RetryingRegistrationResult.success(gateway, success));
                                     } else if (result instanceof RegistrationResponse.Rejection) {
+                                        //注册拒接
                                         log.debug(
                                                 "Registration with {} at {} was rejected.",
                                                 targetName,
@@ -246,6 +255,7 @@ public abstract class RetryingRegistration<
                                     } else {
                                         // registration failure
                                         if (result instanceof RegistrationResponse.Failure) {
+                                            //注册失败
                                             RegistrationResponse.Failure failure =
                                                     (RegistrationResponse.Failure) result;
                                             log.info(
@@ -262,6 +272,7 @@ public abstract class RetryingRegistration<
                                                 "Pausing and re-attempting registration in {} ms",
                                                 retryingRegistrationConfiguration
                                                         .getRefusedDelayMillis());
+                                        //
                                         registerLater(
                                                 gateway,
                                                 1,
@@ -385,6 +396,7 @@ public abstract class RetryingRegistration<
                         S extends RegistrationResponse.Success,
                         R extends RegistrationResponse.Rejection>
                 RetryingRegistrationResult<G, S, R> success(G gateway, S success) {
+            //
             return new RetryingRegistrationResult<>(gateway, success, null);
         }
 

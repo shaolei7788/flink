@@ -84,6 +84,13 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  * @param <T> Type of the {@link RpcEndpoint}
  */
 //实际的 Pekko Actor 节点，负责接收并解析 RpcInvocation 消息，通过反射机制调用对应 RpcEndpoint 中的业务逻辑
+
+//. PekkoRpcActor：不设防的普通信使
+//包装的对象：它用于包装普通的 RpcEndpoint。
+//消息处理机制：它是“不设防”的。只要有 RPC 消息发送到它监听的地址，它就会接收并转交给上层的业务组件处理。
+//适用场景：适用于那些不需要参与领导者选举（Leader Election）的组件。
+//源码代表：TaskExecutor（运行在 TaskManager 中）。TaskManager 是底层干活的，谁是 Master 它就听谁的，
+// 自身不存在“多个 TM 争夺唯一 Leader”的情况，因此不需要 Fencing 机制
 class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
 
     protected final Logger log = LoggerFactory.getLogger(getClass());
@@ -159,11 +166,11 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
 
     @Override
     public Receive createReceive() {
-        //
+        //todo
         return ReceiveBuilder.create()
                 .match(RemoteHandshakeMessage.class, this::handleHandshakeMessage)
                 .match(ControlMessages.class, this::handleControlMessage)
-                .matchAny(this::handleMessage)
+                .matchAny(this::handleMessage)//
                 .build();
     }
 
@@ -173,6 +180,7 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
                 mainThreadValidator.enterMainThread();
 
                 try {
+                    //
                     handleRpcMessage(message);
                 } finally {
                     mainThreadValidator.exitMainThread();
@@ -196,6 +204,7 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
         try (MdcUtils.MdcCloseable ctx = MdcUtils.withContext(loggingContext)) {
             switch (controlMessage) {
                 case START:
+                    // StoppedState#start
                     state = state.start(this, flinkClassLoader);
                     break;
                 case STOP:
@@ -224,10 +233,12 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
 
     protected void handleRpcMessage(Object message) {
         if (message instanceof RunAsync) {
+            //
             handleRunAsync((RunAsync) message);
         } else if (message instanceof CallAsync) {
             handleCallAsync((CallAsync) message);
         } else if (message instanceof RpcInvocation) {
+            //
             handleRpcInvocation((RpcInvocation) message);
         } else {
             log.warn(
@@ -290,7 +301,7 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
         try {
             String methodName = rpcInvocation.getMethodName();
             Class<?>[] parameterTypes = rpcInvocation.getParameterTypes();
-
+            //
             rpcMethod = lookupRpcMethod(methodName, parameterTypes);
         } catch (final NoSuchMethodException e) {
             log.error("Could not find rpc method for rpc invocation.", e);

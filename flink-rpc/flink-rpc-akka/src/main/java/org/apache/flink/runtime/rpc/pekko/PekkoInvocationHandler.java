@@ -132,6 +132,11 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
 
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        // declaringClass = ResourceManagerGateway
+        // declaringClass = DispatcherGateway
+        // declaringClass = TaskExecutorGateway
+        // declaringClass = DispatcherGateway
+        // declaringClass = RestfulGateway
         Class<?> declaringClass = method.getDeclaringClass();
 
         Object result;
@@ -158,7 +163,7 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
             //打包消息发给 ActorRef
             result = invokeRpc(method, args);
         }
-
+        //
         return result;
     }
 
@@ -206,8 +211,27 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
 
     @Override
     public void start() {
-        //
+        // 发送一个控制开始信号
+        //正式激活并启动底层的 Pekko Actor，使其将状态切换为“运行中”，从而开始监听、接收并处理外界发送过来的业务 RPC 消息
         rpcEndpoint.tell(ControlMessages.START, ActorRef.noSender());
+
+        // 接下来会执行
+        //rpcEndpoint.tell(ControlMessages.START) [PekkoInvocationHandler]
+        //     │
+        //     ▼
+        //PekkoRpcActor 接收到匹配的消息类型 [createReceive]
+        //     │
+        //     ▼
+        //调用内部的 handleControlMessage()，将其交给 StoppedState 处理
+        //     │
+        //     ▼
+        //【关键状态切换】将 Actor 的状态由 StoppedState 变更为 StartedState
+        //     │
+        //     ▼
+        //回调业务组件的 RpcEndpoint.internalCallOnStart()
+        //     │
+        //     ▼
+        //执行你熟悉的生命周期钩子方法：onStart()
     }
 
     @Override
@@ -237,14 +261,14 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
         Duration futureTimeout =
                 RpcGatewayUtils.extractRpcTimeout(parameterAnnotations, args, timeout);
         //将当前调用的 method（方法名、参数类型）和 args 参数打包成一个 RpcInvocation 消息
-        final RpcInvocation rpcInvocation =
-                createRpcInvocationMessage(
+        // rpcInvocation = LocalRpcInvocation
+        final RpcInvocation rpcInvocation = createRpcInvocationMessage(
                         method.getDeclaringClass().getSimpleName(),
                         methodName,
                         isLocalRpcInvocation,
                         parameterTypes,
                         args);
-
+        //public abstract java.util.concurrent.CompletableFuture org.apache.flink.runtime.resourcemanager.ResourceManagerGateway.registerTaskExecutor(org.apache.flink.runtime.resourcemanager.TaskExecutorRegistration,java.time.Duration)
         Class<?> returnType = method.getReturnType();
 
         final Object result;
@@ -266,9 +290,8 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
                     //todo 有返回值
                     ask(rpcInvocation, futureTimeout)
                             .thenApply(
-                                    resultValue ->
-                                            deserializeValueIfNeeded(
-                                                    resultValue, method, flinkClassLoader));
+                                    // 先执行这里 再执行 completableFuture.complete(resultValue)
+                                    resultValue -> deserializeValueIfNeeded(resultValue, method, flinkClassLoader));
 
             final CompletableFuture<Object> completableFuture = new CompletableFuture<>();
             resultFuture.whenComplete(
@@ -297,7 +320,7 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
                 }
             }
         }
-
+        //结果
         return result;
     }
 

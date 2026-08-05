@@ -241,8 +241,7 @@ public class DefaultJobLeaderIdService implements JobLeaderIdService {
         }
 
         @Override
-        public void notifyLeaderAddress(
-                @Nullable String leaderAddress, @Nullable UUID leaderSessionId) {
+        public void notifyLeaderAddress(@Nullable String leaderAddress, @Nullable UUID leaderSessionId) {
             if (running) {
                 UUID previousJobLeaderId = null;
 
@@ -268,6 +267,7 @@ public class DefaultJobLeaderIdService implements JobLeaderIdService {
                         leaderIdFuture = CompletableFuture.completedFuture(leaderSessionId);
                     }
                 } else {
+                    //todo
                     if (leaderSessionId != null) {
                         // there was no active leader, but we now have a new leader
                         LOG.debug(
@@ -275,7 +275,7 @@ public class DefaultJobLeaderIdService implements JobLeaderIdService {
                                 jobId,
                                 leaderSessionId,
                                 leaderAddress);
-                        leaderIdFuture.complete(leaderSessionId);
+                        leaderIdFuture.complete(leaderSessionId);//
                     }
                 }
 
@@ -295,6 +295,7 @@ public class DefaultJobLeaderIdService implements JobLeaderIdService {
                     }
                 } else if (null != leaderSessionId) {
                     // Cancel timeout because we've found an active leader for it
+                    //todo
                     cancelTimeout();
                 }
             } else {

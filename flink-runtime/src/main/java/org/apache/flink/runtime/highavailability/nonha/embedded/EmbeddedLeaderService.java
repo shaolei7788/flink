@@ -56,12 +56,15 @@ public class EmbeddedLeaderService {
 
     private static final Logger LOG = LoggerFactory.getLogger(EmbeddedLeaderService.class);
 
+    //作用：全局并发状态锁。选主涉及多个组件并发注册或退出，由于是非分布式环境，直接使用 JVM 级别的锁来保证竞选、状态变更的线程安全
     private final Object lock = new Object();
 
     private final Executor notificationExecutor;
 
     private final Set<EmbeddedLeaderElection> allLeaderContenders;
 
+    //作用：吃瓜群众（监听者）队列。
+    //具体意义：那些不需要当老大、但必须要知道老大是谁的组件（例如 TaskExecutor、JobClient）。一旦老大换人，服务会挨个通知这个集合里的所有人
     private final Set<EmbeddedLeaderRetrievalService> listeners;
 
     /** proposed leader, which has been notified of leadership grant, but has not confirmed. */
@@ -73,9 +76,11 @@ public class EmbeddedLeaderService {
     /** fencing UID for the current leader (or proposed leader). */
     private volatile UUID currentLeaderSessionId;
 
+    //作用：当前胜出老大的标记。具体意义：保存当前抢到主节点的组件的 RPC 地址，以及当前任期的唯一会话 ID（Leader Session ID），用于在逻辑上区分每一次选主变更
     /** the cached address of the current leader. */
     private String currentLeaderAddress;
 
+    //生命周期状态。标记当前内存选主服务是否已经被彻底关闭
     /** flag marking the service as terminated. */
     private boolean shutdown;
 
@@ -153,12 +158,13 @@ public class EmbeddedLeaderService {
     // ------------------------------------------------------------------------
     //  creating contenders and listeners
     // ------------------------------------------------------------------------
-
+    //返回一个 LeaderElectionService 的嵌入式实现类。当 JobMaster 启动时，就会通过这个方法返回的接口，把自己当成一个 LeaderContender 注册进来
     public LeaderElection createLeaderElectionService(String componentId) {
         checkState(!shutdown, "leader election service is shut down");
         return new EmbeddedLeaderElection(componentId);
     }
 
+    //返回一个 LeaderRetrievalService 实现类。TaskExecutor 启动时调用它，就能在内存里源源不断地收到最新老大的地址变动通知
     public LeaderRetrievalService createLeaderRetrievalService() {
         checkState(!shutdown, "leader election service is shut down");
         return new EmbeddedLeaderRetrievalService();
@@ -168,6 +174,7 @@ public class EmbeddedLeaderService {
     //  adding and removing contenders & listeners
     // ------------------------------------------------------------------------
 
+    //添加候选人
     /** Callback from leader contenders when they start their service. */
     private void addContender(
             EmbeddedLeaderElection embeddedLeaderElection, LeaderContender contender) {
@@ -265,10 +272,10 @@ public class EmbeddedLeaderService {
 
                     // mark leadership
                     currentLeaderConfirmed = embeddedLeaderElection;
-                    currentLeaderAddress = leaderAddress;
+                    currentLeaderAddress = leaderAddress;//pekko://flink/user/rpc/resourcemanager_1
                     currentLeaderProposed = null;
 
-                    // notify all listeners
+                    //todo 通知所有的监听器  notify all listeners
                     return notifyAllListeners(leaderAddress, leaderSessionId);
                 } else {
                     LOG.debug(
@@ -282,17 +289,25 @@ public class EmbeddedLeaderService {
         return FutureUtils.completedVoidFuture();
     }
 
+    //通知所有监听器
     private CompletableFuture<Void> notifyAllListeners(String address, UUID leaderSessionId) {
-        final List<CompletableFuture<Void>> notifyListenerFutures =
-                new ArrayList<>(listeners.size());
+        final List<CompletableFuture<Void>> notifyListenerFutures = new ArrayList<>(listeners.size());
 
         for (EmbeddedLeaderRetrievalService listener : listeners) {
-            notifyListenerFutures.add(notifyListener(address, leaderSessionId, listener.listener));
+            CompletableFuture<Void> completableFuture = notifyListener(
+                    address,
+                    leaderSessionId,
+                    listener.listener);
+            notifyListenerFutures.add(completableFuture);
         }
 
         return FutureUtils.waitForAll(notifyListenerFutures);
     }
 
+    //抢占检查：当有新的候选人（Contender）加入，或者旧的老大退出时，该方法会被触发。它首先检查当前内存中是否已经有存活的老大。
+    //指定胜出者：如果当前没有老大，它会直接去 contenders（竞争者集合）里拿第一个加入的候选人。
+    //颁发王冠：一旦确定了谁是第一个，它就会在内存中随机生成一个新的 UUID 作为任期会话 ID（Leader Session ID），然后直接调用
+    //负责模拟选主、并在候选人中决定谁来当老大
     @GuardedBy("lock")
     private CompletableFuture<Void> updateLeader() {
         // this must be called under the lock
@@ -306,8 +321,8 @@ public class EmbeddedLeaderService {
             } else {
                 // propose a leader and ask it
                 final UUID leaderSessionId = UUID.randomUUID();
-                EmbeddedLeaderElection embeddedLeaderElection =
-                        allLeaderContenders.iterator().next();
+                //选择第一个人当leader
+                EmbeddedLeaderElection embeddedLeaderElection = allLeaderContenders.iterator().next();
 
                 currentLeaderSessionId = leaderSessionId;
                 currentLeaderProposed = embeddedLeaderElection;
@@ -316,10 +331,12 @@ public class EmbeddedLeaderService {
                 LOG.info(
                         "Proposing leadership to the contender that is registered under component ID '{}'.",
                         embeddedLeaderElection.componentId);
-
-                return execute(
-                        new GrantLeadershipCall(
-                                embeddedLeaderElection.contender, leaderSessionId, LOG));
+                GrantLeadershipCall grantLeadershipCall = new GrantLeadershipCall(
+                        embeddedLeaderElection.contender,
+                        leaderSessionId,
+                        LOG);
+                //告诉该候选人是leader了
+                return execute(grantLeadershipCall);
             }
         } else {
             return CompletableFuture.completedFuture(null);
@@ -363,6 +380,7 @@ public class EmbeddedLeaderService {
         }
     }
 
+    //移除监听器
     private void removeListener(EmbeddedLeaderRetrievalService service) {
         synchronized (lock) {
             // if the service was not even started, simply do nothing
@@ -438,6 +456,7 @@ public class EmbeddedLeaderService {
     }
 
     private CompletableFuture<Void> execute(Runnable runnable) {
+        //指定runnable 在notificationExecutor 运行
         return CompletableFuture.runAsync(runnable, notificationExecutor);
     }
 
@@ -474,6 +493,7 @@ public class EmbeddedLeaderService {
                 UUID leaderSessionID, String leaderAddress) {
             checkNotNull(leaderSessionID);
             checkNotNull(leaderAddress);
+            //确认成为leader
             return confirmLeader(this, leaderSessionID, leaderAddress);
         }
 
@@ -549,6 +569,9 @@ public class EmbeddedLeaderService {
         public void run() {
             try {
                 //todo
+                // JobMaster$ResourceManagerLeaderListener#notifyLeaderAddress
+                // DefaultJobLeaderIdService$JobLeaderIdListener#notifyLeaderAddress
+                // DefaultJobLeaderService$JobManagerLeaderListener#notifyLeaderAddress
                 listener.notifyLeaderAddress(address, leaderSessionId);//
             } catch (Throwable t) {
                 logger.warn("Error notifying leader listener about new leader", t);
@@ -575,6 +598,10 @@ public class EmbeddedLeaderService {
         @Override
         public void run() {
             try {
+                //赋予leader角色
+                // DefaultDispatcherRunner#grantLeadership
+                // ResourceManagerServiceImpl#grantLeadership
+                System.out.println(contender.getClass().getName()  + "  grantLeadership " + Thread.currentThread().getName());
                 contender.grantLeadership(leaderSessionId);
             } catch (Throwable t) {
                 logger.warn("Error granting leadership to contender", t);

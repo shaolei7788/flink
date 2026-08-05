@@ -38,6 +38,20 @@ import java.util.concurrent.CompletableFuture;
  * @param <F> type of the fencing token
  * @param <T> type of the RpcEndpoint
  */
+//FencedPekkoRpcActor：带“口令校验”的守卫
+//包装的对象：它用于包装 FencedRpcEndpoint。
+//
+//消息处理机制：它强制要求所有发给它的核心 RPC 消息必须实现 FencedMessage 接口，也就是必须携带一个 FencingToken（隔离令牌，通常是一个 UUID）。
+//
+//当 FencedPekkoRpcActor 收到消息时，它的底层机制会率先拦截并比对 Token。
+//
+//如果消息中的 Token 和当前 Actor 维护的 Leader Token 一致，才放行给上层处理。
+//
+//如果 Token 不匹配，直接把消息丢弃，并可能返回错误。
+//
+//适用场景：适用于集群中的 Master 节点组件，也就是同一时刻只允许有一个 Leader 的组件。
+//
+//源码代表：JobMaster、ResourceManager、Dispatcher
 public class FencedPekkoRpcActor<
                 F extends Serializable, T extends FencedRpcEndpoint<F> & RpcGateway>
         extends PekkoRpcActor<T> {
@@ -64,16 +78,17 @@ public class FencedPekkoRpcActor<
     @Override
     protected void handleRpcMessage(Object message) {
         if (message instanceof FencedMessage) {
-
+            //获取期待的令牌
             final F expectedFencingToken = rpcEndpoint.getFencingToken();
 
             if (expectedFencingToken == null) {
+                //无令牌
                 if (log.isDebugEnabled()) {
                     log.debug(
                             "Fencing token not set: Ignoring message {} because the fencing token is null.",
                             message);
                 }
-
+                //
                 sendErrorIfSender(
                         new FencingTokenException(
                                 String.format(
@@ -86,8 +101,10 @@ public class FencedPekkoRpcActor<
                 F fencingToken = fencedMessage.getFencingToken();
 
                 if (Objects.equals(expectedFencingToken, fencingToken)) {
+                    //todo  Token 一致，处理消息
                     super.handleRpcMessage(fencedMessage.getPayload());
                 } else {
+                    // Token 不匹配，丢弃消息，打印 log.debug
                     if (log.isDebugEnabled()) {
                         log.debug(
                                 "Fencing token mismatch: Ignoring message {} because the fencing token {} did "

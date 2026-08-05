@@ -317,6 +317,7 @@ public class MiniCluster implements AutoCloseableAsync {
      * @throws Exception This method passes on any exception that occurs during the startup of the
      *     mini cluster.
      */
+    //会被PerJobMiniClusterFactory#start() 调用
     public void start() throws Exception {
         synchronized (lock) {
             checkState(!running, "MiniCluster is already running");
@@ -329,6 +330,7 @@ public class MiniCluster implements AutoCloseableAsync {
                     miniClusterConfiguration.getRpcServiceSharing() == RpcServiceSharing.SHARED;
 
             try {
+                // workingDirectory = WorkingDirectory(C:\Users\Administrator\AppData\Local\Temp\minicluster_1e732d8068b6befefd048f5ff5242436)
                 workingDirectory =
                         WorkingDirectory.create(
                                 ClusterEntrypointUtils.generateWorkingDirectoryFile(
@@ -354,14 +356,12 @@ public class MiniCluster implements AutoCloseableAsync {
 
                 if (useSingleRpcService) {
                     // we always need the 'commonRpcService' for auxiliary calls
-                    commonRpcService = createLocalRpcService(configuration, rpcSystem.deref());
-                    final CommonRpcServiceFactory commonRpcServiceFactory =
-                            new CommonRpcServiceFactory(commonRpcService);
+                    //todo
+                    commonRpcService = createLocalRpcService(configuration, rpcSystem.deref());//
+                    final CommonRpcServiceFactory commonRpcServiceFactory = new CommonRpcServiceFactory(commonRpcService);
                     taskManagerRpcServiceFactory = commonRpcServiceFactory;
                     dispatcherResourceManagerComponentRpcServiceFactory = commonRpcServiceFactory;
-                    metricQueryServiceRpcService =
-                            MetricUtils.startLocalMetricsRpcService(
-                                    configuration, rpcSystem.deref());
+                    metricQueryServiceRpcService = MetricUtils.startLocalMetricsRpcService(configuration, rpcSystem.deref());
                 } else {
 
                     // start a new service per component, possibly with custom bind addresses
@@ -415,9 +415,8 @@ public class MiniCluster implements AutoCloseableAsync {
                                 ConfigurationUtils.getSystemResourceMetricsProbingInterval(
                                         configuration));
 
-                ioExecutor =
-                        Executors.newFixedThreadPool(
-                                ClusterEntrypointUtils.getPoolSize(configuration),
+                ioExecutor = Executors.newFixedThreadPool(
+                                ClusterEntrypointUtils.getPoolSize(configuration),//4
                                 new ExecutorThreadFactory("mini-cluster-io"));
 
                 delegationTokenManager =
@@ -436,8 +435,8 @@ public class MiniCluster implements AutoCloseableAsync {
                                 configuration, miniClusterConfiguration.getPluginManager());
 
                 haServicesFactory = createHighAvailabilityServicesFactory(configuration);
-
-                haServices = createHighAvailabilityServices(configuration, ioExecutor);
+                //会调用上一行  haServicesFactory.createHAServices
+                haServices = createHighAvailabilityServices(configuration, ioExecutor);//
 
                 blobServer =
                         BlobUtils.createBlobServer(
@@ -455,7 +454,7 @@ public class MiniCluster implements AutoCloseableAsync {
                                 haServices.createBlobStore(),
                                 new InetSocketAddress(
                                         InetAddress.getLocalHost(), blobServer.getPort()));
-
+                //todo
                 startTaskManagers();
 
                 MetricQueryServiceRetriever metricQueryServiceRetriever =
@@ -584,6 +583,7 @@ public class MiniCluster implements AutoCloseableAsync {
 
     private HighAvailabilityServicesFactory createHighAvailabilityServicesFactory(
             Configuration configuration) {
+        // HaServices.CONFIGURED
         final HaServices customMiniClusterHaServicesMode = miniClusterConfiguration.getHaServices();
         if (customMiniClusterHaServicesMode == HaServices.WITH_LEADERSHIP_CONTROL) {
             // special feature of MiniClusters to allow the control of leadership
@@ -599,16 +599,16 @@ public class MiniCluster implements AutoCloseableAsync {
                     "Unknown HA Services Mode configured in MiniCluster configuration: "
                             + customMiniClusterHaServicesMode);
         }
-
-        final HighAvailabilityMode highAvailabilityMode =
-                HighAvailabilityMode.fromConfig(configuration);
+        //高可用模式
+        final HighAvailabilityMode highAvailabilityMode = HighAvailabilityMode.fromConfig(configuration);
         if (highAvailabilityMode == HighAvailabilityMode.NONE) {
             // basic EmbeddedLeaderElection requires a single instance for leader election across
             // multiple JobManager instances on the same JVM (after FLINK-24038 was introduced);
             // therefore, SingletonHighAvailabilityServicesFactory is utilized here
+            //todo
             return new SingletonHighAvailabilityServicesFactory(
                     (config, embeddedLeaderElectionExecutor) ->
-                            new EmbeddedHaServices(embeddedLeaderElectionExecutor));
+                            new EmbeddedHaServices(embeddedLeaderElectionExecutor));//
         } else {
             return new RegularHighAvailabilityServicesFactory();
         }
@@ -617,7 +617,8 @@ public class MiniCluster implements AutoCloseableAsync {
     @VisibleForTesting
     protected HighAvailabilityServices createHighAvailabilityServices(
             Configuration configuration, Executor executor) throws Exception {
-        return haServicesFactory.createHAServices(configuration, executor);
+        //
+        return haServicesFactory.createHAServices(configuration, executor);//
     }
 
     /**
@@ -763,9 +764,8 @@ public class MiniCluster implements AutoCloseableAsync {
     public void startTaskManager() throws Exception {
         synchronized (lock) {
             final Configuration configuration = miniClusterConfiguration.getConfiguration();
-
-            final TaskExecutor taskExecutor =
-                    TaskManagerRunner.startTaskManager(
+            // 用TaskExecutorToServiceAdapter 包装下TaskExecutor
+            final TaskExecutor taskExecutor = TaskManagerRunner.startTaskManager(//
                             configuration,
                             new ResourceID(UUID.randomUUID().toString()),
                             taskManagerRpcServiceFactory.createRpcService(),
@@ -779,7 +779,7 @@ public class MiniCluster implements AutoCloseableAsync {
                             taskManagerTerminatingFatalErrorHandlerFactory.create(
                                     taskManagers.size()),
                             delegationTokenReceiverRepository);
-
+            //
             taskExecutor.start();
             taskManagers.add(taskExecutor);
         }
@@ -1257,7 +1257,7 @@ public class MiniCluster implements AutoCloseableAsync {
         return rpcSystem
                 .localServiceBuilder(configuration)
                 .withExecutorConfiguration(RpcUtils.getTestForkJoinExecutorConfiguration())
-                .createAndStart();
+                .createAndStart();//
     }
 
     // ------------------------------------------------------------------------
@@ -1587,7 +1587,7 @@ public class MiniCluster implements AutoCloseableAsync {
         public HighAvailabilityServices createHAServices(
                 Configuration configuration, Executor executor) throws Exception {
             if (haServices == null) {
-                haServices = creationCallback.apply(configuration, executor);
+                haServices = creationCallback.apply(configuration, executor);//
             }
 
             return this.haServices;

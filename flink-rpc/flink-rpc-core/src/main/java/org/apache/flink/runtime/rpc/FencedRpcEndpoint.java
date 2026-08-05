@@ -32,6 +32,7 @@ import java.util.UUID;
  *
  * @param <F> type of the fencing token
  */
+//核心作用是为高可用（HA）分布式环境下的核心组件提供“隔离（Fencing）保护机制”，从而彻底杜绝“脑裂（Split-Brain）”引发的系统混乱
 public abstract class FencedRpcEndpoint<F extends Serializable> extends RpcEndpoint {
 
     private final F fencingToken;

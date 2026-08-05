@@ -110,6 +110,12 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
     private final String endpointId;
 
     /** Interface to access the underlying rpc server. */
+    //核心职责
+    //1. 暴露当前 RpcEndpoint 的网络通信地址（Address）与 Session ID。
+    //2. 拦截并转发远程 RPC 请求到真实的 RpcEndpoint。
+    //3. 提供 start() / closeAsync() 控制 Endpoint 的生命周期。
+
+    //每个注册的 RpcEndpoint（如 TaskExecutor、JobMaster）对应一个 RpcServer 实例
     protected final RpcServer rpcServer;
 
     /**
@@ -158,8 +164,7 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
         this.rpcServer = rpcService.startServer(this, loggingContext);
         this.resourceRegistry = new CloseableRegistry();
 
-        this.mainThreadExecutor =
-                new MainThreadExecutor(rpcServer, this::validateRunsInMainThread, endpointId);
+        this.mainThreadExecutor = new MainThreadExecutor(rpcServer, this::validateRunsInMainThread, endpointId);
         registerResource(this.mainThreadExecutor);
     }
 
@@ -223,7 +228,7 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
     public final void internalCallOnStart() throws Exception {
         validateRunsInMainThread();
         isRunning = true;
-        //
+        //todo
         onStart();
     }
 

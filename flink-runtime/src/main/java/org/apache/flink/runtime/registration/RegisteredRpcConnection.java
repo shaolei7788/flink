@@ -240,7 +240,7 @@ public abstract class RegisteredRpcConnection<
     // ------------------------------------------------------------------------
 
     private RetryingRegistration<F, G, S, R> createNewRegistration() {
-        //todo
+        //todo 创建一个注册对象
         RetryingRegistration<F, G, S, R> newRegistration = checkNotNull(generateRegistration());
 
         CompletableFuture<RetryingRegistration.RetryingRegistrationResult<G, S, R>> future =

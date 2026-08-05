@@ -151,6 +151,7 @@ import static org.apache.flink.util.Preconditions.checkState;
  *   <li>{@link #updateTaskExecutionState} updates the task execution state for given task
  * </ul>
  */
+//负责管理单一的具体作业（管 Task 调度）
 public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         implements JobMasterGateway, JobMasterService {
 

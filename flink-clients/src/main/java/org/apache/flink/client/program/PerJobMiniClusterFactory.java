@@ -74,7 +74,7 @@ public final class PerJobMiniClusterFactory {
                 getMiniClusterConfig(executionPlan.getMaximumParallelism());
         MiniCluster miniCluster = miniClusterFactory.apply(miniClusterConfig);
         //todo
-        miniCluster.start();
+        miniCluster.start();//
 
         return miniCluster
                 .submitJob(executionPlan)

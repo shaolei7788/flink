@@ -53,9 +53,9 @@ public class EmbeddedHaServices extends AbstractNonHaServices {
 
     private final EmbeddedLeaderService clusterRestEndpointLeaderService;
 
-    public EmbeddedHaServices(Executor executor) {
+    public EmbeddedHaServices(Executor executor) {//
         this.executor = Preconditions.checkNotNull(executor);
-        this.resourceManagerLeaderService = createEmbeddedLeaderService(executor);
+        this.resourceManagerLeaderService = createEmbeddedLeaderService(executor);//
         this.dispatcherLeaderService = createEmbeddedLeaderService(executor);
         this.jobManagerLeaderServices = new HashMap<>();
         this.clusterRestEndpointLeaderService = createEmbeddedLeaderService(executor);
@@ -141,7 +141,8 @@ public class EmbeddedHaServices extends AbstractNonHaServices {
 
     @Nonnull
     private EmbeddedLeaderService createEmbeddedLeaderService(Executor executor) {
-        return new EmbeddedLeaderService(executor);
+        //
+        return new EmbeddedLeaderService(executor);//
     }
 
     @GuardedBy("lock")

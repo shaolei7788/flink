@@ -1844,7 +1844,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
 
         try {
             //todo
-            return execute(streamGraph);
+            return execute(streamGraph);//
         } catch (Throwable t) {
             Optional<ClusterDatasetCorruptedException> clusterDatasetCorruptedException =
                     ExceptionUtils.findThrowable(t, ClusterDatasetCorruptedException.class);

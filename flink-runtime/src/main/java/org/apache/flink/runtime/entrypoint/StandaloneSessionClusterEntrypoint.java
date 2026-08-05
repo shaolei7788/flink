@@ -53,9 +53,8 @@ public class StandaloneSessionClusterEntrypoint extends SessionClusterEntrypoint
                         StandaloneSessionClusterEntrypoint.class);
         Configuration configuration = loadConfiguration(entrypointClusterConfiguration);
 
-        StandaloneSessionClusterEntrypoint entrypoint =
-                new StandaloneSessionClusterEntrypoint(configuration);
-
+        StandaloneSessionClusterEntrypoint entrypoint = new StandaloneSessionClusterEntrypoint(configuration);
+        //
         ClusterEntrypoint.runClusterEntrypoint(entrypoint);
     }
 }

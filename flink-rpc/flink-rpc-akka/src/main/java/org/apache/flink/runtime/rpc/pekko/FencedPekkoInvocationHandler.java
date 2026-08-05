@@ -72,15 +72,17 @@ public class FencedPekkoInvocationHandler<F extends Serializable> extends PekkoI
 
         this.fencingTokenSupplier = Preconditions.checkNotNull(fencingTokenSupplier);
     }
-
+    //public abstract java.util.concurrent.CompletableFuture org.apache.flink.runtime.resourcemanager.ResourceManagerGateway.registerTaskExecutor(org.apache.flink.runtime.resourcemanager.TaskExecutorRegistration,java.time.Duration)
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        //declaringClass = ResourceManagerGateway
         Class<?> declaringClass = method.getDeclaringClass();
 
         if (declaringClass.equals(MainThreadExecutable.class)
                 || declaringClass.equals(FencedRpcGateway.class)) {
             return method.invoke(this, args);
         } else {
+            //todo PekkoInvocationHandler#invoke
             return super.invoke(proxy, method, args);
         }
     }

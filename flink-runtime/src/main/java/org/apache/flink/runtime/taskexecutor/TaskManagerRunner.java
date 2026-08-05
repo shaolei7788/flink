@@ -118,18 +118,25 @@ public class TaskManagerRunner implements FatalErrorHandler {
 
     private final Thread shutdownHook;
 
+    //作用：并发控制锁。由于进程在启动、停止或遭遇崩溃异常（Fatal Error）时可能同时触发不同的线程，
+    // 该锁用于保证内部核心状态修改（如 taskExecutorService 的启停）的线程安全性。
     private final Object lock = new Object();
 
+    //全局配置容器。里面承载了从本地 flink-conf.yaml 中解析出来的所有参数（例如内存大小、Slot 槽位数、RPC 超时、HA 地址等），
+    // 是后续组装整个 TaskManager 运行环境的基础原料
     private final Configuration configuration;
 
     private final Duration timeout;
 
     private final PluginManager pluginManager;
 
+    //TaskExecutor 的生产工厂。它决定了如何创建一个包装好的 TaskExecutor 服务实例
     private final TaskExecutorServiceFactory taskExecutorServiceFactory;
 
+    //生命周期监控仪。这是一个 Future 异步凭证，外界（如守护线程）通过监听它的状态来得知当前 TaskManager 进程是正常结束、发生了致命错误退出了、还是被外部强行终止了
     private final CompletableFuture<Result> terminationFuture;
 
+    //当前 TaskManager 进程在分布式集群中的唯一身份证（ID）。通过包裹类确保这个 ID 在生命周期内的确定性
     @GuardedBy("lock")
     private DeterminismEnvelope<ResourceID> resourceId;
 
@@ -190,6 +197,9 @@ public class TaskManagerRunner implements FatalErrorHandler {
     @GuardedBy("lock")
     private TaskExecutorService taskExecutorService;
 
+
+    //JVM 优雅退出钩子。当外界发出 kill -15 (SIGTERM) 或按 Ctrl+C 强退进程时，这个线程会被 JVM 唤醒，
+    // 负责在进程彻底消失前关闭网络、释放 Slot、向 ResourceManager 优雅地告别
     @GuardedBy("lock")
     private boolean shutdown;
 
@@ -249,8 +259,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
             LOG.info("Using working directory: {}", workingDirectory);
 
             //创建心跳服务
-            HeartbeatServices heartbeatServices =
-                    HeartbeatServices.fromConfiguration(configuration);
+            HeartbeatServices heartbeatServices = HeartbeatServices.fromConfiguration(configuration);
             //初始化 Metric 监控服务
             metricRegistry =
                     new MetricRegistryImpl(
@@ -286,10 +295,15 @@ public class TaskManagerRunner implements FatalErrorHandler {
             //
             //本地共享缓存：同一个 TaskManager 上如果运行了属于同一个作业的多个 Task，它们共享同一个下载好的 JAR 包本地副本，
             // 通过引用计数（Reference Counting）避免重复下载，节省网络带宽和磁盘空间
+
+
             blobCacheService =
                     BlobUtils.createBlobCacheService(
                             configuration,
                             Reference.borrowed(workingDirectory.unwrap().getBlobStorageDirectory()),
+                            //当集群提交新的 Flink 任务时，TaskManager 需要下载用户编写的作业 Jar 包或依赖
+                            //这个方法指向一个高可用的全局持久化存储路径（通常对接 HDFS、S3 或 OSS 等分布式文件系统）。
+                            // TaskManagerRunner 借助这个句柄，能够安全地拉取并恢复作业所需的核心大对象数据（BLOB），即使本地文件损坏也能从共享高可用端找回
                             highAvailabilityServices.createBlobStore(),
                             null);
 
@@ -345,12 +359,19 @@ public class TaskManagerRunner implements FatalErrorHandler {
     public void start() throws Exception {
         synchronized (lock) {
             //实例化并启动 TaskManager 运行所依赖的所有“基础设施服务”（Services），为后续真正拉起 TaskManager 核心节点（TaskExecutor）提供环境与资源支持
+
+            //初始化 RpcService（底层 Pekko 通信环境）。
+            //初始化 HighAvailabilityServices（高可用与 Leader 动态寻址服务）。
+            //初始化 HeartbeatServices（负责和 JobManager 保持心跳的定时器）。初始化 MetricRegistry（监控指标度量框架）。
+            //初始化 TaskExecutorBlobService（负责同步和缓存 Jar 包/大文件的 BLOB 存储服务）。组装完这些后，再将这些拼好的材料塞入 TaskExecutor
+            //初始化 TaskExecutorService 对象 【核心】
             startTaskManagerRunnerServices();
-            // TaskExecutorToServiceAdapter#start
+            //todo TaskExecutorToServiceAdapter#start
             taskExecutorService.start();
         }
     }
 
+    //作用：优雅关闭。依次关闭底层创建的网络层（Netty）、取消正在运行的算子、断开 RPC 连接、释放 HA 临时节点，最后释放所有的内存管理器
     public void close() throws Exception {
         try {
             closeAsync().get();
@@ -410,6 +431,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
         }
     }
 
+    //删除工作目录
     private void deleteWorkingDir(Result terminationResult) throws IOException {
         synchronized (lock) {
             if (workingDirectory != null) {
@@ -482,6 +504,8 @@ public class TaskManagerRunner implements FatalErrorHandler {
     //  FatalErrorHandler methods
     // --------------------------------------------------------------------------------------------
 
+    //作用：致命错误大喇叭（继承自 FatalErrorHandler）。工作机制：在流式计算中，如果发生了底层网络硬件彻底崩溃、内存溢出（OOM）、或严重的磁盘损坏，
+    //TaskManager 是无法继续装作没事发生的。该方法会被立刻回调，它会直接将 terminationFuture 标记为失败，并强制触发 JVM 异常退出，防止集群出现“僵尸节点”拖慢全局
     @Override
     public void onFatalError(Throwable exception) {
         TaskManagerExceptionUtils.tryEnrichTaskManagerError(exception);
@@ -539,13 +563,13 @@ public class TaskManagerRunner implements FatalErrorHandler {
         final TaskManagerRunner taskManagerRunner;
 
         try {
-            //
+            //创建TaskManagerRunner对象
             taskManagerRunner = new TaskManagerRunner(
                             configuration,
                             pluginManager,
                             // createTaskExecutorService 在 startTaskManagerRunnerServices 会被调用
                             TaskManagerRunner::createTaskExecutorService);
-            //
+            //todo 启动服务
             taskManagerRunner.start();
         } catch (Exception exception) {
             throw new FlinkException("Failed to start the TaskManagerRunner.", exception);
@@ -569,8 +593,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
             LOG.error("Could not load the configuration.", fpe);
             System.exit(FAILURE_EXIT_CODE);
         }
-        //
-        runTaskManagerProcessSecurely(checkNotNull(configuration));
+        runTaskManagerProcessSecurely(checkNotNull(configuration));//
     }
 
     public static void runTaskManagerProcessSecurely(Configuration configuration) {
@@ -623,10 +646,8 @@ public class TaskManagerRunner implements FatalErrorHandler {
             FatalErrorHandler fatalErrorHandler,
             DelegationTokenReceiverRepository delegationTokenReceiverRepository)
             throws Exception {
-        //
-        final TaskExecutor taskExecutor =
-                // 创建TaskExecutor服务
-                startTaskManager(
+        // 创建TaskExecutor服务
+        final TaskExecutor taskExecutor = startTaskManager(//
                         configuration,
                         resourceID,
                         rpcService,//
@@ -639,7 +660,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
                         workingDirectory,
                         fatalErrorHandler,
                         delegationTokenReceiverRepository);
-        //
+        // 用TaskExecutorToServiceAdapter 包装下TaskExecutor
         return TaskExecutorToServiceAdapter.createFor(taskExecutor);
     }
 
@@ -718,11 +739,11 @@ public class TaskManagerRunner implements FatalErrorHandler {
                         workingDirectory.getTmpDirectory());//C:\Users\Administrator\AppData\Local\Temp\minicluster_ea3224d79d50675a75d8c6024cc2eb49\tm_0\tmp
 
         String metricQueryServiceAddress = metricRegistry.getMetricQueryServiceGatewayRpcAddress();
-        //
-        return new TaskExecutor(
+        //todo 创建 TaskExecutor
+        return new TaskExecutor(//
                 rpcService,
                 taskManagerConfiguration,
-                highAvailabilityServices,
+                highAvailabilityServices,//EmbeddedHaServices
                 taskManagerServices,
                 externalResourceInfoProvider,
                 heartbeatServices,

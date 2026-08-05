@@ -37,6 +37,7 @@ import java.util.concurrent.Executor;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /** The connection between a TaskExecutor and the ResourceManager. */
+//TaskExecutor连接ResourceManager的连接
 public class TaskExecutorToResourceManagerConnection
         extends RegisteredRpcConnection<
                 ResourceManagerId,
@@ -156,6 +157,8 @@ public class TaskExecutorToResourceManagerConnection
                 throws Exception {
 
             Duration timeout = Duration.ofMillis(timeoutMillis);
+            //todo 向resourcemanager 进行注册
+            //会调用代理对象  FencedPekkoInvocationHandler#invoke方法
             return resourceManager.registerTaskExecutor(taskExecutorRegistration, timeout);
         }
     }
