@@ -85,8 +85,8 @@ public class PekkoRpcServiceUtils {
         }
 
         bindPort.ifPresent(rpcServiceBuilder::withBindPort);
-
-        return rpcServiceBuilder.createAndStart();//
+        //standalone 模式不会被调用
+        return rpcServiceBuilder.createAndStart();
     }
 
     static PekkoRpcServiceBuilder remoteServiceBuilder(

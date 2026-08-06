@@ -183,7 +183,7 @@ public abstract class RestServerEndpoint implements RestService {
 
             final Router router = new Router();
             final CompletableFuture<String> restAddressFuture = new CompletableFuture<>();
-
+            // handlers =
             handlers = initializeHandlers(restAddressFuture);
 
             /* sort the handlers such that they are ordered the following:
@@ -193,6 +193,7 @@ public abstract class RestServerEndpoint implements RestService {
              * /jobs/:jobid/config
              * /:*
              */
+            //对 handler 集合 排序
             Collections.sort(handlers, RestHandlerUrlComparator.INSTANCE);
 
             checkAllEndpointsAndHandlersAreUnique(handlers);

@@ -110,7 +110,7 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
     PekkoInvocationHandler(
             String address,
             String hostname,
-            ActorRef rpcEndpoint,
+            ActorRef rpcEndpoint,// 目标组件也就是想跟谁连接的对象
             Duration timeout,
             long maximumFramesize,
             boolean forceRpcInvocationSerialization,

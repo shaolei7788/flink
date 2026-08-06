@@ -158,7 +158,8 @@ public class StaticFileServerHandler<T extends RestfulGateway> extends LeaderRet
     private void respondToRequest(
             ChannelHandlerContext ctx, HttpRequest request, String requestPath)
             throws IOException, ParseException, URISyntaxException, RestHandlerException {
-
+        //rootPath = "/private/var/folders/n0/9jq72j2d7gq3k9t_h7d2qbxw0000gn/T/flink-web-0ed7b3f4-2146-4832-be51-aa16ca5e4f6a/flink-web-ui"
+        // requestPath = /index.html
         // convert to absolute path
         final File file = new File(rootPath, requestPath);
 
@@ -178,7 +179,7 @@ public class StaticFileServerHandler<T extends RestfulGateway> extends LeaderRet
                             URI requestedURI = new URI(requested.getPath()).normalize();
 
                             // Check that we don't load anything from outside of the
-                            // expected scope.
+                            // expected scope. requestedURI = file:/Users/shaolei/Desktop/workspace/source/flink/a_lib/flink-dist-2.2-SNAPSHOT.jar!/web/assets/favicon/manifest.json
                             if (!rootURI.relativize(requestedURI).equals(requestedURI)) {
                                 logger.debug(
                                         "Loading missing file from classloader: {}", requestPath);

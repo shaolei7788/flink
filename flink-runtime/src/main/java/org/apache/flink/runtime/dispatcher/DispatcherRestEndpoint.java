@@ -83,8 +83,8 @@ public class DispatcherRestEndpoint extends WebMonitorEndpoint<DispatcherGateway
     @Override
     protected List<Tuple2<RestHandlerSpecification, ChannelInboundHandler>> initializeHandlers(
             final CompletableFuture<String> localAddressFuture) {
-        List<Tuple2<RestHandlerSpecification, ChannelInboundHandler>> handlers =
-                super.initializeHandlers(localAddressFuture);
+        //
+        List<Tuple2<RestHandlerSpecification, ChannelInboundHandler>> handlers = super.initializeHandlers(localAddressFuture);
 
         // Add the Dispatcher specific handlers
 

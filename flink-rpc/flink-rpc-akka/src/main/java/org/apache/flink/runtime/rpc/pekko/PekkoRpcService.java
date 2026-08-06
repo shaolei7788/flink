@@ -91,7 +91,7 @@ public class PekkoRpcService implements RpcService {
     static final int VERSION = 2;
 
     private final Object lock = new Object();
-
+    //Flink 所有的 RPC 通信、组件（如 JobMaster、ResourceManager）作为 Actor 启动时，都必须注册并寄生在这个 actorSystem 中
     //这是最核心的属性。它是 Pekko 提供的一个重量级对象，负责管理所有的 Actor（每个 Flink 的 RpcEndpoint 底层都对应一个 Pekko Actor）。
     // 它控制了线程池（Dispatcher）、网络通信（Remoting）以及消息的序列化
     private final ActorSystem actorSystem;
@@ -100,6 +100,7 @@ public class PekkoRpcService implements RpcService {
 
     private final ClassLoader flinkClassLoader;
 
+    //维护本地运行的物理 Actor（ActorRef）与 Flink 逻辑组件（RpcEndpoint）之间的双向映射关系。用于确保当收到消息时，能精准路由或用于本地状态检查
     @GuardedBy("lock")
     private final Map<ActorRef, RpcEndpoint> actors = CollectionUtil.newHashMapWithExpectedSize(4);
 
@@ -115,13 +116,15 @@ public class PekkoRpcService implements RpcService {
     //一个异步凭证，用于追踪当前 RPC 服务是否已经完全关闭。Flink 很多组件的优雅退出依赖于这个 Future
     private final CompletableFuture<Void> terminationFuture;
 
+    //专门监控该 RpcService 下属的所有子 Actor，一旦它们发生致命崩溃，由该属性对应的 Supervisor 捕获并强制抛出故障（Fail-Fast）
     private final Supervisor supervisor;
 
+    //标记当前 RPC 服务的生命周期状态。用于防止在服务关闭期间重复初始化或接受新的 RPC 调用
     private volatile boolean stopped;
 
+    //没被使用
     @VisibleForTesting
-    public PekkoRpcService(
-            final ActorSystem actorSystem, final PekkoRpcServiceConfiguration configuration) {
+    public PekkoRpcService(final ActorSystem actorSystem, final PekkoRpcServiceConfiguration configuration) {
         this(actorSystem, configuration, PekkoRpcService.class.getClassLoader());
     }
 
@@ -132,17 +135,17 @@ public class PekkoRpcService implements RpcService {
         this.actorSystem = checkNotNull(actorSystem, "actor system");
         this.configuration = checkNotNull(configuration, "pekko rpc service configuration");
         this.flinkClassLoader = checkNotNull(flinkClassLoader, "flinkClassLoader");
-
+        // actorSystemAddress = pekko.tcp://flink@localhost:6123
         Address actorSystemAddress = PekkoUtils.getAddress(actorSystem);
 
         if (actorSystemAddress.host().isDefined()) {
-            address = actorSystemAddress.host().get();
+            address = actorSystemAddress.host().get();// address = localhost
         } else {
             address = "";
         }
 
         if (actorSystemAddress.port().isDefined()) {
-            port = (Integer) actorSystemAddress.port().get();
+            port = (Integer) actorSystemAddress.port().get();//6123
         } else {
             port = -1;
         }
@@ -155,14 +158,13 @@ public class PekkoRpcService implements RpcService {
         // call into Flink
         // otherwise we could leak the plugin class loader or poison the context class loader of
         // external threads (because they inherit the current threads context class loader)
-        internalScheduledExecutor =
-                new ActorSystemScheduledExecutorAdapter(actorSystem, flinkClassLoader);
+        internalScheduledExecutor = new ActorSystemScheduledExecutorAdapter(actorSystem, flinkClassLoader);
 
         terminationFuture = new CompletableFuture<>();
 
         stopped = false;
 
-        supervisor = startSupervisorActor();
+        supervisor = startSupervisorActor();//
         startDeadLettersActor();
     }
 
@@ -182,7 +184,7 @@ public class PekkoRpcService implements RpcService {
                         actorSystem,
                         withContextClassLoader(terminationFutureExecutor, flinkClassLoader));
         //
-        return Supervisor.create(actorRef, terminationFutureExecutor);
+        return Supervisor.create(actorRef, terminationFutureExecutor);//
     }
 
     public ActorSystem getActorSystem() {
@@ -217,9 +219,10 @@ public class PekkoRpcService implements RpcService {
         }
     }
 
-    //作用：连接到远程的 RPC 节点，并生成一个客户端代理（Gateway）。
     //底层逻辑：如果 TaskManager 知道了 JobManager 的地址，就会调用此方法。Pekko 会解析地址，并返回一个 RpcGateway（比如 ResourceManagerGateway）。
     // TaskManager 拿着这个 Gateway 调用方法（比如 registerTaskManager），实际上是在底层把方法名和参数序列化成网络消息发给了 JobManager
+    //根据给定的 Pekko 地址（如 pekko.tcp://...），去寻找远端组件的 ActorRef，并基于 JDK 动态代理技术生成对应的 RpcGateway 实例（如 ResourceManagerGateway）
+    //PekkoInvocationHandler也实现了RpcGateway、RpcServer
     // this method does not mutate state and is thus thread-safe
     @Override
     public <C extends RpcGateway> CompletableFuture<C> connect(final String address, final Class<C> clazz) {
@@ -280,14 +283,13 @@ public class PekkoRpcService implements RpcService {
         //todo ?  它会把传入的 RpcEndpoint 包装成一个 PekkoRpcActor 并注册到 ActorSystem 中
         final SupervisorActor.ActorRegistration actorRegistration = registerRpcActor(rpcEndpoint, loggingContext);
         final ActorRef actorRef = actorRegistration.getActorRef();
-        final CompletableFuture<Void> actorTerminationFuture =
-                actorRegistration.getTerminationFuture();
+        final CompletableFuture<Void> actorTerminationFuture = actorRegistration.getTerminationFuture();
 
         LOG.info(
                 "Starting RPC endpoint for {} at {} .",
                 rpcEndpoint.getClass().getName(),
                 actorRef.path());
-
+        // address =
         final String address = PekkoUtils.getRpcURL(actorSystem, actorRef);
         final String hostname;
         Option<String> host = actorRef.path().address().host();
@@ -304,7 +306,7 @@ public class PekkoRpcService implements RpcService {
         implementedRpcGateways.add(PekkoBasedEndpoint.class);
 
         final InvocationHandler invocationHandler;
-        System.out.println(rpcEndpoint.getClass().getName());
+        System.out.println("PekkoRpcService#startServer:" + rpcEndpoint.getClass().getName());
         if (rpcEndpoint instanceof FencedRpcEndpoint) {
             // a FencedRpcEndpoint needs a FencedPekkoInvocationHandler
             // JobMaster
@@ -595,8 +597,7 @@ public class PekkoRpcService implements RpcService {
             this.terminationFutureExecutor = terminationFutureExecutor;
         }
 
-        private static Supervisor create(
-                ActorRef actorRef, ExecutorService terminationFutureExecutor) {
+        private static Supervisor create(ActorRef actorRef, ExecutorService terminationFutureExecutor) {
             return new Supervisor(actorRef, terminationFutureExecutor);
         }
 

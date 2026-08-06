@@ -71,6 +71,7 @@ public abstract class LeaderRetrievalHandler<T extends RestfulGateway>
         return timeout;
     }
 
+    //处理http 请求入口
     @Override
     protected void channelRead0(
             ChannelHandlerContext channelHandlerContext, RoutedRequest routedRequest) {
@@ -86,6 +87,7 @@ public abstract class LeaderRetrievalHandler<T extends RestfulGateway>
                         // gateway =
                         gateway -> {
                             try {
+                                //StaticFileServerHandler#respondAsLeader
                                 respondAsLeader(channelHandlerContext, routedRequest, gateway);
                             } catch (Exception e) {
                                 logger.error("Error while responding to the http request.", e);

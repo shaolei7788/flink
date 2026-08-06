@@ -113,6 +113,7 @@ public abstract class LeaderGatewayRetriever<T extends RpcGateway> extends Leade
                     if (throwable != null) {
                         oldGatewayFuture.completeExceptionally(throwable);
                     } else {
+                        //
                         oldGatewayFuture.complete(t);
                     }
                 });

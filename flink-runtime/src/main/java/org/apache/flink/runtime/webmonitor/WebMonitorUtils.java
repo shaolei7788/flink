@@ -129,7 +129,7 @@ public final class WebMonitorUtils {
             throws IOException {
 
         if (isFlinkRuntimeWebInClassPath()) {
-            return Optional.of(new StaticFileServerHandler<>(leaderRetriever, timeout, tmpDir));
+            return Optional.of(new StaticFileServerHandler<>(leaderRetriever, timeout, tmpDir));//
         } else {
             return Optional.empty();
         }

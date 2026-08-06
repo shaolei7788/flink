@@ -730,7 +730,8 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
         Optional<StaticFileServerHandler<T>> optWebContent;
 
         try {
-            optWebContent = WebMonitorUtils.tryLoadWebContent(leaderRetriever, timeout, webUiDir);
+            //
+            optWebContent = WebMonitorUtils.tryLoadWebContent(leaderRetriever, timeout, webUiDir);//
         } catch (IOException e) {
             log.warn("Could not load web content handler.", e);
             optWebContent = Optional.empty();

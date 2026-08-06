@@ -88,7 +88,7 @@ public class LeaderRetriever implements LeaderRetrievalListener {
                             }
                         });
             }
-            //通知新leader 地址
+            //todo 通知新leader 地址
             // this = RpcGatewayRetriever
             //RpcGatewayRetriever extends LeaderGatewayRetriever extends LeaderRetriever
             //LeaderGatewayRetriever#notifyNewLeaderAddress
