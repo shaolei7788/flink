@@ -45,6 +45,7 @@ public abstract class LeaderGatewayRetriever<T extends RpcGateway> extends Leade
         atomicGatewayFuture = new AtomicReference<>(initialGatewayFuture);
     }
 
+    //
     @Override
     public CompletableFuture<T> getFuture() {
         final CompletableFuture<T> currentGatewayFuture = atomicGatewayFuture.get();
@@ -92,6 +93,7 @@ public abstract class LeaderGatewayRetriever<T extends RpcGateway> extends Leade
                 return atomicGatewayFuture.get();
             }
         } else {
+            //
             return atomicGatewayFuture.get();
         }
     }
@@ -99,13 +101,15 @@ public abstract class LeaderGatewayRetriever<T extends RpcGateway> extends Leade
     //【核心触发入口】 当底层的 HA 检索服务（如你刚才看到的 StandaloneLeaderRetrievalService 或 ZooKeeper 检索服务）发现主节点产生、或者发生切主时，会异步跨线程调用此方法
     @Override
     public void notifyNewLeaderAddress(CompletableFuture<Tuple2<String, UUID>> newLeaderAddressFuture) {
-        // 跟指定leader地址建立rpc连接
+        // 获取的是 FencedPekkoInvocationHandler
         final CompletableFuture<T> newGatewayFuture = createGateway(newLeaderAddressFuture);//
         //
         final CompletableFuture<T> oldGatewayFuture = atomicGatewayFuture.getAndSet(newGatewayFuture);
 
         newGatewayFuture.whenComplete(
+                // t = FencedPekkoInvocationHandler
                 (t, throwable) -> {
+                    System.out.println(t);
                     if (throwable != null) {
                         oldGatewayFuture.completeExceptionally(throwable);
                     } else {

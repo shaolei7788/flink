@@ -70,7 +70,7 @@ public class RpcGatewayRetriever<F extends Serializable, T extends FencedRpcGate
                 () ->
                         leaderFuture.thenCompose(
                                 (Tuple2<String, UUID> addressLeaderTuple) ->
-                                        // 建立真实的 Akka/Netty 远程连接通道
+                                        //PekkoRpcService#connect
                                         rpcService.connect(
                                                 // addressLeaderTuple =
                                                 addressLeaderTuple.f0,

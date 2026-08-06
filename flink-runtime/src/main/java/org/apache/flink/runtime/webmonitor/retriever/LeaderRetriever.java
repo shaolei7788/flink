@@ -70,13 +70,12 @@ public class LeaderRetriever implements LeaderRetrievalListener {
         if (isEmptyAddress(leaderAddress)) {
             newLeaderFuture = new CompletableFuture<>();
         } else {
-            newLeaderFuture =
-                    CompletableFuture.completedFuture(Tuple2.of(leaderAddress, leaderSessionID));
+            //
+            newLeaderFuture = CompletableFuture.completedFuture(Tuple2.of(leaderAddress, leaderSessionID));
         }
 
         try {
-            final CompletableFuture<Tuple2<String, UUID>> oldLeaderFuture =
-                    atomicLeaderFuture.getAndSet(newLeaderFuture);
+            final CompletableFuture<Tuple2<String, UUID>> oldLeaderFuture = atomicLeaderFuture.getAndSet(newLeaderFuture);
 
             if (!oldLeaderFuture.isDone()) {
                 newLeaderFuture.whenComplete(

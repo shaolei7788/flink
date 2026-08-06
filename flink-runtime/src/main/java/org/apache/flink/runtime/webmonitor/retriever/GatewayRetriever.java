@@ -45,12 +45,15 @@ public interface GatewayRetriever<T extends RpcGateway> {
      * @return Optional object to retrieve
      */
     default Optional<T> getNow() {
-        CompletableFuture<T> leaderFuture = getFuture();
+        //this = RpcLeaderGatewayRetriever
+        //LeaderGatewayRetriever#getFuture
+        CompletableFuture<T> leaderFuture = getFuture();//
         if (leaderFuture != null) {
             if (leaderFuture.isCompletedExceptionally() || leaderFuture.isCancelled()) {
                 return Optional.empty();
             } else if (leaderFuture.isDone()) {
                 try {
+                    //
                     return Optional.of(leaderFuture.get());
                 } catch (Exception e) {
                     // this should never happen

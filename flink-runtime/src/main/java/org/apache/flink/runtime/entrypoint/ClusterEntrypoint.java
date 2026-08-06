@@ -304,6 +304,7 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
             // Dispatcher（负责接收作业并分发、生成 WebUI 查看作业状态）
             // ResourceManager（负责向资源层申请/释放 Slot、管理 TaskManager 的注册）
             // WebMonitorEndpoint（负责提供对外访问的 REST API 和 Web 控制台）
+            // DispatcherResourceManagerComponentFactory#create
             clusterComponent = factory.create(
                             configuration,
                             resourceId.unwrap(),

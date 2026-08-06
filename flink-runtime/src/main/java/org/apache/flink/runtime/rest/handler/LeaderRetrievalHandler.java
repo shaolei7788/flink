@@ -77,11 +77,13 @@ public abstract class LeaderRetrievalHandler<T extends RestfulGateway>
 
         HttpRequest request = routedRequest.getRequest();
 
-        OptionalConsumer<? extends T> optLeaderConsumer =
-                OptionalConsumer.of(leaderRetriever.getNow());
+        //
+        OptionalConsumer<? extends T> optLeaderConsumer = OptionalConsumer.of(leaderRetriever.getNow());
 
         optLeaderConsumer
                 .ifPresent(
+                        //
+                        // gateway =
                         gateway -> {
                             try {
                                 respondAsLeader(channelHandlerContext, routedRequest, gateway);

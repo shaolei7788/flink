@@ -224,7 +224,7 @@ public class PekkoRpcService implements RpcService {
     @Override
     public <C extends RpcGateway> CompletableFuture<C> connect(final String address, final Class<C> clazz) {
 
-        return connectInternal(
+        return connectInternal(//
                 address,
                 clazz,
                 (ActorRef actorRef) -> {
@@ -248,9 +248,11 @@ public class PekkoRpcService implements RpcService {
     // this method does not mutate state and is thus thread-safe
     @Override
     public <F extends Serializable, C extends FencedRpcGateway<F>> CompletableFuture<C> connect(String address, F fencingToken, Class<C> clazz) {
-        return connectInternal(
+        //
+        return connectInternal(//
                 address,
                 clazz,
+                // actorRef 会有参数传过来
                 (ActorRef actorRef) -> {
                     Tuple2<String, String> addressHostname = extractAddressHostname(actorRef);
                     //
@@ -517,17 +519,15 @@ public class PekkoRpcService implements RpcService {
                 "Try to connect to remote RPC endpoint with address {}. Returning a {} gateway.",
                 address,
                 clazz.getName());
-
+        // 1. 异步获取底层的 Pekko Actor 引用
         final CompletableFuture<ActorRef> actorRefFuture = resolveActorAddress(address);
 
-        final CompletableFuture<HandshakeSuccessMessage> handshakeFuture =
-                actorRefFuture.thenCompose(
+        final CompletableFuture<HandshakeSuccessMessage> handshakeFuture = actorRefFuture.thenCompose(
                         (ActorRef actorRef) ->
                                 ScalaFutureUtils.toJava(
                                         Patterns.ask(
                                                         actorRef,
-                                                        new RemoteHandshakeMessage(
-                                                                clazz, getVersion()),
+                                                        new RemoteHandshakeMessage(clazz, getVersion()),
                                                         configuration.getTimeout().toMillis())
                                                 .<HandshakeSuccessMessage>mapTo(
                                                         ClassTag$.MODULE$
@@ -535,11 +535,11 @@ public class PekkoRpcService implements RpcService {
                                                                         HandshakeSuccessMessage
                                                                                 .class))));
 
-        final CompletableFuture<C> gatewayFuture =
-                actorRefFuture.thenCombineAsync(
+        final CompletableFuture<C> gatewayFuture = actorRefFuture.thenCombineAsync(
                         handshakeFuture,
                         (ActorRef actorRef, HandshakeSuccessMessage ignored) -> {
-                            //通过工厂获取InvocationHandler 对象
+                            //会调用 PekkoRpcService#connect connectInternal方法 的 (ActorRef actorRef) -> {}
+                            //通过工厂获取 FencedPekkoInvocationHandler 对象
                             InvocationHandler invocationHandler = invocationHandlerFactory.apply(actorRef);
 
                             // Rather than using the System ClassLoader directly, we derive the
