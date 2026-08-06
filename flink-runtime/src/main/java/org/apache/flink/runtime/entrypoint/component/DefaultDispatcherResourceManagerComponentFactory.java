@@ -96,10 +96,14 @@ public class DefaultDispatcherResourceManagerComponentFactory
             @Nonnull ResourceManagerFactory<?> resourceManagerFactory,
             @Nonnull RestEndpointFactory<?> restEndpointFactory) {
         this.dispatcherRunnerFactory = dispatcherRunnerFactory;
-        this.resourceManagerFactory = resourceManagerFactory;
+        this.resourceManagerFactory = resourceManagerFactory;//
         this.restEndpointFactory = restEndpointFactory;
     }
 
+    //创建三大核心组件
+    //WebMonitorEndpoint （REST 监控端点 / WebUI 服务）
+    //ResourceManagerServiceImpl 包装的 StandaloneResourceManager （资源管理器）
+    //DispatcherServiceImpl 包装的 StandaloneDispatcher（作业分发器）
     @Override
     public DispatcherResourceManagerComponent create(
             Configuration configuration,
@@ -124,30 +128,30 @@ public class DefaultDispatcherResourceManagerComponentFactory
         DispatcherRunner dispatcherRunner = null;
 
         try {
-            dispatcherLeaderRetrievalService =
-                    highAvailabilityServices.getDispatcherLeaderRetriever();
+            //dispatcherLeaderRetrievalService =  StandaloneLeaderRetrievalService
+            //返回 Dispatcher Leader 检索器
+            dispatcherLeaderRetrievalService = highAvailabilityServices.getDispatcherLeaderRetriever();
+            //返回 ResourceManager Leader 检索器
+            resourceManagerRetrievalService = highAvailabilityServices.getResourceManagerLeaderRetriever();
 
-            resourceManagerRetrievalService =
-                    highAvailabilityServices.getResourceManagerLeaderRetriever();
-
-            final LeaderGatewayRetriever<DispatcherGateway> dispatcherGatewayRetriever =
-                    new RpcGatewayRetriever<>(
+            //建立跟DispatcherGateway的连接
+            final LeaderGatewayRetriever<DispatcherGateway> dispatcherGatewayRetriever = new RpcGatewayRetriever<>(//
                             rpcService,
                             DispatcherGateway.class,
                             DispatcherId::fromUuid,
                             new ExponentialBackoffRetryStrategy(
                                     12, Duration.ofMillis(10), Duration.ofMillis(50)));
 
+            // Leader 检索监听器
             final LeaderGatewayRetriever<ResourceManagerGateway> resourceManagerGatewayRetriever =
-                    new RpcGatewayRetriever<>(
+                    new RpcGatewayRetriever<>(//
                             rpcService,
                             ResourceManagerGateway.class,
                             ResourceManagerId::fromUuid,
                             new ExponentialBackoffRetryStrategy(
                                     12, Duration.ofMillis(10), Duration.ofMillis(50)));
 
-            final ScheduledExecutorService executor =
-                    WebMonitorEndpoint.createExecutorService(
+            final ScheduledExecutorService executor = WebMonitorEndpoint.createExecutorService(
                             configuration.get(RestOptions.SERVER_NUM_THREADS),
                             configuration.get(RestOptions.SERVER_THREAD_PRIORITY),
                             "DispatcherRestEndpoint");
@@ -162,9 +166,11 @@ public class DefaultDispatcherResourceManagerComponentFactory
                                     metricQueryServiceRetriever,
                                     dispatcherGatewayRetriever,
                                     executor);
-
-            webMonitorEndpoint =
-                    restEndpointFactory.createRestEndpoint(
+            //默认启动并监听 8081 端口（可在 config.yaml 更改）
+            // 基于 Netty 启动 Flink 的 REST 接口和 Web 管理控制台
+            //它会加载所有的 REST 处理器（Handlers），比如查看作业列表、提交作业、查看 TaskManager 状态等接口。
+            //客户端（如 Flink CLI、浏览器）后续所有与集群的 HTTP 交互都由它接收
+            webMonitorEndpoint = restEndpointFactory.createRestEndpoint(
                             configuration,
                             dispatcherGatewayRetriever,
                             resourceManagerGatewayRetriever,
@@ -179,9 +185,10 @@ public class DefaultDispatcherResourceManagerComponentFactory
 
             final String hostname = RpcUtils.getHostname(rpcService);
 
-            resourceManagerService =
-                    ResourceManagerServiceImpl.create(
-                            resourceManagerFactory,
+            //它负责接管集群的 Slot 资源分配。接收 TaskManager 的注册，并向外部资源层
+            // resourceManagerService = ResourceManagerServiceImpl
+            resourceManagerService = ResourceManagerServiceImpl.create(
+                            resourceManagerFactory,//StandaloneResourceManagerFactory
                             configuration,
                             resourceId,
                             rpcService,
@@ -222,8 +229,7 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             failureEnrichers);
 
             log.debug("Starting Dispatcher.");
-            dispatcherRunner =
-                    dispatcherRunnerFactory.createDispatcherRunner(
+            dispatcherRunner = dispatcherRunnerFactory.createDispatcherRunner(
                             highAvailabilityServices.getDispatcherLeaderElection(),
                             fatalErrorHandler,
                             new HaServicesJobPersistenceComponentFactory(highAvailabilityServices),
@@ -232,11 +238,12 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             partialDispatcherServices);
 
             log.debug("Starting ResourceManagerService.");
+            //todo  ResourceManagerServiceImpl#start
             resourceManagerService.start();
-
+            //下面两个方法都是调用 StandaloneLeaderRetrievalService#start
             resourceManagerRetrievalService.start(resourceManagerGatewayRetriever);
             dispatcherLeaderRetrievalService.start(dispatcherGatewayRetriever);
-
+            // 组合三个组件
             return new DispatcherResourceManagerComponent(
                     dispatcherRunner,
                     resourceManagerService,
@@ -294,6 +301,7 @@ public class DefaultDispatcherResourceManagerComponentFactory
 
     public static DefaultDispatcherResourceManagerComponentFactory createSessionComponentFactory(
             ResourceManagerFactory<?> resourceManagerFactory) {
+        // resourceManagerFactory = StandaloneResourceManagerFactory
         return new DefaultDispatcherResourceManagerComponentFactory(
                 DefaultDispatcherRunnerFactory.createSessionRunner(
                         SessionDispatcherFactory.INSTANCE),

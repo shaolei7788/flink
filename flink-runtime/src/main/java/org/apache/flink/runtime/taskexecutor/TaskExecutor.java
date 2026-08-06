@@ -1569,7 +1569,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
         assert (resourceManagerAddress != null);
         assert (establishedResourceManagerConnection == null);
         assert (resourceManagerConnection == null);
-
+        // resourceManagerAddress = pekko.tcp://flink@localhost:6123/user/rpc/resourcemanager_*
         log.info("Connecting to ResourceManager {}.", resourceManagerAddress);
         //创建TaskExecutorRegistration 对象
         final TaskExecutorRegistration taskExecutorRegistration =
@@ -1609,6 +1609,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
                 resourceManagerGateway.sendSlotReport(
                         getResourceID(),
                         taskExecutorRegistrationId,
+                        //
                         taskSlotTable.createSlotReport(getResourceID()),
                         taskManagerConfiguration.getRpcTimeout());
 

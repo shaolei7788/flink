@@ -37,6 +37,7 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  * pre-configured ResourceManager and JobManager, and stores checkpoints and metadata simply on the
  * heap or on a local file system and therefore in a storage without guarantees.
  */
+//Standalone 模式下的单主节点部署
 public class StandaloneHaServices extends AbstractNonHaServices {
 
     /** The fix address of the ResourceManager. */
@@ -57,11 +58,9 @@ public class StandaloneHaServices extends AbstractNonHaServices {
             String resourceManagerAddress,
             String dispatcherAddress,
             String clusterRestEndpointAddress) {
-        this.resourceManagerAddress =
-                checkNotNull(resourceManagerAddress, "resourceManagerAddress");
+        this.resourceManagerAddress = checkNotNull(resourceManagerAddress, "resourceManagerAddress");
         this.dispatcherAddress = checkNotNull(dispatcherAddress, "dispatcherAddress");
-        this.clusterRestEndpointAddress =
-                checkNotNull(clusterRestEndpointAddress, clusterRestEndpointAddress);
+        this.clusterRestEndpointAddress = checkNotNull(clusterRestEndpointAddress, clusterRestEndpointAddress);
     }
 
     // ------------------------------------------------------------------------
@@ -72,8 +71,8 @@ public class StandaloneHaServices extends AbstractNonHaServices {
     public LeaderRetrievalService getResourceManagerLeaderRetriever() {
         synchronized (lock) {
             checkNotShutdown();
-
-            return new StandaloneLeaderRetrievalService(resourceManagerAddress, DEFAULT_LEADER_ID);
+            // resourceManagerAddress = pekko.tcp://flink@localhost:6123/user/rpc/resourcemanager_*
+            return new StandaloneLeaderRetrievalService(resourceManagerAddress, DEFAULT_LEADER_ID);//
         }
     }
 
@@ -81,8 +80,9 @@ public class StandaloneHaServices extends AbstractNonHaServices {
     public LeaderRetrievalService getDispatcherLeaderRetriever() {
         synchronized (lock) {
             checkNotShutdown();
-
-            return new StandaloneLeaderRetrievalService(dispatcherAddress, DEFAULT_LEADER_ID);
+            // dispatcherAddress = pekko.tcp://flink@localhost:6123/user/rpc/dispatcher_*
+            // DEFAULT_LEADER_ID = 00000000-0000-0000-0000-000000000000
+            return new StandaloneLeaderRetrievalService(dispatcherAddress, DEFAULT_LEADER_ID);//
         }
     }
 

@@ -155,8 +155,7 @@ public class FineGrainedTaskManagerTracker implements TaskManagerTracker {
         Preconditions.checkNotNull(pendingTaskManager);
         LOG.debug("Add pending task manager {}.", pendingTaskManager);
         pendingTaskManagers.put(pendingTaskManager.getPendingTaskManagerId(), pendingTaskManager);
-        totalPendingResource =
-                totalPendingResource.merge(pendingTaskManager.getTotalResourceProfile());
+        totalPendingResource = totalPendingResource.merge(pendingTaskManager.getTotalResourceProfile());
         totalAndDefaultSlotProfilesToPendingTaskManagers
                 .computeIfAbsent(
                         Tuple2.of(

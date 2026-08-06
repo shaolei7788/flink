@@ -80,6 +80,7 @@ public class LeaderRetriever implements LeaderRetrievalListener {
 
             if (!oldLeaderFuture.isDone()) {
                 newLeaderFuture.whenComplete(
+                        // (pekko.tcp://flink@localhost:6123/user/rpc/resourcemanager_*,00000000-0000-0000-0000-000000000000)
                         (stringUUIDTuple2, throwable) -> {
                             if (throwable != null) {
                                 oldLeaderFuture.completeExceptionally(throwable);
@@ -88,7 +89,10 @@ public class LeaderRetriever implements LeaderRetrievalListener {
                             }
                         });
             }
-
+            //通知新leader 地址
+            // this = RpcGatewayRetriever
+            //RpcGatewayRetriever extends LeaderGatewayRetriever extends LeaderRetriever
+            //LeaderGatewayRetriever#notifyNewLeaderAddress
             notifyNewLeaderAddress(newLeaderFuture);
         } catch (Exception e) {
             handleError(e);

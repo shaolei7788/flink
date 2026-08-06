@@ -31,6 +31,7 @@ import java.io.Serializable;
 /**
  * Base class for responses from the ResourceManager to a registration attempt by a TaskExecutor.
  */
+//TaskExecutor注册成功
 public final class TaskExecutorRegistrationSuccess extends RegistrationResponse.Success
         implements Serializable {
 

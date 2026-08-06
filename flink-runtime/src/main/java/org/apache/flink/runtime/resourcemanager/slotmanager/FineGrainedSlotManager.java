@@ -68,61 +68,109 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+// 细粒度 Slot 管理器
+//支持动态、按需切分 TaskManager 的资源。
+// 它可以根据作业中不同算子的实际大小（例如：这个 Task 要 0.5 核 CPU + 1GB 内存，那个 Task 要 1 核 CPU + 2GB 内存）进行极其精准的匹配与裁剪
 /** Implementation of {@link SlotManager} supporting fine-grained resource management. */
 public class FineGrainedSlotManager implements SlotManager {
     public static final Duration METRICS_UPDATE_INTERVAL = Duration.ofSeconds(1);
 
     private static final Logger LOG = LoggerFactory.getLogger(FineGrainedSlotManager.class);
 
+    //TaskManager 状态追踪器。它在内存中实时维护当前集群所有已注册 TaskManager 的资源视图
+    // （包括其总资源、已分配资源、以及剩余可切分的可用资源 ResourceProfile）
     private final TaskManagerTracker taskManagerTracker;
+
+    //作业资源诉求追踪器。用于记录和管理各个正在运行或排队作业的声明式资源需求（ResourceRequirements）以及当前已经满足/分配的 Slot 状态
     private final ResourceTracker resourceTracker;
+    //
     private final ResourceAllocationStrategy resourceAllocationStrategy;
 
+    //Slot 状态同步器。负责处理 ResourceManager、TaskManager 之间有关 Slot 分配、释放、以及异常超时时的状态状态对齐
     private final SlotStatusSyncer slotStatusSyncer;
 
+    //定时任务执行器
+    //专门用来驱动下面几个带有 Delay 或 Timeout 属性的定时任务。例如，它负责在后台倒计时“TaskManager 已经空闲了多久”，或者将高频的需求变更请求推迟到几毫秒后批量合并处理
     /** Scheduled executor for timeouts. */
     private final ScheduledExecutor scheduledExecutor;
 
+    //TaskManager 闲置超时时间
+    //当某台动态扩容出来的 TaskManager 上的所有细粒度 Slot 都跑完并释放后，它会进入“闲置（Unused）”状态。Flink 不会立刻通知 K8s 销毁它。这个属性定义了一个观察期（默认几分钟）。
+    // 在观察期内，如果有新任务进来，会优先复用它；只有超过这个时间仍无人使用，才会安全地调用 resourceAllocator 将其销毁，做到高吞吐与省钱的完美平衡
     /** Timeout after which an unused TaskManager is released. */
     private final Duration taskManagerTimeout;
 
+    //作业需求检查的延迟合并时间
+    //当作业刚启动或者大规模 Failover 时，JobMaster 会密集地发送几十次微小的资源需求变动（ResourceRequirements）。这个属性设置了一个缓冲时间（例如 50ms）。
+    // SlotManager 收到变动后不立刻计算，而是等这个延迟结束，把这 50ms 内所有算子的诉求合并为一次批量大盘再统一执行匹配算法，极大地保护了主线程的性能
     /** Delay of the requirement change check in the slot manager. */
     private final Duration requirementsCheckDelay;
 
+    //向外部资源层（K8s/Yarn）宣告资源缺口的延迟时间
+    //计算出集群当前缺多少 CPU/内存后，Flink 也不会立刻调 K8s API 去要 Pod。它会延迟几百毫秒，
+    //等整个集群的资源缺口数字彻底稳定下来后，再一次性向外界宣告一个最终的总量，避免把 K8s 的 API-Server 冲垮
     /** Delay of the resource declare in the slot manager. */
     private final Duration declareNeededResourceDelay;
 
+    //Slot 管理器的指标组
+    //负责将细粒度调度内部最核心的动态数据（例如：AvailableCPU、TotalMemory、PendingSlots、AllocatedSlots）注册并桥接到 Flink 的监控系统中，以便你在 Grafana 或 Flink WebUI 上看到实时的资源水位线
     private final SlotManagerMetricGroup slotManagerMetricGroup;
 
+    //作业主控（JobMaster）的 RPC 目标地址映射表
     private final Map<JobID, String> jobMasterTargetAddresses = new HashMap<>();
 
+    //全集群允许自动扩容的物理算力天花板
     private final CPUResource maxTotalCpu;
     private final MemorySize maxTotalMem;
 
+    //是否发送“资源不足”通知的控制开关
     private boolean sendNotEnoughResourceNotifications = true;
 
+    //被判定为“永远无法满足”的作业黑名单/死锁集合。
+    //当一个作业申请的细粒度 Slot 规格（例如某个极其复杂的算子在代码里写明了单实例必须要 64 核 CPU 或 512GB 内存），
+    // 已经彻底超过了当前集群单台物理机/单个容器所能提供的最大极限规格
+    //FineGrainedSlotManager 在几轮算法尝试后会发现无论怎么扩容都永远不可能塞得下它。
+    // 此时就会把该作业的 JobID 扔进 unfulfillableJobs 集合中。进入该集合的作业会被标记为“死锁/不可满足”，系统会停止为其进行无意义的扩容尝试
     private final Set<JobID> unfulfillableJobs = new HashSet<>();
 
     /** ResourceManager's id. */
     @Nullable private ResourceManagerId resourceManagerId;
 
+    //主线程执行器。Flink 的 ResourceManager 是基于 RpcEndpoint 单线程模型运转的。
+    //所有对 Slot 状态的修改、分配算法的执行，都必须通过这个 mainThreadExecutor 投递，以确保绝对的线程安全，避免并发修改状态导致的死锁或数据不一致
     /** Executor for future callbacks which have to be "synchronized". */
     @Nullable private Executor mainThreadExecutor;
 
+    //FineGrainedSlotManager 本身只负责在内存中通过算法进行算力计算（数学题），
+    // 它没有权限去直接操作底层的容器。当它计算完并确定需要补充机器（分配）或有机器闲置需要销毁（回收）时，会调用这个 resourceAllocator 的回调方法。
+    // 它会最终桥接到外层的 ResourceManager（如 KubernetesResourceManager），由其向外部资源层发出真正的容器增删网络请求
     /** Callbacks for resource (de-)allocations. */
     @Nullable private ResourceAllocator resourceAllocator;
 
+    //主要用于处理“资源不够了（Resource Not Enough）”或者资源满足度发生剧烈震荡时的应急通知。当作业需要的细粒度 CPU/内存大盘无法被现有集群满足，
+    // 且达到了某种资源阈值时，它会触发该监听器，用于向上层组件发送告警、触发死锁检测、或者向作业控制台反馈“资源饥饿（Starvation）”状态
     /** Callbacks for resource not enough. */
     @Nullable private ResourceEventListener resourceEventListener;
 
+    //在分布式系统里，SlotManager 内存中的账本和外部资源层（Yarn/K8s/物理机）的真实状态可能会因为网络抖动出现短暂的不一致。这是一个定时轮询任务（Reconciliation，常译为“对齐”或“和解”）。
+    // 它会定期拉取外部真实的 Worker 状态，与 taskManagerTracker 里的数据进行强行校对，确保没有出现“幽灵节点”或“账目对不上”的情况
     @Nullable private ScheduledFuture<?> clusterReconciliationCheck;
 
+    //细粒度模式下，Slot 的数量和规格是动态变化的。该定时任务会周期性地盘点当前集群的总 CPU、剩余 CPU、总内存、可用内存等细粒度指标，
+    // 并将这些高频变化的动态数据刷新并注册到 Flink 的 MetricRegistry 中，供 Prometheus 或 WebUI 渲染
     @Nullable private ScheduledFuture<?> metricsUpdateFuture;
 
+    //当大量并发作业或者同一作业内的多个算子同时提交资源诉求（ResourceRequirements）时，为了防止匹配算法在主线程中高频重复计算导致卡死，Flink 采用了异步或批次合并（Debounce / Batching）的处理方式。
+    // 这个 Future 用来标记和追踪“当前是否有一个正在进行的需求资源匹配检查”，防止发起重复的无用匹配计算
     @Nullable private CompletableFuture<Void> requirementsCheckFuture;
 
+    //在声明式调度中，Flink 不会盲目地“来一个请求就立马去 K8s 申请一个 Pod”。它会把当前所有作业的缺口打包，
+    // 计算出一个集群总共需要的期望资源总量（Desired Resource），
+    // 然后异步地调用外部接口去宣告。这个 Future 用于控制和追踪这一次“向外界要资源”的网络调用过程是否已经顺利完成
     @Nullable private CompletableFuture<Void> declareNeededResourceFuture;
 
+    //这是 Flink 容错和抗断连能力中非常硬核的一个设计。在运行中，如果某台 TaskManager 频繁发生硬件故障（如磁盘坏道、网络间歇性丢包、频繁 OOM），
+    // 为了防止 FineGrainedSlotManager 傻傻地继续把新算子分配到这台坏机器上导致作业无限重启，这个检查器会介入
     /** Blocked task manager checker. */
     @Nullable private BlockedTaskManagerChecker blockedTaskManagerChecker;
 
@@ -159,7 +207,7 @@ public class FineGrainedSlotManager implements SlotManager {
         this.taskManagerTracker = Preconditions.checkNotNull(taskManagerTracker);
         this.slotStatusSyncer = Preconditions.checkNotNull(slotStatusSyncer);
         this.resourceAllocationStrategy = Preconditions.checkNotNull(resourceAllocationStrategy);
-
+        //
         this.maxTotalCpu = Preconditions.checkNotNull(slotManagerConfiguration.getMaxTotalCpu());
         this.maxTotalMem = Preconditions.checkNotNull(slotManagerConfiguration.getMaxTotalMem());
 
@@ -360,11 +408,15 @@ public class FineGrainedSlotManager implements SlotManager {
         checkResourceRequirementsWithDelay();
     }
 
+    //todo
     @Override
     public RegistrationResult registerTaskManager(
             final TaskExecutorConnection taskExecutorConnection,
+            //SlotReport{SlotStatus{slotID=tm01_0, allocationID=null, jobID=null, resourceProfile=ResourceProfile{cpuCores=1, taskHeapMemory=512.000mb (536870912 bytes), taskOffHeapMemory=128.000mb (134217728 bytes), managedMemory=512.000mb (536870912 bytes), networkMemory=128.000mb (134217728 bytes)}}}
             SlotReport initialSlotReport,
+            //ResourceProfile{cpuCores=1, taskHeapMemory=512.000mb (536870912 bytes), taskOffHeapMemory=128.000mb (134217728 bytes), managedMemory=512.000mb (536870912 bytes), networkMemory=128.000mb (134217728 bytes)}
             ResourceProfile totalResourceProfile,
+            //ResourceProfile{cpuCores=1, taskHeapMemory=512.000mb (536870912 bytes), taskOffHeapMemory=128.000mb (134217728 bytes), managedMemory=512.000mb (536870912 bytes), networkMemory=128.000mb (134217728 bytes)}
             ResourceProfile defaultSlotResourceProfile) {
         checkInit();
         LOG.info(
@@ -373,23 +425,20 @@ public class FineGrainedSlotManager implements SlotManager {
                 taskExecutorConnection.getInstanceID());
 
         // we identify task managers by their instance id
-        if (taskManagerTracker
-                .getRegisteredTaskManager(taskExecutorConnection.getInstanceID())
-                .isPresent()) {
+        if (taskManagerTracker.getRegisteredTaskManager(taskExecutorConnection.getInstanceID()).isPresent()) {
             LOG.debug(
                     "Task executor {} was already registered.",
                     taskExecutorConnection.getResourceID());
             reportSlotStatus(taskExecutorConnection.getInstanceID(), initialSlotReport);
             return RegistrationResult.IGNORED;
         } else {
-            Optional<PendingTaskManager> matchedPendingTaskManagerOptional =
-                    initialSlotReport.hasAllocatedSlot()
+            //todo  initialSlotReport.hasAllocatedSlot() = false 判断该TaskManager 是否有被分配作业的id
+            // matchedPendingTaskManagerOptional 为空
+            Optional<PendingTaskManager> matchedPendingTaskManagerOptional = initialSlotReport.hasAllocatedSlot()
                             ? Optional.empty()
-                            : findMatchingPendingTaskManager(
-                                    totalResourceProfile, defaultSlotResourceProfile);
+                            : findMatchingPendingTaskManager(totalResourceProfile, defaultSlotResourceProfile);
 
-            if (!matchedPendingTaskManagerOptional.isPresent()
-                    && isMaxTotalResourceExceededAfterAdding(totalResourceProfile)) {
+            if (!matchedPendingTaskManagerOptional.isPresent() && isMaxTotalResourceExceededAfterAdding(totalResourceProfile)) {
 
                 LOG.info(
                         "Can not register task manager {}. The max total resource limitation <{}, {}> is reached.",
@@ -398,21 +447,17 @@ public class FineGrainedSlotManager implements SlotManager {
                         maxTotalMem.toHumanReadableString());
                 return RegistrationResult.REJECTED;
             }
-
-            taskManagerTracker.addTaskManager(
-                    taskExecutorConnection, totalResourceProfile, defaultSlotResourceProfile);
+            //
+            taskManagerTracker.addTaskManager(taskExecutorConnection, totalResourceProfile, defaultSlotResourceProfile);
 
             if (initialSlotReport.hasAllocatedSlot()) {
-                slotStatusSyncer.reportSlotStatus(
-                        taskExecutorConnection.getInstanceID(), initialSlotReport);
+                slotStatusSyncer.reportSlotStatus(taskExecutorConnection.getInstanceID(), initialSlotReport);
             }
 
             if (matchedPendingTaskManagerOptional.isPresent()) {
                 PendingTaskManager pendingTaskManager = matchedPendingTaskManagerOptional.get();
-                allocateSlotsForRegisteredPendingTaskManager(
-                        pendingTaskManager, taskExecutorConnection.getInstanceID());
-                taskManagerTracker.removePendingTaskManager(
-                        pendingTaskManager.getPendingTaskManagerId());
+                allocateSlotsForRegisteredPendingTaskManager(pendingTaskManager, taskExecutorConnection.getInstanceID());
+                taskManagerTracker.removePendingTaskManager(pendingTaskManager.getPendingTaskManagerId());
                 return RegistrationResult.SUCCESS;
             }
 
@@ -505,6 +550,7 @@ public class FineGrainedSlotManager implements SlotManager {
 
     private Optional<PendingTaskManager> findMatchingPendingTaskManager(
             ResourceProfile totalResourceProfile, ResourceProfile defaultSlotResourceProfile) {
+        //从 taskManagerTracker 中找出当前所有处于 Pending 状态（已被预订、正在创建中）的 TaskManager 虚拟对象
         Collection<PendingTaskManager> matchedPendingTaskManagers =
                 taskManagerTracker.getPendingTaskManagersByTotalAndDefaultSlotResourceProfile(
                         totalResourceProfile, defaultSlotResourceProfile);
@@ -519,8 +565,11 @@ public class FineGrainedSlotManager implements SlotManager {
                         .findAny();
 
         if (matchedPendingTaskManagerIdsWithAllocatedSlots.isPresent()) {
+            //说明找到了符合紧凑策略、已经带了任务的在途机器
             return matchedPendingTaskManagerIdsWithAllocatedSlots;
         } else {
+            //所有在途的 Pending 机器都跟白纸一样干净，没有任何任务预占它们
+            //直接从最初粗筛出来的 matchedPendingTaskManagers 集合中通过 stream().findAny() 随便捞一台完全干净的机器返回
             return matchedPendingTaskManagers.stream().findAny();
         }
     }
@@ -854,8 +903,7 @@ public class FineGrainedSlotManager implements SlotManager {
     }
 
     private boolean checkResourcesNeedReconcile() {
-        ResourceReconcileResult reconcileResult =
-                resourceAllocationStrategy.tryReconcileClusterResources(taskManagerTracker);
+        ResourceReconcileResult reconcileResult = resourceAllocationStrategy.tryReconcileClusterResources(taskManagerTracker);
 
         reconcileResult.getPendingTaskManagersToRelease().stream()
                 .map(PendingTaskManager::getPendingTaskManagerId)
@@ -902,7 +950,7 @@ public class FineGrainedSlotManager implements SlotManager {
                     maxTotalMem.toHumanReadableString());
             return false;
         }
-
+        //
         taskManagerTracker.addPendingTaskManager(pendingTaskManager);
         return true;
     }

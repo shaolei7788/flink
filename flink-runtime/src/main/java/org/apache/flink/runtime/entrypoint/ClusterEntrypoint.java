@@ -119,6 +119,7 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
 
     protected static final Logger LOG = LoggerFactory.getLogger(ClusterEntrypoint.class);
 
+    //当集群在“启动阶段”或“运行阶段”遇到不可逆的严重致命错误时，JVM 进程以此状态码退出
     protected static final int STARTUP_FAILURE_RETURN_CODE = 1;
     protected static final int RUNTIME_FAILURE_RETURN_CODE = 2;
 
@@ -126,9 +127,10 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
 
     /** The lock to guard startup / shutdown / manipulation methods. */
     private final Object lock = new Object();
-
+    //存储当前集群的全局配置信息（对应 config.yaml 配置文件）。后续初始化所有组件（如网络、安全、HA、端口等）都会强依赖这个属性
     private final Configuration configuration;
 
+    //用于监听和管理整个集群生命周期的异步 Future。一旦集群因为正常停止、触发严重异常或主动作业结束而关闭，这个 Future 就会被填充状态，触发 JVM 进程退出
     private final CompletableFuture<ApplicationStatus> terminationFuture;
 
     private final AtomicBoolean isShutDown = new AtomicBoolean(false);
@@ -136,21 +138,29 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
     @GuardedBy("lock")
     private DeterminismEnvelope<ResourceID> resourceId;
 
+    //这是最重要的复合组件。它打包了 Flink 的三大核心组件：
+    // Dispatcher（负责接收作业并分发、生成 WebUI 查看作业状态）
+    // ResourceManager（负责向资源层申请/释放 Slot、管理 TaskManager 的注册）
+    // WebMonitorEndpoint（负责提供对外访问的 REST API 和 Web 控制台）
     @GuardedBy("lock")
     private DispatcherResourceManagerComponent clusterComponent;
 
+    //指标注册中心。负责收集、管理和向外部监控系统（如 Prometheus、InfluxDB）汇报当前 JobManager 内部的所有性能指标与度量数据
     @GuardedBy("lock")
     private MetricRegistryImpl metricRegistry;
 
     @GuardedBy("lock")
     private ProcessMetricGroup processMetricGroup;
 
+    //高可用服务组件（如基于 ZooKeeper 或 Kubernetes ConfigMap 实现的主备选举）。主要负责元数据持久化、Leader 选举及 Leader 检索服务
     @GuardedBy("lock")
     private HighAvailabilityServices haServices;
 
+    //二进制大对象服务器（BLOB Server），用于存储、分发集群运行所需的大文件（如作业的 JAR 包、用户上传的依赖等）
     @GuardedBy("lock")
     private BlobServer blobServer;
 
+    //心跳服务组件。专门负责检测 JobManager 与外界（如 TaskManager、ResourceManager 之间）的连接活性，快速感知节点宕机
     @GuardedBy("lock")
     private HeartbeatServices heartbeatServices;
 
@@ -160,6 +170,7 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
     @GuardedBy("lock")
     private DelegationTokenManager delegationTokenManager;
 
+    //通用的 RPC 服务实例（底层基于 Pekko/Netty）。JobManager 内部各组件相互通信，或者 TaskManager 与 JobManager 通信，都需要借由该服务提供的 RPC 框架
     @GuardedBy("lock")
     private RpcService commonRpcService;
 
@@ -234,6 +245,7 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
             securityContext.runSecured(
                     (Callable<Void>)
                             () -> {
+                                //todo 启动
                                 runCluster(configuration, pluginManager);
 
                                 return null;
@@ -282,14 +294,17 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
     private void runCluster(Configuration configuration, PluginManager pluginManager)
             throws Exception {
         synchronized (lock) {
-            initializeServices(configuration, pluginManager);
+            //创建基础的通用核心公共服务组件
+            initializeServices(configuration, pluginManager);//
 
-            final DispatcherResourceManagerComponentFactory
-                    dispatcherResourceManagerComponentFactory =
-                            createDispatcherResourceManagerComponentFactory(configuration);
-
-            clusterComponent =
-                    dispatcherResourceManagerComponentFactory.create(
+            //factory = DefaultDispatcherResourceManagerComponentFactory
+            // StandaloneSessionClusterEntrypoint#createDispatcherResourceManagerComponentFactory
+            final DispatcherResourceManagerComponentFactory factory = createDispatcherResourceManagerComponentFactory(configuration);
+            //这是最重要的复合组件。它打包了 Flink 的三大核心组件：
+            // Dispatcher（负责接收作业并分发、生成 WebUI 查看作业状态）
+            // ResourceManager（负责向资源层申请/释放 Slot、管理 TaskManager 的注册）
+            // WebMonitorEndpoint（负责提供对外访问的 REST API 和 Web 控制台）
+            clusterComponent = factory.create(
                             configuration,
                             resourceId.unwrap(),
                             ioExecutor,
@@ -310,12 +325,14 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
                     .whenComplete(
                             (ApplicationStatus applicationStatus, Throwable throwable) -> {
                                 if (throwable != null) {
+                                    //异常关闭
                                     shutDownAsync(
                                             ApplicationStatus.UNKNOWN,
                                             ShutdownBehaviour.GRACEFUL_SHUTDOWN,
                                             ExceptionUtils.stringifyException(throwable),
                                             false);
                                 } else {
+                                    //正常关闭
                                     // This is the general shutdown path. If a separate more
                                     // specific shutdown was
                                     // already triggered, this will do nothing
@@ -329,6 +346,7 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
         }
     }
 
+    //创建基础的通用核心公共服务组件
     protected void initializeServices(Configuration configuration, PluginManager pluginManager)
             throws Exception {
 
@@ -359,9 +377,8 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
             LOG.info("Using working directory: {}.", workingDirectory);
 
             rpcSystem = RpcSystem.load(configuration);
-
-            commonRpcService =
-                    RpcUtils.createRemoteRpcService(
+            //建立 JobManager 进程的通信骨架。后续所有的集群内部组件通信（如 TaskManager 注册、心跳上报、Master 节点选举等）都极其依赖该 RPC 服务
+            commonRpcService = RpcUtils.createRemoteRpcService(
                             rpcSystem,
                             configuration,
                             configuration.get(JobManagerOptions.ADDRESS),
@@ -388,6 +405,8 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
             // Obtaining delegation tokens and propagating them to the local JVM receivers in a
             // one-time fashion is required because BlobServer may connect to external file systems
             delegationTokenManager.obtainDelegationTokens();
+            //为组件提供 Leader 选举和检索 服务
+            //提供元数据和作业图（JobGraph）的持久化存储库（防止 JobManager 挂掉后作业状态丢失）
             haServices = createHaServices(configuration, ioExecutor, rpcSystem);
             blobServer =
                     BlobUtils.createBlobServer(
@@ -396,8 +415,11 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
                             haServices.createBlobStore());
             blobServer.start();
             configuration.set(BlobServerOptions.PORT, String.valueOf(blobServer.getPort()));
+            //心跳服务
             heartbeatServices = createHeartbeatServices(configuration);
             failureEnrichers = FailureEnricherUtils.getFailureEnrichers(configuration);
+
+            //初始化指标注册中心与监控系统
             metricRegistry = createMetricRegistry(configuration, pluginManager, rpcSystem);
 
             final RpcService metricQueryServiceRpcService =
@@ -409,7 +431,7 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
             metricRegistry.startQueryService(metricQueryServiceRpcService, null);
 
             final String hostname = RpcUtils.getHostname(commonRpcService);
-
+            //收集宿主机或容器环境的物理硬件指标，确保在后续分配资源或打印日志时能准确识别出当前节点的可用物理上限
             processMetricGroup =
                     MetricUtils.instantiateProcessMetricGroup(
                             metricRegistry,
@@ -440,7 +462,8 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
     protected HighAvailabilityServices createHaServices(
             Configuration configuration, Executor executor, RpcSystemUtils rpcSystemUtils)
             throws Exception {
-        return HighAvailabilityServicesUtils.createHighAvailabilityServices(
+        //standalone 模式 返回的是 StandaloneHaServices
+        return HighAvailabilityServicesUtils.createHighAvailabilityServices(//
                 configuration,
                 executor,
                 AddressResolution.NO_ADDRESS_RESOLUTION,

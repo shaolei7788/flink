@@ -46,6 +46,7 @@ public class StandaloneLeaderElection implements LeaderElection {
         this.sessionID = sessionID;
     }
 
+    //开始leader 选举
     @Override
     public void startLeaderElection(LeaderContender contender) throws Exception {
         synchronized (lock) {
@@ -53,14 +54,14 @@ public class StandaloneLeaderElection implements LeaderElection {
                     leaderContender == null,
                     "No LeaderContender should have been registered with this LeaderElection, yet.");
             this.leaderContender = contender;
-
+            // ResourceManagerServiceImpl#grantLeadership
+            // 内定当前leaderContender 是leader了
             this.leaderContender.grantLeadership(sessionID);
         }
     }
 
     @Override
-    public CompletableFuture<Void> confirmLeadershipAsync(
-            UUID leaderSessionID, String leaderAddress) {
+    public CompletableFuture<Void> confirmLeadershipAsync(UUID leaderSessionID, String leaderAddress) {
         return FutureUtils.completedVoidFuture();
     }
 

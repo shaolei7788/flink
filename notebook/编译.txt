@@ -1,4 +1,7 @@
 
+AI数据分析智能问数系统
+
+
 全部编译（加上 -o 离线模式）
 mvn clean package -o  -DskipTests -Djdk21 -Pjava21-target -Drat.skip=true -Dcheckstyle.skip -Dcheckstyle.failOnViolation=false -Dspotbugs.skip=true -Denforcer.skip=true -Dspotless.skip=true  -Dmaven.repo.local=D:\apache-maven-3.8.4\repository
 
@@ -7,5 +10,8 @@ mvn clean package -o  -DskipTests -Djdk21 -Pjava21-target -Drat.skip=true -Dchec
 mvn clean package -o -pl flink-rpc/flink-rpc-akka,flink-rpc/flink-rpc-akka-loader -DskipTests -Dcheckstyle.skip -Dcheckstyle.failOnViolation=false -Dspotbugs.skip=true -Denforcer.skip=true -Dspotless.skip=true -Djdk21 -Pjava21-target -Dmaven.repo.local=D:\apache-maven-3.8.4\repository
 
 
-idea 运行 standalone模型
+idea 本地运行 StandaloneSessionClusterEntrypoint 跟 TaskManagerRunner 进程
 https://blog.csdn.net/qq_20672231/article/details/147017660
+
+VM options 添加下面的内容
+-Dlog.file=./log/flink-jobmanager-1.local.log -Dlog4j.configuration=./a_conf/log4j.properties -Dlog4j.configurationFile=./a_conf/log4j.properties -Dlogback.configurationFile=./a_conf/logback.xml

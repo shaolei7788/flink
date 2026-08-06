@@ -149,6 +149,7 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
                 || declaringClass.equals(RpcServer.class)) {
             //不发起网络请求/Actor消息，直接在本地的 PekkoInvocationHandler 实例上反射执行
             //本地/基础接口方法  PekkoBasedEndpoint 等 直接在当前 Handler 执行
+            // 有时会调用  PekkoInvocationHandler#start
             result = method.invoke(this, args);
         } else if (declaringClass.equals(FencedRpcGateway.class)) {
             //非法的 Fenced 拦截
@@ -211,10 +212,6 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
 
     @Override
     public void start() {
-        // 发送一个控制开始信号
-        //正式激活并启动底层的 Pekko Actor，使其将状态切换为“运行中”，从而开始监听、接收并处理外界发送过来的业务 RPC 消息
-        rpcEndpoint.tell(ControlMessages.START, ActorRef.noSender());
-
         // 接下来会执行
         //rpcEndpoint.tell(ControlMessages.START) [PekkoInvocationHandler]
         //     │
@@ -232,6 +229,12 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
         //     │
         //     ▼
         //执行你熟悉的生命周期钩子方法：onStart()
+
+        // 发送一个控制开始信号
+        //正式激活并启动底层的 Pekko Actor，使其将状态切换为“运行中”，从而开始监听、接收并处理外界发送过来的业务 RPC 消息
+        rpcEndpoint.tell(ControlMessages.START, ActorRef.noSender());
+
+
     }
 
     @Override

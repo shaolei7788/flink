@@ -90,6 +90,7 @@ public class StandaloneResourceManager extends ResourceManager<ResourceID> {
 
     @Override
     protected void initialize() throws ResourceManagerException {
+        //
         startStartupPeriod();
     }
 

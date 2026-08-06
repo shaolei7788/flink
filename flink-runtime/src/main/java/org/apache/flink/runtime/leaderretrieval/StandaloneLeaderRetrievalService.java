@@ -33,16 +33,21 @@ import static org.apache.flink.util.Preconditions.checkState;
  * <p>As soon as this service is started, it immediately notifies the leader listener of the leader
  * contender with the pre-configured address.
  */
+//Standalone 模式 Leader 检索服务
 public class StandaloneLeaderRetrievalService implements LeaderRetrievalService {
 
+    //
     private final Object startStopLock = new Object();
 
+    //主节点 RPC 地址
     /** The fix address of the leader. */
     private final String leaderAddress;
 
+    //固定的 Leader 会话 ID
     /** The fix leader ID (leader lock fencing token). */
     private final UUID leaderId;
 
+    //生命周期状态位。用于标记当前检索服务是否已经处于激活运行状态，防止重复启动或在未启动时误触发回调
     /** Flag whether this service is started. */
     private boolean started;
 
@@ -65,13 +70,17 @@ public class StandaloneLeaderRetrievalService implements LeaderRetrievalService 
      * @param leaderAddress The leader's pre-configured address
      * @param leaderId The constant leaderId.
      */
+
     public StandaloneLeaderRetrievalService(String leaderAddress, UUID leaderId) {
+        //  leaderAddress = pekko.tcp://flink@localhost:6123/user/rpc/resourcemanager_*
         this.leaderAddress = checkNotNull(leaderAddress);
         this.leaderId = checkNotNull(leaderId);
     }
 
     // ------------------------------------------------------------------------
-
+    // 向监听器通知leader地址
+    // LeaderRetrievalListener是 Leader 检索监听器
+    // listener = RpcGatewayRetriever
     @Override
     public void start(LeaderRetrievalListener listener) {
         checkNotNull(listener, "Listener must not be null.");
@@ -81,8 +90,11 @@ public class StandaloneLeaderRetrievalService implements LeaderRetrievalService 
             started = true;
 
             // directly notify the listener, because we already know the leading JobManager's
-            // address
-            listener.notifyLeaderAddress(leaderAddress, leaderId);
+            // leaderAddress = pekko.tcp://flink@localhost:6123/user/rpc/resourcemanager_*
+            // leaderId = 00000000-0000-0000-0000-000000000000
+            //RpcGatewayRetriever#notifyLeaderAddress  LeaderRetriever#notifyLeaderAddress
+            System.out.println(listener.getClass().getName() + " start ");
+            listener.notifyLeaderAddress(leaderAddress, leaderId);//
         }
     }
 

@@ -281,8 +281,8 @@ public class DefaultJobLeaderIdService implements JobLeaderIdService {
 
                 if (previousJobLeaderId != null && !previousJobLeaderId.equals(leaderSessionId)) {
                     // we had a previous job leader, so notify about his lost leadership
-                    listenerJobLeaderIdActions.jobLeaderLostLeadership(
-                            jobId, new JobMasterId(previousJobLeaderId));
+                    //触发时机：当底层的 HA 系统检测到某个作业（jobId）的当前 JobMaster 丢失了领导权（不再是 Active 主节点）时，由 JobLeaderIdService 触发此回调
+                    listenerJobLeaderIdActions.jobLeaderLostLeadership(jobId, new JobMasterId(previousJobLeaderId));
 
                     if (null == leaderSessionId) {
                         // No current leader active ==> Set a timeout for the job

@@ -180,7 +180,8 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
                 mainThreadValidator.enterMainThread();
 
                 try {
-                    //
+                    //注册消息 RemoteFencedMessage(00000000000000000000000000000000,
+                    // RemoteRpcInvocation(ResourceManagerGateway.registerTaskExecutor(TaskExecutorRegistration, Duration)))
                     handleRpcMessage(message);
                 } finally {
                     mainThreadValidator.exitMainThread();
@@ -238,7 +239,7 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
         } else if (message instanceof CallAsync) {
             handleCallAsync((CallAsync) message);
         } else if (message instanceof RpcInvocation) {
-            //
+            // 处理远程调用信息
             handleRpcInvocation((RpcInvocation) message);
         } else {
             log.warn(
@@ -318,19 +319,23 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
 
                 final Method capturedRpcMethod = rpcMethod;
                 if (rpcMethod.getReturnType().equals(Void.TYPE)) {
+                    //无返回值
                     // No return value to send back
                     runWithContextClassLoader(
-                            () -> capturedRpcMethod.invoke(rpcEndpoint, rpcInvocation.getArgs()),
-                            flinkClassLoader);
+                            //
+                            () -> capturedRpcMethod.invoke(rpcEndpoint, rpcInvocation.getArgs()), flinkClassLoader);
                 } else {
+                    //有返回值
                     final Object result;
                     try {
-                        result =
-                                runWithContextClassLoader(
-                                        () ->
-                                                capturedRpcMethod.invoke(
-                                                        rpcEndpoint, rpcInvocation.getArgs()),
-                                        flinkClassLoader);
+                        //todo  TaskManager向ResouceManager注册会走这里
+                        // result 是返回结果
+                        result = runWithContextClassLoader(
+                                        //CompletableFuture ResourceManager.registerTaskExecutor(TaskExecutorRegistration,Duration)
+                                        // rpcEndpoint = StandaloneResourceManager
+                                        // rpcInvocation.getArgs() 这个是参数
+                                        // 也就是会调用 StandaloneResourceManager#registerTaskExecutor
+                                        () -> capturedRpcMethod.invoke(rpcEndpoint, rpcInvocation.getArgs()), flinkClassLoader);
                     } catch (InvocationTargetException e) {
                         log.debug(
                                 "Reporting back error thrown in remote procedure {}", rpcMethod, e);
@@ -345,9 +350,12 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
                             rpcMethod.getAnnotation(Local.class) != null;
 
                     if (result instanceof CompletableFuture) {
+                        //
                         final CompletableFuture<?> responseFuture = (CompletableFuture<?>) result;
+                        //发送异步响应
                         sendAsyncResponse(responseFuture, methodName, isLocalRpcInvocation);
                     } else {
+                        //发送同步响应
                         sendSyncResponse(result, methodName, isLocalRpcInvocation);
                     }
                 }

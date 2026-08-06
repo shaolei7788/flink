@@ -27,6 +27,7 @@ import java.util.concurrent.CompletableFuture;
  * {@code DefaultLeaderElection} implements the {@link LeaderElection} based on the {@link
  * ParentService}.
  */
+//standalone 模式不会走这里
 class DefaultLeaderElection implements LeaderElection {
 
     private final ParentService parentService;

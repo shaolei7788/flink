@@ -37,16 +37,22 @@ import java.util.function.Function;
  * @param <F> type of the fencing token
  * @param <T> type of the fenced gateway to retrieve
  */
+//将高可用组件（HA Services）推送过来的、变动频繁的“远程 Leader RPC 字符串地址（String Address）”，
+// 自动且线程安全地“翻译并包装”成可以直接调用 Java 方法的“RPC 网关实例（Gateway）
 public class RpcGatewayRetriever<F extends Serializable, T extends FencedRpcGateway<F>>
         extends LeaderGatewayRetriever<T> {
 
+    //底层底座服务。用于在得知最新 Leader 地址字符串后，调用其网络连接方法（如 connect）跨网络去抓取并建立真实的 Akka/Netty 远程连接通道
     private final RpcService rpcService;
+    //指明当前拦截器具体要把地址翻译成哪种网关类型
     private final Class<T> gatewayType;
     private final Function<UUID, F> fencingTokenMapper;
     private final RetryStrategy retryStrategy;
 
     public RpcGatewayRetriever(
             RpcService rpcService,
+            //DispatcherGateway.class
+            //ResourceManagerGateway.class
             Class<T> gatewayType,
             Function<UUID, F> fencingTokenMapper,
             RetryStrategy retryStrategy) {
@@ -56,14 +62,17 @@ public class RpcGatewayRetriever<F extends Serializable, T extends FencedRpcGate
         this.retryStrategy = Preconditions.checkNotNull(retryStrategy);
     }
 
+
     @Override
-    protected CompletableFuture<T> createGateway(
-            CompletableFuture<Tuple2<String, UUID>> leaderFuture) {
+    protected CompletableFuture<T> createGateway(CompletableFuture<Tuple2<String, UUID>> leaderFuture) {
+        //跟指定leader地址建立rpc连接
         return FutureUtils.retryWithDelay(
                 () ->
                         leaderFuture.thenCompose(
                                 (Tuple2<String, UUID> addressLeaderTuple) ->
+                                        // 建立真实的 Akka/Netty 远程连接通道
                                         rpcService.connect(
+                                                // addressLeaderTuple =
                                                 addressLeaderTuple.f0,
                                                 fencingTokenMapper.apply(addressLeaderTuple.f1),
                                                 gatewayType)),

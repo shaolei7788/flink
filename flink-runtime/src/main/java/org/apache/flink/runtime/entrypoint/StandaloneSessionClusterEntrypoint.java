@@ -35,8 +35,8 @@ public class StandaloneSessionClusterEntrypoint extends SessionClusterEntrypoint
     @Override
     protected DefaultDispatcherResourceManagerComponentFactory
             createDispatcherResourceManagerComponentFactory(Configuration configuration) {
-        return DefaultDispatcherResourceManagerComponentFactory.createSessionComponentFactory(
-                StandaloneResourceManagerFactory.getInstance());
+        StandaloneResourceManagerFactory resourceManagerFactory = StandaloneResourceManagerFactory.getInstance();
+        return DefaultDispatcherResourceManagerComponentFactory.createSessionComponentFactory(resourceManagerFactory);//
     }
 
     public static void main(String[] args) {
@@ -54,7 +54,7 @@ public class StandaloneSessionClusterEntrypoint extends SessionClusterEntrypoint
         Configuration configuration = loadConfiguration(entrypointClusterConfiguration);
 
         StandaloneSessionClusterEntrypoint entrypoint = new StandaloneSessionClusterEntrypoint(configuration);
-        //
+        //todo
         ClusterEntrypoint.runClusterEntrypoint(entrypoint);
     }
 }

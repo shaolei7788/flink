@@ -1366,8 +1366,8 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         assert (resourceManagerAddress != null);
         assert (resourceManagerConnection == null);
         assert (establishedResourceManagerConnection == null);
-
-        log.info("Connecting to ResourceManager {}", resourceManagerAddress);
+        //resourceManagerAddress
+        log.info("Connecting to ResourceManager {}", resourceManagerAddress);//
 
         resourceManagerConnection =
                 new ResourceManagerConnection(

@@ -27,6 +27,27 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
+//[资源不足/算子排队]
+//       │
+//       ▼
+// 1. 诞生 (Create)：SlotManager 在内存中凭空画大饼，创建一个 PendingTaskManager，
+//                  将排队算子挂靠在其账上（预占）。
+//       │
+//       ▼
+// [人工手动或脚本启动物理 TM 进程]
+//       │
+//       ▼
+// 2. 匹配 (Match)：真实 TM 启动成功，调用 `registerTaskManager`。
+//                  SlotManager 调用 `findMatchingPendingTaskManager` 精准抓出
+//                  这个对应的 Pending 占位符。
+//       │
+//       ▼
+// 3. 兑现与销毁 (Fulfill & Destroy)：
+//                  真实 TM 继承该 Pending 对象身上的所有预占算子记录。
+//                  随后，该 PendingTaskManager 完成历史使命，被从内存中彻底销毁。
+
+//为什么需要？ 如果没有 新来的算子就会被直接拒绝
+//
 /** Represents a pending task manager in the {@link SlotManager}. */
 public class PendingTaskManager {
     private final PendingTaskManagerId pendingTaskManagerId;
@@ -40,8 +61,7 @@ public class PendingTaskManager {
     public PendingTaskManager(ResourceProfile totalResourceProfile, int numSlots) {
         this.numSlots = numSlots;
         this.totalResourceProfile = Preconditions.checkNotNull(totalResourceProfile);
-        this.defaultSlotResourceProfile =
-                SlotManagerUtils.generateDefaultSlotResourceProfile(totalResourceProfile, numSlots);
+        this.defaultSlotResourceProfile = SlotManagerUtils.generateDefaultSlotResourceProfile(totalResourceProfile, numSlots);
         this.pendingTaskManagerId = PendingTaskManagerId.generate();
         this.unusedResource = totalResourceProfile;
         this.pendingSlotAllocationRecords = new HashMap<>();

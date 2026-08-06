@@ -129,10 +129,9 @@ public class PekkoRpcServiceUtils {
 
         checkNotNull(config, "config is null");
 
-        final boolean sslEnabled =
-                config.get(RpcOptions.SSL_ENABLED) && SecurityOptions.isInternalSSLEnabled(config);
+        final boolean sslEnabled = config.get(RpcOptions.SSL_ENABLED) && SecurityOptions.isInternalSSLEnabled(config);
 
-        return getRpcUrl(
+        return getRpcUrl(//
                 hostname,
                 port,
                 endpointName,
@@ -149,6 +148,7 @@ public class PekkoRpcServiceUtils {
      * @param protocol True, if security/encryption is enabled, false otherwise.
      * @return The RPC URL of the specified RPC endpoint.
      */
+    //获取远程的url
     public static String getRpcUrl(
             String hostname,
             int port,
@@ -168,11 +168,11 @@ public class PekkoRpcServiceUtils {
         }
 
         final String hostPort = NetUtils.unresolvedHostAndPortToNormalizedString(hostname, port);
-
-        return internalRpcUrl(
-                endpointName, Optional.of(new RemoteAddressInformation(hostPort, protocol)));
+        // pekko.tcp://flink@localhost:6123/user/rpc/resourcemanager_*
+        return internalRpcUrl(endpointName, Optional.of(new RemoteAddressInformation(hostPort, protocol)));//
     }
 
+    //获取本地的url  pekko://flink/user/rpc/resourcemanager_*
     public static String getLocalRpcUrl(String endpointName) {
         return internalRpcUrl(endpointName, Optional.empty());
     }
@@ -199,6 +199,7 @@ public class PekkoRpcServiceUtils {
         }
     }
 
+    // pekko url 固定写法
     private static String internalRpcUrl(
             String endpointName, Optional<RemoteAddressInformation> remoteAddressInformation) {
         final String protocolPrefix =
@@ -207,13 +208,14 @@ public class PekkoRpcServiceUtils {
                         .orElse("pekko");
         final Optional<String> optionalHostnameAndPort =
                 remoteAddressInformation.map(RemoteAddressInformation::getHostnameAndPort);
-
+        // url = pekko.tcp://flink
         final StringBuilder url = new StringBuilder(String.format("%s://flink", protocolPrefix));
+        // optionalHostnameAndPort = pekko.tcp://flink@localhost:6123
         optionalHostnameAndPort.ifPresent(hostPort -> url.append("@").append(hostPort));
-
+        //
         url.append("/user/").append(SUPERVISOR_NAME).append("/").append(endpointName);
-
         // protocolPrefix://flink[@hostname:port]/user/rpc/endpointName
+        // pekko.tcp://flink@localhost:6123/user/rpc/resourcemanager_*
         return url.toString();
     }
 

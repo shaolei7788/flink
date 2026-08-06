@@ -58,9 +58,8 @@ public class ResourceManagerRuntimeServices {
             HighAvailabilityServices highAvailabilityServices,
             ScheduledExecutor scheduledExecutor,
             SlotManagerMetricGroup slotManagerMetricGroup) {
-
-        final SlotManager slotManager =
-                createSlotManager(configuration, scheduledExecutor, slotManagerMetricGroup);
+        //创建slot管理器 FineGrainedSlotManager
+        final SlotManager slotManager = createSlotManager(configuration, scheduledExecutor, slotManagerMetricGroup);
 
         final JobLeaderIdService jobLeaderIdService =
                 new DefaultJobLeaderIdService(
@@ -75,7 +74,7 @@ public class ResourceManagerRuntimeServices {
             SlotManagerMetricGroup slotManagerMetricGroup) {
         final SlotManagerConfiguration slotManagerConfiguration =
                 configuration.getSlotManagerConfiguration();
-        return new FineGrainedSlotManager(
+        return new FineGrainedSlotManager(//
                 scheduledExecutor,
                 slotManagerConfiguration,
                 slotManagerMetricGroup,

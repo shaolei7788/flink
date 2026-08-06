@@ -134,9 +134,12 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
     /** All currently registered JobMasterGateways scoped by ResourceID. */
     private final Map<ResourceID, JobManagerRegistration> jmResourceIdRegistrations;
 
+    //作业 Leader 监听服务。因为 Flink 的 JobMaster 也是高可用的（会换人），
+    // 当某个作业向 ResourceManager 申请资源时，该服务负责监控并确保 ResourceManager 始终在跟该作业最新的、合法的 JobMaster Leader 进行通信
     /** Service to retrieve the job leader ids. */
     private final JobLeaderIdService jobLeaderIdService;
 
+    //TaskManager 注册表。维护了当前集群中所有成功注册、存活的 TaskManager（在源码中称为 TaskExecutor）的 ID 及其对应的 RPC 通信网关
     /** All currently registered TaskExecutors with their framework specific worker information. */
     private final Map<ResourceID, WorkerRegistration<WorkerType>> taskExecutors;
 
@@ -144,11 +147,13 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
     private final Map<ResourceID, CompletableFuture<TaskExecutorGateway>>
             taskExecutorGatewayFutures;
 
+    //心跳服务工厂。专门用于创建和管理 ResourceManager 与所有 TaskManager 之间、以及 ResourceManager 与各个 JobMaster 之间的双向心跳
     private final HeartbeatServices heartbeatServices;
 
     /** Fatal error handler. */
     private final FatalErrorHandler fatalErrorHandler;
 
+    //Slot 资源大盘管理器（最核心的内部组件） [1]。它在内存中精确记录了：当前集群总共有多少个 Slot、哪些是空闲的、哪些已经被分给了哪个 Job（作业）、是否需要向外界申请新的
     /** The slot manager maintains the available slots. */
     private final SlotManager slotManager;
 
@@ -162,9 +167,11 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
 
     private final CompletableFuture<Void> startedFuture;
 
+    //具体负责维持与 JobMaster (JM) 和 TaskManager (TM) 心跳的管理器。一旦某台机器心跳超时，就会在这里触发节点下线和资源释放逻辑
     /** The heartbeat manager with task managers. */
     private HeartbeatManager<TaskExecutorHeartbeatPayload, Void> taskManagerHeartbeatManager;
 
+    //具体负责维持与 JobMaster (JM) 和 TaskManager (TM) 心跳的管理器。一旦某台机器心跳超时，就会在这里触发节点下线和资源释放逻辑
     /** The heartbeat manager with job managers. */
     private HeartbeatManager<Void, Void> jobManagerHeartbeatManager;
 
@@ -178,6 +185,8 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
 
     public ResourceManager(
             RpcService rpcService,
+            //当前的 Leader 会话 ID（传国玉玺）。只有当选为 Leader 后才会被赋值。
+            //ResourceManager 每次处理请求时，都会校验对方带过来的 ID 是否与自己一致，防止旧 Leader 的过期指令干扰集
             UUID leaderSessionId,
             ResourceID resourceId,
             HeartbeatServices heartbeatServices,
@@ -253,6 +262,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
     public final void onStart() throws Exception {
         try {
             log.info("Starting the resource manager.");
+            //开始ResourceManager 服务
             startResourceManagerServices();
             startedFuture.complete(null);
         } catch (Throwable t) {
@@ -267,12 +277,15 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
 
     private void startResourceManagerServices() throws Exception {
         try {
+            // DefaultJobLeaderIdService#start
             jobLeaderIdService.start(new JobLeaderIdActionsImpl());
 
             registerMetrics();
-
+            //开始心跳服务
+            //创建taskManager的心跳管理器
+            //创建jobManager的心跳管理器
             startHeartbeatServices();
-
+            //
             slotManager.start(
                     getFencingToken(),
                     getMainThreadExecutor(),
@@ -471,17 +484,17 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
         }
     }
 
+    //todo   ResourceManager 接收 TaskManager的注册
     @Override
     public CompletableFuture<RegistrationResponse> registerTaskExecutor(
             final TaskExecutorRegistration taskExecutorRegistration, final Duration timeout) {
-
+        //获取Executor网关
         CompletableFuture<TaskExecutorGateway> taskExecutorGatewayFuture =
                 getRpcService()
                         .connect(
                                 taskExecutorRegistration.getTaskExecutorAddress(),
                                 TaskExecutorGateway.class);
-        taskExecutorGatewayFutures.put(
-                taskExecutorRegistration.getResourceId(), taskExecutorGatewayFuture);
+        taskExecutorGatewayFutures.put(taskExecutorRegistration.getResourceId(), taskExecutorGatewayFuture);
 
         return taskExecutorGatewayFuture.handleAsync(
                 (TaskExecutorGateway taskExecutorGateway, Throwable throwable) -> {
@@ -491,8 +504,8 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                         if (throwable != null) {
                             return new RegistrationResponse.Failure(throwable);
                         } else {
-                            return registerTaskExecutorInternal(
-                                    taskExecutorGateway, taskExecutorRegistration);
+                            //注册TaskExecutor
+                            return registerTaskExecutorInternal(taskExecutorGateway, taskExecutorRegistration);//
                         }
                     } else {
                         log.debug(
@@ -505,40 +518,43 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                 getMainThreadExecutor());
     }
 
+    //todo   ResourceManager 接收 TaskManager slot 上报情况
+    //会记录该TaskManager 一共有几个Slot，每个 Slot 的cpu 内存情况，是否被分配了作业，AllocationID（属于哪个作业）哪些 Slot 还是完全干净、空闲的
     @Override
     public CompletableFuture<Acknowledge> sendSlotReport(
             ResourceID taskManagerResourceId,
             InstanceID taskManagerRegistrationId,
             SlotReport slotReport,
             Duration timeout) {
-        final WorkerRegistration<WorkerType> workerTypeWorkerRegistration =
-                taskExecutors.get(taskManagerResourceId);
-
+        //获取TaskExecutor的注册信息
+        final WorkerRegistration<WorkerType> workerTypeWorkerRegistration = taskExecutors.get(taskManagerResourceId);
+        //上报slot的TaskExecutor 跟 已注册的TaskExecutor 是同一个
         if (workerTypeWorkerRegistration.getInstanceID().equals(taskManagerRegistrationId)) {
-            SlotManager.RegistrationResult registrationResult =
-                    //
-                    slotManager.registerTaskManager(
+            //FineGrainedSlotManager#registerTaskManager
+            SlotManager.RegistrationResult registrationResult = slotManager.registerTaskManager(
                             workerTypeWorkerRegistration,
                             slotReport,
                             workerTypeWorkerRegistration.getTotalResourceProfile(),
                             workerTypeWorkerRegistration.getDefaultSlotResourceProfile());
             if (registrationResult == SlotManager.RegistrationResult.SUCCESS) {
-                WorkerResourceSpec workerResourceSpec =
-                        WorkerResourceSpec.fromTotalResourceProfile(
+                //slot 注册成功
+                WorkerResourceSpec workerResourceSpec = WorkerResourceSpec.fromTotalResourceProfile(
                                 workerTypeWorkerRegistration.getTotalResourceProfile(),
                                 slotReport.getNumSlotStatus());
+                //
                 onWorkerRegistered(workerTypeWorkerRegistration.getWorker(), workerResourceSpec);
             } else if (registrationResult == SlotManager.RegistrationResult.REJECTED) {
+                //slot 注册拒绝
                 closeTaskManagerConnection(
                                 taskManagerResourceId,
-                                new FlinkExpectedException(
-                                        "Task manager could not be registered to SlotManager."))
+                                new FlinkExpectedException("Task manager could not be registered to SlotManager."))
                         .ifPresent(ResourceManager.this::stopWorkerIfSupported);
             } else {
                 log.debug("TaskManager {} is ignored by SlotManager.", taskManagerResourceId);
             }
             return CompletableFuture.completedFuture(Acknowledge.get());
         } else {
+            //之前未注册过
             return FutureUtils.completedExceptionally(
                     new ResourceManagerException(
                             String.format(
@@ -1043,8 +1059,8 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
             TaskExecutorGateway taskExecutorGateway,
             TaskExecutorRegistration taskExecutorRegistration) {
         ResourceID taskExecutorResourceId = taskExecutorRegistration.getResourceId();
-        WorkerRegistration<WorkerType> oldRegistration =
-                taskExecutors.remove(taskExecutorResourceId);
+        //旧的注册信息
+        WorkerRegistration<WorkerType> oldRegistration = taskExecutors.remove(taskExecutorResourceId);
         if (oldRegistration != null) {
             // TODO :: suggest old taskExecutor to stop itself
             log.debug(
@@ -1052,6 +1068,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                     taskExecutorResourceId.getStringWithMetadata());
 
             // remove old task manager registration from slot manager
+            //移除旧的注册信息
             slotManager.unregisterTaskManager(
                     oldRegistration.getInstanceID(),
                     new ResourceManagerException(
@@ -1060,9 +1077,9 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                                     taskExecutorResourceId.getStringWithMetadata())));
         }
 
-        final Optional<WorkerType> newWorkerOptional =
-                getWorkerNodeIfAcceptRegistration(taskExecutorResourceId);
-
+        //获取work节点 tm01
+        final Optional<WorkerType> newWorkerOptional = getWorkerNodeIfAcceptRegistration(taskExecutorResourceId);
+        // taskExecutorAddress = pekko.tcp://flink@localhost:54365/user/rpc/taskmanager_0
         String taskExecutorAddress = taskExecutorRegistration.getTaskExecutorAddress();
         if (!newWorkerOptional.isPresent()) {
             log.warn(
@@ -1073,17 +1090,23 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
             return new TaskExecutorRegistrationRejection(
                     "The ResourceManager does not recognize this TaskExecutor.");
         } else {
+            // tm01
             WorkerType newWorker = newWorkerOptional.get();
-            WorkerRegistration<WorkerType> registration =
-                    new WorkerRegistration<>(
+            //创建work注册对象
+            WorkerRegistration<WorkerType> registration = new WorkerRegistration<>(
                             taskExecutorGateway,
                             newWorker,
-                            taskExecutorRegistration.getDataPort(),
-                            taskExecutorRegistration.getJmxPort(),
+                            taskExecutorRegistration.getDataPort(),//54367
+                            taskExecutorRegistration.getJmxPort(),//-1
+                            //cores=12, physMem=34116632576, heap=8531214336, managed=536870912
                             taskExecutorRegistration.getHardwareDescription(),
+                            //TaskExecutorMemoryConfiguration{frameworkHeap=134217728, taskHeap=536870912, frameworkOffHeap=134217728, taskOffHeap=134217728, networkMemory=134217728, managedMemory=536870912, jvmMetaspace=134217728, jvmOverhead=134217728, totalFlinkMemory=1610612736, totalProcessMemory=1879048192}
                             taskExecutorRegistration.getMemoryConfiguration(),
+                            //ResourceProfile{cpuCores=1, taskHeapMemory=512.000mb (536870912 bytes), taskOffHeapMemory=128.000mb (134217728 bytes), managedMemory=512.000mb (536870912 bytes), networkMemory=128.000mb (134217728 bytes)}
                             taskExecutorRegistration.getTotalResourceProfile(),
+                            //ResourceProfile{cpuCores=1, taskHeapMemory=512.000mb (536870912 bytes), taskOffHeapMemory=128.000mb (134217728 bytes), managedMemory=512.000mb (536870912 bytes), networkMemory=128.000mb (134217728 bytes)}
                             taskExecutorRegistration.getDefaultSlotResourceProfile(),
+                            //localhost
                             taskExecutorRegistration.getNodeId());
 
             log.info(
@@ -1091,10 +1114,9 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                     taskExecutorResourceId.getStringWithMetadata(),
                     taskExecutorAddress);
             taskExecutors.put(taskExecutorResourceId, registration);
-
-            taskManagerHeartbeatManager.monitorTarget(
-                    taskExecutorResourceId, new TaskExecutorHeartbeatSender(taskExecutorGateway));
-
+            //HeartbeatManagerImpl#monitorTarget
+            taskManagerHeartbeatManager.monitorTarget(taskExecutorResourceId, new TaskExecutorHeartbeatSender(taskExecutorGateway));
+            //
             return new TaskExecutorRegistrationSuccess(
                     registration.getInstanceID(),
                     resourceId,
@@ -1290,13 +1312,14 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
     }
 
     private void startHeartbeatServices() {
+        //跟taskManager的心跳管理器 HeartbeatManagerSenderImpl
         taskManagerHeartbeatManager =
                 heartbeatServices.createHeartbeatManagerSender(
                         resourceId,
                         new TaskManagerHeartbeatListener(),
                         getMainThreadExecutor(),
                         log);
-
+        //跟jobManager的心跳管理器 HeartbeatManagerSenderImpl
         jobManagerHeartbeatManager =
                 heartbeatServices.createHeartbeatManagerSender(
                         resourceId,
@@ -1429,6 +1452,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
 
     private class JobLeaderIdActionsImpl implements JobLeaderIdActions {
 
+        //触发时机：当底层的 HA 系统检测到某个作业（jobId）的当前 JobMaster 丢失了领导权（不再是 Active 主节点）时，由 JobLeaderIdService 触发此回调
         @Override
         public void jobLeaderLostLeadership(final JobID jobId, final JobMasterId oldJobMasterId) {
             runAsync(
@@ -1439,6 +1463,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                                             jobId, oldJobMasterId)));
         }
 
+        //触发时机：当一个新作业被提交并向集群寻找/等待其对应的 JobMaster Leader 身份确认，但在规定的配置时间内超时仍未寻找到合法 Leader 时触发
         @Override
         public void notifyJobTimeout(final JobID jobId, final UUID timeoutId) {
             runAsync(

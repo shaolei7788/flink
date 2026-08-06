@@ -48,14 +48,24 @@ import java.util.concurrent.Executors;
 
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
+//JobManager 的高可用时,进程内部的两个核心服务同时实现了高可用：
+// Dispatcher（分发器，负责作业的提交与生命周期）
+// ResourceManager（资源管理器，负责 Slot 资源的申请与管理
+
+// ResourceManagerServiceImpl 作为 ResourceManager 的高可用生命周期包装器
 /** Default implementation of {@link ResourceManagerService}. */
 public class ResourceManagerServiceImpl implements ResourceManagerService, LeaderContender {
 
     private static final Logger LOG = LoggerFactory.getLogger(ResourceManagerServiceImpl.class);
 
+    // 资源管理器工厂。这是一个策略接口，用于在当前服务真正当选 Leader 后，根据不同的部署模式（Standalone、Yarn、Kubernetes）动态创建对应的 ResourceManager 业务对象
     private final ResourceManagerFactory<?> resourceManagerFactory;
+
+    //资源管理器进程上下文。它是一个复合容器，
+    //里面打包了拉起一个 ResourceManager 所需的全部基础设施服务（如全局 Configuration、RpcService、HeartbeatServices、MetricRegistry 等）
     private final ResourceManagerProcessContext rmProcessContext;
 
+    //Leader 选举服务。对接底层的高可用基础设施（如 ZooKeeper、Kubernetes 或 Standalone）。该服务负责替当前组件去“抢锁”，并监听选举结果
     private final LeaderElection leaderElection;
 
     private final FatalErrorHandler fatalErrorHandler;
@@ -105,6 +115,7 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
     //  ResourceManagerService
     // ------------------------------------------------------------------------
 
+    //正式将自己注册到高可用组件中，开始参与集群的 ResourceManager 抢主（Election）
     @Override
     public void start() throws Exception {
         synchronized (lock) {
@@ -116,7 +127,7 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
         }
 
         LOG.info("Starting resource manager service.");
-
+        // leaderElection =  StandaloneLeaderElection#startLeaderElection
         leaderElection.startLeaderElection(this);
     }
 
@@ -183,6 +194,7 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
     //  LeaderContender
     // ------------------------------------------------------------------------
 
+    //授予leader身份
     @Override
     public void grantLeadership(UUID newLeaderSessionID) {
         handleLeaderEventExecutor.execute(
@@ -195,9 +207,7 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
                             return;
                         }
 
-                        LOG.info(
-                                "Resource manager service is granted leadership with session id {}.",
-                                newLeaderSessionID);
+                        LOG.info("Resource manager service is granted leadership with session id {}.",newLeaderSessionID);
 
                         try {
                             //todo
@@ -252,6 +262,8 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
         stopLeaderResourceManager();
 
         this.leaderSessionID = newLeaderSessionID;
+        // 确定是 leaderResourceManager
+        // 先创建slot管理器 再创建资源管理器
         this.leaderResourceManager = resourceManagerFactory.createResourceManager(rmProcessContext, newLeaderSessionID);
 
         final ResourceManager<?> newLeaderResourceManager = this.leaderResourceManager;
@@ -260,6 +272,7 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
                 .thenComposeAsync(
                         (ignore) -> {
                             synchronized (lock) {
+                                //启动ResourceManager  里面有个start方法
                                 return startResourceManagerIfIsLeader(newLeaderResourceManager);
                             }
                         },
@@ -267,10 +280,10 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
                 .thenAcceptAsync(
                         (isStillLeader) -> {
                             if (isStillLeader) {
-                                //todo 确认成为leader
-                                // EmbeddedLeaderElection#confirmLeadershipAsync
-                                leaderElection.confirmLeadershipAsync(
-                                        newLeaderSessionID, newLeaderResourceManager.getAddress());
+                                //todo
+                                //minicluster 模式 EmbeddedLeaderElection#confirmLeadershipAsync
+                                //standalone 模式 StandaloneLeaderElection#confirmLeadershipAsync
+                                leaderElection.confirmLeadershipAsync(newLeaderSessionID, newLeaderResourceManager.getAddress());
                             }
                         },
                         ioExecutor);
@@ -284,7 +297,8 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
     private CompletableFuture<Boolean> startResourceManagerIfIsLeader(
             ResourceManager<?> resourceManager) {
         if (isLeader(resourceManager)) {
-            resourceManager.start();
+            //启动ResourceManager
+            resourceManager.start();   //然后会调用StandaloneResourceManager#onStart方法
             forwardTerminationFuture(resourceManager);
             return resourceManager.getStartedFuture().thenApply(ignore -> true);
         } else {
@@ -359,7 +373,7 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
             String hostname,
             Executor ioExecutor)
             throws Exception {
-
+        //
         return new ResourceManagerServiceImpl(
                 resourceManagerFactory,
                 resourceManagerFactory.createResourceManagerProcessContext(

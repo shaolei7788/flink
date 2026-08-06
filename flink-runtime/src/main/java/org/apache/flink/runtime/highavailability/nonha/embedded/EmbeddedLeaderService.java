@@ -463,7 +463,7 @@ public class EmbeddedLeaderService {
     // ------------------------------------------------------------------------
     //  election and retrieval service implementations
     // ------------------------------------------------------------------------
-
+    //todo standalone 模式不会使用这个类
     private class EmbeddedLeaderElection implements LeaderElection {
 
         final String componentId;

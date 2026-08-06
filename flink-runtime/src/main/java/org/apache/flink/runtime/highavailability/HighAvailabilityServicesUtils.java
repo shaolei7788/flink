@@ -95,6 +95,7 @@ public class HighAvailabilityServicesUtils {
                 curatorFrameworkWrapper, configuration, executor, blobStoreService);
     }
 
+    //创建StandaloneHaServices 对象 里面有 resourceManager dispatcher webMonitor的地址信息
     public static HighAvailabilityServices createHighAvailabilityServices(
             Configuration configuration,
             Executor executor,
@@ -107,8 +108,10 @@ public class HighAvailabilityServicesUtils {
 
         switch (highAvailabilityMode) {
             case NONE:
+                // hostnamePort = (localhost,6123)
                 final Tuple2<String, Integer> hostnamePort = getJobManagerAddress(configuration);
-
+                // 获取resourceManager url
+                // resourceManagerRpcUrl = pekko.tcp://flink@localhost:6123/user/rpc/resourcemanager_*
                 final String resourceManagerRpcUrl =
                         rpcSystemUtils.getRpcUrl(
                                 hostnamePort.f0,
@@ -117,18 +120,18 @@ public class HighAvailabilityServicesUtils {
                                         ResourceManager.RESOURCE_MANAGER_NAME),
                                 addressResolution,
                                 configuration);
-                final String dispatcherRpcUrl =
-                        rpcSystemUtils.getRpcUrl(
+                //获取 dispatcher url
+                // dispatcherRpcUrl = pekko.tcp://flink@localhost:6123/user/rpc/dispatcher_*
+                final String dispatcherRpcUrl = rpcSystemUtils.getRpcUrl(
                                 hostnamePort.f0,
                                 hostnamePort.f1,
                                 RpcServiceUtils.createWildcardName(Dispatcher.DISPATCHER_NAME),
                                 addressResolution,
                                 configuration);
-                final String webMonitorAddress =
-                        getWebMonitorAddress(configuration, addressResolution);
+                // webMonitorAddress = http://localhost:8081
+                final String webMonitorAddress = getWebMonitorAddress(configuration, addressResolution);
 
-                return new StandaloneHaServices(
-                        resourceManagerRpcUrl, dispatcherRpcUrl, webMonitorAddress);
+                return new StandaloneHaServices(resourceManagerRpcUrl, dispatcherRpcUrl, webMonitorAddress);
             case ZOOKEEPER:
                 return createZooKeeperHaServices(configuration, executor, fatalErrorHandler);
             case KUBERNETES:
