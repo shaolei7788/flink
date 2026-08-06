@@ -393,8 +393,7 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
             configuration.set(JobManagerOptions.ADDRESS, commonRpcService.getAddress());
             configuration.set(JobManagerOptions.PORT, commonRpcService.getPort());
 
-            ioExecutor =
-                    Executors.newFixedThreadPool(
+            ioExecutor = Executors.newFixedThreadPool(
                             ClusterEntrypointUtils.getPoolSize(configuration),
                             new ExecutorThreadFactory("cluster-io"));
             delegationTokenManager =
