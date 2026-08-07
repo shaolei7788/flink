@@ -70,7 +70,7 @@ public class RpcGatewayRetriever<F extends Serializable, T extends FencedRpcGate
                 () ->
                         leaderFuture.thenCompose(
                                 (Tuple2<String, UUID> addressLeaderTuple) ->
-                                        //PekkoRpcService#connect
+                                        //PekkoRpcService#connect  返回的是FencedPekkoInvocationHandler 对象
                                         rpcService.connect(
                                                 // addressLeaderTuple =
                                                 addressLeaderTuple.f0,

@@ -36,7 +36,7 @@ class HeartbeatManagerSenderImpl<I, O> extends HeartbeatManagerImpl<I, O> implem
 
     private final long heartbeatPeriod;
 
-    HeartbeatManagerSenderImpl(
+    HeartbeatManagerSenderImpl(//
             long heartbeatPeriod,
             long heartbeatTimeout,
             int failedRpcRequestsUntilUnreachable,
@@ -55,7 +55,7 @@ class HeartbeatManagerSenderImpl<I, O> extends HeartbeatManagerImpl<I, O> implem
                 new DefaultHeartbeatMonitor.Factory<>());
     }
 
-    HeartbeatManagerSenderImpl(
+    HeartbeatManagerSenderImpl(//
             long heartbeatPeriod,
             long heartbeatTimeout,
             int failedRpcRequestsUntilUnreachable,
@@ -64,7 +64,7 @@ class HeartbeatManagerSenderImpl<I, O> extends HeartbeatManagerImpl<I, O> implem
             ScheduledExecutor mainThreadExecutor,
             Logger log,
             HeartbeatMonitor.Factory<O> heartbeatMonitorFactory) {
-        super(
+        super(//
                 heartbeatTimeout,
                 failedRpcRequestsUntilUnreachable,
                 ownResourceID,
@@ -74,6 +74,7 @@ class HeartbeatManagerSenderImpl<I, O> extends HeartbeatManagerImpl<I, O> implem
                 heartbeatMonitorFactory);
 
         this.heartbeatPeriod = heartbeatPeriod;
+        //开始调度 即启动 下面的run方法
         mainThreadExecutor.schedule(this, 0L, TimeUnit.MILLISECONDS);
     }
 
@@ -81,10 +82,12 @@ class HeartbeatManagerSenderImpl<I, O> extends HeartbeatManagerImpl<I, O> implem
     public void run() {
         if (!stopped) {
             log.debug("Trigger heartbeat request.");
+            // getHeartbeatTargets() 获取心跳目标集合
             for (HeartbeatMonitor<O> heartbeatMonitor : getHeartbeatTargets().values()) {
+                //发送心跳请求
                 requestHeartbeat(heartbeatMonitor);
             }
-
+            // heartbeatPeriod = 又调用 run   即递归调用run方法
             getMainThreadExecutor().schedule(this, heartbeatPeriod, TimeUnit.MILLISECONDS);
         }
     }
@@ -96,6 +99,7 @@ class HeartbeatManagerSenderImpl<I, O> extends HeartbeatManagerImpl<I, O> implem
         heartbeatTarget
                 .requestHeartbeat(getOwnResourceID(), payload)
                 .whenCompleteAsync(
+                        // tm01
                         handleHeartbeatRpc(heartbeatMonitor.getHeartbeatTargetId()),
                         getMainThreadExecutor());
     }

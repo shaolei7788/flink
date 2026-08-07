@@ -246,9 +246,11 @@ class HeartbeatManagerImpl<I, O> implements HeartbeatManager<I, O> {
     protected BiConsumer<Void, Throwable> handleHeartbeatRpc(ResourceID heartbeatTarget) {
         return (unused, failure) -> {
             if (failure != null) {
+                //出现异常
                 handleHeartbeatRpcFailure(
                         heartbeatTarget, ExceptionUtils.stripCompletionException(failure));
             } else {
+                //正常处理心跳
                 handleHeartbeatRpcSuccess(heartbeatTarget);
             }
         };

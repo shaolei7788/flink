@@ -8,6 +8,7 @@ public class ClientActor extends AbstractActor {
 
     public ClientActor(String serverAddress) {
         this.serverAddress = serverAddress;
+        System.out.println(serverAddress);
     }
 
     @Override

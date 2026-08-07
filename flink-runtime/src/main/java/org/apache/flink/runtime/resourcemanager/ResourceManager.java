@@ -262,7 +262,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
     public final void onStart() throws Exception {
         try {
             log.info("Starting the resource manager.");
-            //开始ResourceManager 服务
+            //启动ResourceManager 服务
             startResourceManagerServices();
             startedFuture.complete(null);
         } catch (Throwable t) {
@@ -275,6 +275,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
         }
     }
 
+    //启动ResourceManager 服务
     private void startResourceManagerServices() throws Exception {
         try {
             // DefaultJobLeaderIdService#start
@@ -414,6 +415,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
             CompletableFuture<JobMasterId> jobMasterIdFuture;
 
             try {
+                //
                 jobMasterIdFuture = jobLeaderIdService.getLeaderId(jobId);
             } catch (Exception e) {
                 // we cannot check the job leader id so let's fail
@@ -438,8 +440,11 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
             CompletableFuture<RegistrationResponse> registrationResponseFuture =
                     jobMasterGatewayFuture.thenCombineAsync(
                             jobMasterIdFuture,
+                            // jobMasterGateway 是 jobMasterGatewayFuture 的返回结果
+                            // leadingJobMasterId 是 jobMasterIdFuture 的返回结果
                             (JobMasterGateway jobMasterGateway, JobMasterId leadingJobMasterId) -> {
                                 if (Objects.equals(leadingJobMasterId, jobMasterId)) {
+                                    // 注册JobMaster
                                     return registerJobMasterInternal(
                                             jobMasterGateway,
                                             jobId,

@@ -93,8 +93,8 @@ public interface RpcSystem extends RpcSystemUtils, AutoCloseable {
      * @return loaded RpcSystem
      */
     static RpcSystem load(Configuration config) {
-        final PriorityQueue<RpcSystemLoader> rpcSystemLoaders =
-                new PriorityQueue<>(Comparator.comparingInt(RpcSystemLoader::getLoadPriority));
+        //
+        final PriorityQueue<RpcSystemLoader> rpcSystemLoaders = new PriorityQueue<>(Comparator.comparingInt(RpcSystemLoader::getLoadPriority));
         ServiceLoader.load(RpcSystemLoader.class).forEach(rpcSystemLoaders::add);
 
         final Iterator<RpcSystemLoader> iterator = rpcSystemLoaders.iterator();
@@ -103,6 +103,7 @@ public interface RpcSystem extends RpcSystemUtils, AutoCloseable {
         while (iterator.hasNext()) {
             final RpcSystemLoader next = iterator.next();
             try {
+                //
                 return next.loadRpcSystem(config);
             } catch (Exception e) {
                 loadError = ExceptionUtils.firstOrSuppressed(e, loadError);

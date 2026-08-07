@@ -39,6 +39,8 @@ import scala.concurrent.ExecutionContext;
  * <p>The class is abstract because instances need to override {@link
  * ActorSystemImpl#uncaughtExceptionHandler()}, as this method is called from the super constructor.
  */
+//RobustActorSystem 是 Flink 基于原生 ActorSystem 进行二次封装、定制改良后的扩展实现（或包装器），
+// 其核心目标是增强分布式环境下的“致命故障自愈”与“防止进程僵死（Zombie Process）”的能力
 public abstract class RobustActorSystem extends ActorSystemImpl {
 
     public RobustActorSystem(
@@ -51,6 +53,7 @@ public abstract class RobustActorSystem extends ActorSystemImpl {
     }
 
     public static RobustActorSystem create(String name, Config applicationConfig) {
+        //
         return create(name, applicationConfig, FatalExitExceptionHandler.INSTANCE);
     }
 
@@ -59,6 +62,7 @@ public abstract class RobustActorSystem extends ActorSystemImpl {
             String name,
             Config applicationConfig,
             Thread.UncaughtExceptionHandler uncaughtExceptionHandler) {
+        //
         return create(
                 name,
                 ActorSystemSetup.create(

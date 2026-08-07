@@ -167,6 +167,8 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
     @GuardedBy("lock")
     private Collection<FailureEnricher> failureEnrichers;
 
+    //在安全认证（如 Kerberos 认证）环境下，负责集群生命周期内临时凭证（Delegation Token）的自动化“获取（Obtain）、分发（Distribute）与周期性续期（Renew）”。
+    // 这确保了长周期运行的流处理任务（Streaming Jobs）不会因为认证令牌过期而中断
     @GuardedBy("lock")
     private DelegationTokenManager delegationTokenManager;
 
@@ -247,7 +249,6 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
                             () -> {
                                 //todo 启动
                                 runCluster(configuration, pluginManager);
-
                                 return null;
                             });
         } catch (Throwable t) {
@@ -354,31 +355,29 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
         LOG.info("Initializing cluster services.");
 
         synchronized (lock) {
+            //创建ResourceID
             resourceId =
                     configuration
                             .getOptional(JobManagerOptions.JOB_MANAGER_RESOURCE_ID)
                             .map(
                                     value ->
-                                            DeterminismEnvelope.deterministicValue(
-                                                    new ResourceID(value)))
+                                            DeterminismEnvelope.deterministicValue(new ResourceID(value)))
                             .orElseGet(
                                     () ->
-                                            DeterminismEnvelope.nondeterministicValue(
-                                                    ResourceID.generate()));
+                                            DeterminismEnvelope.nondeterministicValue(ResourceID.generate()));
 
             LOG.debug(
                     "Initialize cluster entrypoint {} with resource id {}.",
                     getClass().getSimpleName(),
                     resourceId);
-
-            workingDirectory =
-                    ClusterEntrypointUtils.createJobManagerWorkingDirectory(
-                            configuration, resourceId);
+            //创建JobManager工作目录
+            workingDirectory = ClusterEntrypointUtils.createJobManagerWorkingDirectory(configuration, resourceId);
 
             LOG.info("Using working directory: {}.", workingDirectory);
-
+            // rpcSystem = CleanupOnCloseRpcSystem
             rpcSystem = RpcSystem.load(configuration);
             //建立 JobManager 进程的通信骨架。后续所有的集群内部组件通信（如 TaskManager 注册、心跳上报、Master 节点选举等）都极其依赖该 RPC 服务
+            // commonRpcService = PekkoRpcService
             commonRpcService = RpcUtils.createRemoteRpcService(
                             rpcSystem,
                             configuration,
@@ -394,8 +393,9 @@ public abstract class ClusterEntrypoint implements AutoCloseableAsync, FatalErro
             configuration.set(JobManagerOptions.PORT, commonRpcService.getPort());
 
             ioExecutor = Executors.newFixedThreadPool(
-                            ClusterEntrypointUtils.getPoolSize(configuration),
+                            ClusterEntrypointUtils.getPoolSize(configuration),//48
                             new ExecutorThreadFactory("cluster-io"));
+
             delegationTokenManager =
                     DefaultDelegationTokenManagerFactory.create(
                             configuration,

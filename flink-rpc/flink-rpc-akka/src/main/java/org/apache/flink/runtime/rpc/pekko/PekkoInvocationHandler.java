@@ -110,7 +110,7 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
     PekkoInvocationHandler(
             String address,
             String hostname,
-            ActorRef rpcEndpoint,// 目标组件也就是想跟谁连接的对象
+            ActorRef rpcEndpoint,// 目标组件的客户端 通过该actor跟远程通信
             Duration timeout,
             long maximumFramesize,
             boolean forceRpcInvocationSerialization,
@@ -230,8 +230,11 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
         //     ▼
         //执行你熟悉的生命周期钩子方法：RpcEndpoint.onStart()
 
-        // 发送一个控制开始信号
+        // 给自己发送一个控制开始信号
         //正式激活并启动底层的 Pekko Actor，使其将状态切换为“运行中”，从而开始监听、接收并处理外界发送过来的业务 RPC 消息
+        //为了确保：绝对的线程安全与消息排队顺序（Mailbox 串行化）
+        //必须等组件底层的 Actor 系统把前面的地基完全铺好后，再以单线程、绝对安全的方式执行 onStart() 初始化，
+        // 且在初始化完成前，绝不处理任何外界飞来的普通业务 RPC 请求
         rpcEndpoint.tell(ControlMessages.START, ActorRef.noSender());
 
 
@@ -373,6 +376,7 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
      * @param message to send to the RPC endpoint.
      */
     protected void tell(Object message) {
+        //
         rpcEndpoint.tell(message, ActorRef.noSender());
     }
 

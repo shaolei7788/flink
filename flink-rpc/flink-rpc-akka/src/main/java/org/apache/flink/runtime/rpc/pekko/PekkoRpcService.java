@@ -165,7 +165,7 @@ public class PekkoRpcService implements RpcService {
         terminationFuture = new CompletableFuture<>();
 
         stopped = false;
-        //对 ActorRef 的一个包装
+        //创建actor 为 SupervisorActor 的 ActorRef对象 并用 Supervisor包装
         supervisor = startSupervisorActor();//
         startDeadLettersActor();
     }
@@ -183,11 +183,11 @@ public class PekkoRpcService implements RpcService {
                 Executors.newSingleThreadExecutor(
                         new ExecutorThreadFactory(
                                 "RpcService-Supervisor-Termination-Future-Executor"));
-        //创建ActorRef
-        final ActorRef actorRef = SupervisorActor.startSupervisorActor(
+        //创建actor 为 SupervisorActor 的 ActorRef
+        final ActorRef actorRef = SupervisorActor.startSupervisorActor(//
                         actorSystem,
                         withContextClassLoader(terminationFutureExecutor, flinkClassLoader));
-        //
+        //用Supervisor包装下ActorRef
         return Supervisor.create(actorRef, terminationFutureExecutor);//
     }
 
@@ -285,7 +285,8 @@ public class PekkoRpcService implements RpcService {
     @Override
     public <C extends RpcEndpoint & RpcGateway> RpcServer startServer(C rpcEndpoint, Map<String, String> loggingContext) {
         checkNotNull(rpcEndpoint, "rpc endpoint");
-        //todo ?  它会把传入的 RpcEndpoint 包装成一个 PekkoRpcActor 并注册到 ActorSystem 中
+        // 会根据rpcEndpoint类型 创建 PekkoRpcActor 还是 FencedRpcEndpoint 也就是ActorRef  并用ActorRegistration 封装  并注册到 registeredRpcActors 中
+        // PekkoRpcActor 包含rpcEndpoint
         final SupervisorActor.ActorRegistration actorRegistration = registerRpcActor(rpcEndpoint, loggingContext);
         final ActorRef actorRef = actorRegistration.getActorRef();
         final CompletableFuture<Void> actorTerminationFuture = actorRegistration.getTerminationFuture();
@@ -352,9 +353,7 @@ public class PekkoRpcService implements RpcService {
         ClassLoader classLoader = getClass().getClassLoader();
 
         @SuppressWarnings("unchecked")
-        RpcServer server =
-                (RpcServer)
-                        Proxy.newProxyInstance(
+        RpcServer server = (RpcServer) Proxy.newProxyInstance(
                                 classLoader,
                                 implementedRpcGateways.toArray(
                                         new Class<?>[implementedRpcGateways.size()]),
@@ -363,7 +362,7 @@ public class PekkoRpcService implements RpcService {
         return server;
     }
 
-    private <C extends RpcEndpoint & RpcGateway> SupervisorActor.ActorRegistration registerRpcActor(
+    private <C extends RpcEndpoint & RpcGateway> SupervisorActor.ActorRegistration registerRpcActor(//
             C rpcEndpoint, Map<String, String> loggingContext) {
         final Class<? extends AbstractActor> rpcActorType;
 
@@ -379,10 +378,18 @@ public class PekkoRpcService implements RpcService {
             checkState(!stopped, "RpcService is stopped");
 
             final SupervisorActor.StartRpcActorResponse startRpcActorResponse =
+                    // 往 supervisor 发送一个StartRpcActor消息
                     SupervisorActor.startRpcActor(
                             supervisor.getActor(),
-                            actorTerminationFuture ->
-                                    Props.create(
+                            new SupervisorActor.StartRpcActor.PropsFactory(){
+                                @Override
+                                public Props create(CompletableFuture<Void> actorTerminationFuture) {
+                                    // 返回 Props对象  Props 会创建Actor对象
+                                    //为了确保线程安全和组件解耦，你绝对不能直接在外面使用 new 关键字来强行实例化一个 Actor 对象。
+                                    // 所有的 Actor 诞生，都必须由系统根据其对应的 Props 蓝图统一去孵化
+                                    //demo  Props myProps = Props.create(MyActor.class, "param1") 意思是：请准备好使用 MyActor.class，并给它的构造函数传入 "param1"
+                                    return Props.create(
+                                            // AbstractActor 的实现类  FencedPekkoRpcActor 或者PekkoRpcActor
                                             rpcActorType,
                                             rpcEndpoint,
                                             actorTerminationFuture,
@@ -390,11 +397,13 @@ public class PekkoRpcService implements RpcService {
                                             configuration.getMaximumFramesize(),
                                             configuration.isForceRpcInvocationSerialization(),
                                             flinkClassLoader,
-                                            loggingContext),
+                                            loggingContext);
+                                }
+                            },
                             rpcEndpoint.getEndpointId());
 
-            final SupervisorActor.ActorRegistration actorRegistration =
-                    startRpcActorResponse.orElseThrow(
+            //
+            final SupervisorActor.ActorRegistration actorRegistration = startRpcActorResponse.orElseThrow(
                             cause ->
                                     new RpcRuntimeException(
                                             String.format(
@@ -534,6 +543,7 @@ public class PekkoRpcService implements RpcService {
         final CompletableFuture<HandshakeSuccessMessage> handshakeFuture = actorRefFuture.thenCompose(
                         (ActorRef actorRef) ->
                                 ScalaFutureUtils.toJava(
+                                        // 跟actorRef 发起 握手请求
                                         Patterns.ask(
                                                         actorRef,
                                                         new RemoteHandshakeMessage(clazz, getVersion()),
@@ -605,6 +615,7 @@ public class PekkoRpcService implements RpcService {
         }
 
         private static Supervisor create(ActorRef actorRef, ExecutorService terminationFutureExecutor) {
+            //
             return new Supervisor(actorRef, terminationFutureExecutor);
         }
 

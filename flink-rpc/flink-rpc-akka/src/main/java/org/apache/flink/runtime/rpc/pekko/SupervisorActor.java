@@ -54,6 +54,10 @@ import scala.collection.Iterable;
  * Supervisor actor which is responsible for starting {@link PekkoRpcActor} instances and monitoring
  * when the actors have terminated.
  */
+//它的生命周期极长，随着 PekkoRpcService 启动而降生。它内部最硬核的逻辑是实现了一套 SupervisorStrategy（监督策略）。
+// 当底层的某个 PekkoRpcActor（比如运行中的 JobMaster）因为网络突发故障、或者抛出未知异常（如 NullPointerException）时，这个异常不会直接冲垮 JVM。异常会向上抛给它的父亲 SupervisorActor。
+// SupervisorActor 会在底层做出判决：如果是小问题，下达指令让这个 PekkoRpcActor Restart（原地转世/重置内存状态），断点续传；如果是致命问题（如 OOM），下达 Stop 并通知 Flink 彻底自杀切主
+//每个 RpcService 内部只有一个 SupervisorActor
 class SupervisorActor extends AbstractActor {
 
     private static final Logger LOG = LoggerFactory.getLogger(SupervisorActor.class);
@@ -62,6 +66,7 @@ class SupervisorActor extends AbstractActor {
 
     private final Map<ActorRef, RpcActorRegistration> registeredRpcActors;
 
+    // 会被 actorSystem.actorOf(supervisorProps, getActorName()) 调用 大概率是通过反射调用
     SupervisorActor(Executor terminationFutureExecutor) {
         this.terminationFutureExecutor = terminationFutureExecutor;
         this.registeredRpcActors = new HashMap<>();
@@ -102,14 +107,15 @@ class SupervisorActor extends AbstractActor {
                 terminationFutureExecutor);
     }
 
+    // 处理请求者的请求 根据startRpcActor的信息创建了ActorRef 对象并放入registeredRpcActors里
     private void createStartRpcActorMessage(StartRpcActor startRpcActor) {
+        // endpointId = dispatcher_0
+        // endpointId = resourcemanager_1
         final String endpointId = startRpcActor.getEndpointId();
         final RpcActorRegistration rpcActorRegistration = new RpcActorRegistration(endpointId);
 
-        final Props rpcActorProps =
-                startRpcActor
-                        .getPropsFactory()
-                        .create(rpcActorRegistration.getInternalTerminationFuture());
+        //会调用  SupervisorActor.startRpcActor 第二个参数里面的create方法
+        final Props rpcActorProps = startRpcActor.getPropsFactory().create(rpcActorRegistration.getInternalTerminationFuture());
 
         LOG.debug(
                 "Starting {} with name {}.",
@@ -117,18 +123,20 @@ class SupervisorActor extends AbstractActor {
                 endpointId);
 
         try {
+            //todo 创建 ActorRef 对象  actorRef = PekkoRpcActor 或 FencedPekkoRpcActor
             final ActorRef actorRef = getContext().actorOf(rpcActorProps, endpointId);
 
             registeredRpcActors.put(actorRef, rpcActorRegistration);
-
+            //创建一个ActorRegistration 对象 就是封装下actorRef
+            ActorRegistration actorRegistration = ActorRegistration.create(actorRef, rpcActorRegistration.getExternalTerminationFuture());
             getSender()
+                    // tell 就是响应 无返回值
                     .tell(
-                            StartRpcActorResponse.success(
-                                    ActorRegistration.create(
-                                            actorRef,
-                                            rpcActorRegistration.getExternalTerminationFuture())),
+                            // 返回的是 StartRpcActorResponse 对象
+                            StartRpcActorResponse.success(actorRegistration),
                             getSelf());
         } catch (PekkoException e) {
+            //注册失败
             getSender().tell(StartRpcActorResponse.failure(e), getSelf());
         }
     }
@@ -187,19 +195,24 @@ class SupervisorActor extends AbstractActor {
         return PekkoRpcServiceUtils.SUPERVISOR_NAME;
     }
 
+    //
     public static ActorRef startSupervisorActor(
             ActorSystem actorSystem, Executor terminationFutureExecutor) {
         final Props supervisorProps = Props.create(SupervisorActor.class, terminationFutureExecutor).withDispatcher("pekko.actor.supervisor-dispatcher");
         // getActorName() = rpc
+        //todo 执行完该方法  SupervisorActor 的构造器会被调用
         return actorSystem.actorOf(supervisorProps, getActorName());
     }
 
-    public static StartRpcActorResponse startRpcActor(
-            ActorRef supervisor, StartRpcActor.PropsFactory propsFactory, String endpointId) {
+    public static StartRpcActorResponse startRpcActor(ActorRef supervisor, StartRpcActor.PropsFactory propsFactory, String endpointId) {
+        //创建一个StartRpcActor实体消息
+        StartRpcActor startRpcActor = createStartRpcActorMessage(propsFactory, endpointId);
+        // 向 supervisor(ActorRef) 发一个消息 startRpcActor 以非阻塞的方式  ask 有返回值
+        // createReceive 会接收该消息 会触发 createStartRpcActorMessage 主要是创建一个ActorRef对象
         return Patterns.ask(
                         supervisor,
-                        createStartRpcActorMessage(propsFactory, endpointId),
-                        RpcUtils.INF_DURATION)
+                        startRpcActor,// 具体的消息
+                        RpcUtils.INF_DURATION) //超时时间
                 .toCompletableFuture()
                 .thenApply(StartRpcActorResponse.class::cast)
                 .join();
@@ -207,6 +220,7 @@ class SupervisorActor extends AbstractActor {
 
     public static StartRpcActor createStartRpcActorMessage(
             StartRpcActor.PropsFactory propsFactory, String endpointId) {
+        //
         return StartRpcActor.create(propsFactory, endpointId);
     }
 
@@ -323,6 +337,7 @@ class SupervisorActor extends AbstractActor {
     // Messages
     // -----------------------------------------------------------------------------
 
+    //一个实体消息
     static final class StartRpcActor {
         private final PropsFactory propsFactory;
         private final String endpointId;
@@ -341,10 +356,12 @@ class SupervisorActor extends AbstractActor {
         }
 
         private static StartRpcActor create(PropsFactory propsFactory, String endpointId) {
+            //
             return new StartRpcActor(propsFactory, endpointId);
         }
 
         interface PropsFactory {
+            // 被 startRpcActor.getPropsFactory().create 调用
             Props create(CompletableFuture<Void> terminationFuture);
         }
     }

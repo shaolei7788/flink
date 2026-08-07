@@ -229,7 +229,7 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
     public final void internalCallOnStart() throws Exception {
         validateRunsInMainThread();
         isRunning = true;
-        //todo
+        //todo  如果是 ResourceManager 调用  ResourceManager#onStart
         onStart();
     }
 
@@ -510,9 +510,11 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
 
         MainThreadExecutor(
                 MainThreadExecutable gateway, Runnable mainThreadCheck, String endpointId) {
+            //
             this(
                     gateway,
                     mainThreadCheck,
+                    //创建单个线程池
                     Executors.newSingleThreadScheduledExecutor(
                             new ExecutorThreadFactory(endpointId + "-main-scheduler")));
         }

@@ -134,7 +134,7 @@ public class DefaultDispatcherResourceManagerComponentFactory
             //返回 ResourceManager Leader 检索器
             resourceManagerRetrievalService = highAvailabilityServices.getResourceManagerLeaderRetriever();
 
-            //建立跟DispatcherGateway的连接
+            //Dispatcher Leader 检索监听器
             final LeaderGatewayRetriever<DispatcherGateway> dispatcherGatewayRetriever = new RpcGatewayRetriever<>(//
                             rpcService,
                             DispatcherGateway.class,
@@ -142,7 +142,7 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             new ExponentialBackoffRetryStrategy(
                                     12, Duration.ofMillis(10), Duration.ofMillis(50)));
 
-            // Leader 检索监听器
+            // ResourceManager Leader 检索监听器
             final LeaderGatewayRetriever<ResourceManagerGateway> resourceManagerGatewayRetriever =
                     new RpcGatewayRetriever<>(//
                             rpcService,
@@ -202,14 +202,22 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             hostname,
                             ioExecutor);
 
+            //负责在作业（Job）结束时，将该作业的执行历史记录（包括元数据、统计信息和 Web UI 所需的 JSON 数据）进行归档（Archive），
+            // 并写入到持久化存储（如 HDFS、S3）中，以便 Flink HistoryServer 能够加载并展示该作业的历史 Web UI
             final HistoryServerArchivist historyServerArchivist =
                     HistoryServerArchivist.createHistoryServerArchivist(
                             configuration, webMonitorEndpoint, ioExecutor);
 
+            //核心作用是集中管理和缓存由 Dispatcher 组件触发的、异步长耗时操作的中间状态与最终执行结
+            //外部用户或客户端通过 REST API 向 Flink 提交一些需要耗费时间的控制命令
+            // （例如：触发 Savepoint、停止作业并生成 Savepoint、清理/释放过期的 Savepoint 等）时，系统无法立即返回结果。
+            // Flink 采用的是 “异步提交 + 轮询查询” 的设计模式，而 DispatcherOperationCaches 正是这一模式的核心后端支撑
             final DispatcherOperationCaches dispatcherOperationCaches =
                     new DispatcherOperationCaches(
                             configuration.get(RestOptions.ASYNC_OPERATION_STORE_DURATION));
 
+            //初始化基础公共服务后，将这些服务打包组合，专门作为参数传递给 DispatcherRunner 及其内部的 Dispatcher（调度器）组件。
+            // 由于 Dispatcher 负责管理所有作业（Jobs）的生命周期，它需要依赖大量的外部集群基础组件
             final PartialDispatcherServices partialDispatcherServices =
                     new PartialDispatcherServices(
                             configuration,
@@ -241,7 +249,9 @@ public class DefaultDispatcherResourceManagerComponentFactory
             //todo  ResourceManagerServiceImpl#start
             resourceManagerService.start();
             //下面两个方法都是调用 StandaloneLeaderRetrievalService#start
+            // 生成 resourceManager 的代理对象 FencedPekkoInvocationHandler 放入 atomicGatewayFuture
             resourceManagerRetrievalService.start(resourceManagerGatewayRetriever);
+            // 生成 dispatcher 的代理对象 FencedPekkoInvocationHandler 放入 atomicGatewayFuture
             dispatcherLeaderRetrievalService.start(dispatcherGatewayRetriever);
             // 组合三个组件
             return new DispatcherResourceManagerComponent(

@@ -210,8 +210,7 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
                         LOG.info("Resource manager service is granted leadership with session id {}.",newLeaderSessionID);
 
                         try {
-                            //todo
-                            System.out.println("startNewLeaderResourceManager:   "+ Thread.currentThread().getName());
+                            // 启动新leader ResourceManager
                             startNewLeaderResourceManager(newLeaderSessionID);
                         } catch (Throwable t) {
                             fatalErrorHandler.onFatalError(
@@ -263,7 +262,7 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
 
         this.leaderSessionID = newLeaderSessionID;
         // 确定是 leaderResourceManager
-        // 先创建slot管理器 再创建资源管理器
+        // 先创建slot管理器 再创建资源管理器 leaderResourceManager = StandaloneResourceManager
         this.leaderResourceManager = resourceManagerFactory.createResourceManager(rmProcessContext, newLeaderSessionID);
 
         final ResourceManager<?> newLeaderResourceManager = this.leaderResourceManager;
@@ -282,7 +281,7 @@ public class ResourceManagerServiceImpl implements ResourceManagerService, Leade
                             if (isStillLeader) {
                                 //todo
                                 //minicluster 模式 EmbeddedLeaderElection#confirmLeadershipAsync
-                                //standalone 模式 StandaloneLeaderElection#confirmLeadershipAsync
+                                //standalone 模式 StandaloneLeaderElection#confirmLeadershipAsync  空方法
                                 leaderElection.confirmLeadershipAsync(newLeaderSessionID, newLeaderResourceManager.getAddress());
                             }
                         },

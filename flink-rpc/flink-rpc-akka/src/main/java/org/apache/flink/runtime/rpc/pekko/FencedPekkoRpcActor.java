@@ -56,6 +56,7 @@ public class FencedPekkoRpcActor<
                 F extends Serializable, T extends FencedRpcEndpoint<F> & RpcGateway>
         extends PekkoRpcActor<T> {
 
+    //通过是被反射调用
     public FencedPekkoRpcActor(
             T rpcEndpoint,
             CompletableFuture<Boolean> terminationFuture,

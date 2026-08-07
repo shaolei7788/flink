@@ -5,6 +5,10 @@ import org.apache.pekko.actor.AbstractActor;
 public class ServerActor extends AbstractActor {
 
 
+    public ServerActor(){
+        System.out.println("ServerActor constructor");
+    }
+
     @Override
     public Receive createReceive() {
         return receiveBuilder()
