@@ -189,9 +189,8 @@ class SupervisorActor extends AbstractActor {
 
     public static ActorRef startSupervisorActor(
             ActorSystem actorSystem, Executor terminationFutureExecutor) {
-        final Props supervisorProps =
-                Props.create(SupervisorActor.class, terminationFutureExecutor)
-                        .withDispatcher("pekko.actor.supervisor-dispatcher");
+        final Props supervisorProps = Props.create(SupervisorActor.class, terminationFutureExecutor).withDispatcher("pekko.actor.supervisor-dispatcher");
+        // getActorName() = rpc
         return actorSystem.actorOf(supervisorProps, getActorName());
     }
 

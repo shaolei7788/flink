@@ -552,8 +552,11 @@ class PekkoUtils {
      * @param actor {@link ActorRef} of the actor for which the URL has to be generated
      * @return String containing the {@link ActorSystem} independent URL of the actor
      */
+    // system = pekko://flink
     public static String getRpcURL(ActorSystem system, ActorRef actor) {
+        // address = pekko.tcp://flink@127.0.0.1:6123
         final Address address = getAddress(system);
+        // actor.path() = pekko://flink/user/rpc/myHelloEndpoint
         return actor.path().toStringWithAddress(address);
     }
 

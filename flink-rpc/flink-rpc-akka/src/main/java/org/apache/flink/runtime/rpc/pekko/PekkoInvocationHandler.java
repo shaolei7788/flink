@@ -228,7 +228,7 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
         //回调业务组件的 RpcEndpoint.internalCallOnStart()
         //     │
         //     ▼
-        //执行你熟悉的生命周期钩子方法：onStart()
+        //执行你熟悉的生命周期钩子方法：RpcEndpoint.onStart()
 
         // 发送一个控制开始信号
         //正式激活并启动底层的 Pekko Actor，使其将状态切换为“运行中”，从而开始监听、接收并处理外界发送过来的业务 RPC 消息

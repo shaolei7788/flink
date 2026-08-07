@@ -203,8 +203,8 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
 
         super(
                 rpcService,
-                RpcServiceUtils.createRandomName(RESOURCE_MANAGER_NAME),
-                ResourceManagerId.fromUuid(leaderSessionId));
+                // endpointId = resourcemanager + 随机数
+                RpcServiceUtils.createRandomName(RESOURCE_MANAGER_NAME), ResourceManagerId.fromUuid(leaderSessionId));
 
         this.resourceId = checkNotNull(resourceId);
         this.heartbeatServices = checkNotNull(heartbeatServices);

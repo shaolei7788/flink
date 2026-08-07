@@ -83,6 +83,7 @@ import static org.apache.flink.util.Preconditions.checkState;
  * invocations from a {@link RpcGateway}.
  */
 //充当了 Flink 代码与底层 Pekko Actor 模型之间的桥梁
+// 客户端 服务端都需要创建该服务 本质上是一个 Actor System（Actor系统）的底座和运行环境
 @ThreadSafe
 public class PekkoRpcService implements RpcService {
 
@@ -117,6 +118,7 @@ public class PekkoRpcService implements RpcService {
     private final CompletableFuture<Void> terminationFuture;
 
     //专门监控该 RpcService 下属的所有子 Actor，一旦它们发生致命崩溃，由该属性对应的 Supervisor 捕获并强制抛出故障（Fail-Fast）
+    //对 ActorRef 的一个包装
     private final Supervisor supervisor;
 
     //标记当前 RPC 服务的生命周期状态。用于防止在服务关闭期间重复初始化或接受新的 RPC 调用
@@ -163,11 +165,13 @@ public class PekkoRpcService implements RpcService {
         terminationFuture = new CompletableFuture<>();
 
         stopped = false;
-
+        //对 ActorRef 的一个包装
         supervisor = startSupervisorActor();//
         startDeadLettersActor();
     }
 
+    //扮演着分布式通信“垃圾回收站监听器”与“死信日志监控仪”的角色
+    //“Dead Letters”（死信）指的是由于各种原因无法成功送达目的地的垃圾网络消息。该方法的作用就是专门启动一个常驻的后台监控 Actor 来捕获和记录这些死信
     private void startDeadLettersActor() {
         final ActorRef deadLettersActor =
                 actorSystem.actorOf(DeadLettersActor.getProps(), "deadLettersActor");
@@ -179,8 +183,8 @@ public class PekkoRpcService implements RpcService {
                 Executors.newSingleThreadExecutor(
                         new ExecutorThreadFactory(
                                 "RpcService-Supervisor-Termination-Future-Executor"));
-        final ActorRef actorRef =
-                SupervisorActor.startSupervisorActor(
+        //创建ActorRef
+        final ActorRef actorRef = SupervisorActor.startSupervisorActor(
                         actorSystem,
                         withContextClassLoader(terminationFutureExecutor, flinkClassLoader));
         //
@@ -219,6 +223,7 @@ public class PekkoRpcService implements RpcService {
         }
     }
 
+    //todo 通过该方法可以获取该地址的客户端  通过该客户端可以直接调用远程的方法
     //底层逻辑：如果 TaskManager 知道了 JobManager 的地址，就会调用此方法。Pekko 会解析地址，并返回一个 RpcGateway（比如 ResourceManagerGateway）。
     // TaskManager 拿着这个 Gateway 调用方法（比如 registerTaskManager），实际上是在底层把方法名和参数序列化成网络消息发给了 JobManager
     //根据给定的 Pekko 地址（如 pekko.tcp://...），去寻找远端组件的 ActorRef，并基于 JDK 动态代理技术生成对应的 RpcGateway 实例（如 ResourceManagerGateway）
@@ -255,7 +260,7 @@ public class PekkoRpcService implements RpcService {
         return connectInternal(//
                 address,
                 clazz,
-                // actorRef 会有参数传过来
+                // actorRef 会有参数传过来  被 invocationHandlerFactory.apply(actorRef) 调用
                 (ActorRef actorRef) -> {
                     Tuple2<String, String> addressHostname = extractAddressHostname(actorRef);
                     //
@@ -289,7 +294,7 @@ public class PekkoRpcService implements RpcService {
                 "Starting RPC endpoint for {} at {} .",
                 rpcEndpoint.getClass().getName(),
                 actorRef.path());
-        // address =
+        // address = pekko.tcp://flink@127.0.0.1:6123/user/rpc/myHelloEndpoint
         final String address = PekkoUtils.getRpcURL(actorSystem, actorRef);
         final String hostname;
         Option<String> host = actorRef.path().address().host();
@@ -329,7 +334,7 @@ public class PekkoRpcService implements RpcService {
         } else {
             // TaskExecutor 没有继承 FencedRpcEndpoint
             invocationHandler =
-                    new PekkoInvocationHandler(
+                    new PekkoInvocationHandler(//
                             address,//pekko://flink/user/rpc/taskmanager_0
                             hostname,//localhost
                             actorRef,// Actor[pekko://flink/user/rpc/taskmanager_0#1857661143]
@@ -363,8 +368,10 @@ public class PekkoRpcService implements RpcService {
         final Class<? extends AbstractActor> rpcActorType;
 
         if (rpcEndpoint instanceof FencedRpcEndpoint) {
+            //
             rpcActorType = FencedPekkoRpcActor.class;
         } else {
+            //
             rpcActorType = PekkoRpcActor.class;
         }
 

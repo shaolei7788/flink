@@ -68,17 +68,15 @@ public class PekkoRpcServiceUtils {
     // ------------------------------------------------------------------------
     //  RPC instantiation
     // ------------------------------------------------------------------------
-
-    static PekkoRpcService createRemoteRpcService(
+    //todo 自己加的public
+    public static PekkoRpcService createRemoteRpcService(
             Configuration configuration,
             @Nullable String externalAddress,
             String externalPortRange,
             @Nullable String bindAddress,
             @SuppressWarnings("OptionalUsedAsFieldOrParameterType") Optional<Integer> bindPort)
             throws Exception {
-        final PekkoRpcServiceBuilder rpcServiceBuilder =
-                PekkoRpcServiceUtils.remoteServiceBuilder(
-                        configuration, externalAddress, externalPortRange);
+        final PekkoRpcServiceBuilder rpcServiceBuilder = PekkoRpcServiceUtils.remoteServiceBuilder(configuration, externalAddress, externalPortRange);
 
         if (bindAddress != null) {
             rpcServiceBuilder.withBindAddress(bindAddress);
@@ -346,7 +344,7 @@ public class PekkoRpcServiceUtils {
             try (TemporaryClassLoaderContext ignored = TemporaryClassLoaderContext.of(getClass().getClassLoader())) {
                 //外部可达地址
                 if (externalAddress == null) {
-                    // create local actor system
+                    // create local actor system  创建本地的ActorSystem
                     actorSystem = ActorSystemBootstrapTools.startLocalActorSystem(
                                     configuration,
                                     actorSystemName,
@@ -354,15 +352,15 @@ public class PekkoRpcServiceUtils {
                                     actorSystemExecutorConfiguration,
                                     customConfig);
                 } else {
-                    // create remote actor system
+                    // create remote actor system  创建远程的ActorSystem
                     actorSystem =
                             ActorSystemBootstrapTools.startRemoteActorSystem(
                                     configuration,
-                                    actorSystemName,
-                                    externalAddress,
-                                    externalPortRange,
-                                    bindAddress,
-                                    Optional.ofNullable(bindPort),
+                                    actorSystemName,//flink
+                                    externalAddress,//127.0.0.1
+                                    externalPortRange,//6123
+                                    bindAddress,//0.0.0.0
+                                    Optional.ofNullable(bindPort),//
                                     logger,
                                     actorSystemExecutorConfiguration,
                                     customConfig);

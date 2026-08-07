@@ -302,7 +302,7 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
         try {
             String methodName = rpcInvocation.getMethodName();
             Class<?>[] parameterTypes = rpcInvocation.getParameterTypes();
-            //
+            //public java.util.concurrent.CompletableFuture org.apache.flink.runtime.pekko.MyHelloEndpoint.sayHello(java.lang.String)
             rpcMethod = lookupRpcMethod(methodName, parameterTypes);
         } catch (final NoSuchMethodException e) {
             log.error("Could not find rpc method for rpc invocation.", e);
@@ -344,7 +344,7 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
                         getSender().tell(new Status.Failure(e.getTargetException()), getSelf());
                         return;
                     }
-
+                    // sayHello
                     final String methodName = rpcMethod.getName();
                     final boolean isLocalRpcInvocation =
                             rpcMethod.getAnnotation(Local.class) != null;
@@ -394,12 +394,13 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
                             if (throwable != null) {
                                 promise.failure(throwable);
                             } else {
-                                if (isRemoteSender(sender)
-                                        || (forceSerialization && !isLocalRpcInvocation)) {
-                                    Either<RpcSerializedValue, RpcException> serializedResult =
-                                            serializeRemoteResultAndVerifySize(value, methodName);
+                                //
+                                if (isRemoteSender(sender) || (forceSerialization && !isLocalRpcInvocation)) {
+                                    // 序列化结果
+                                    Either<RpcSerializedValue, RpcException> serializedResult = serializeRemoteResultAndVerifySize(value, methodName);
 
                                     if (serializedResult.isLeft()) {
+                                        //
                                         promise.success(serializedResult.left());
                                     } else {
                                         promise.failure(serializedResult.right());
@@ -412,7 +413,12 @@ class PekkoRpcActor<T extends RpcEndpoint & RpcGateway> extends AbstractActor {
                             // consume the provided throwable
                             return null;
                         }));
-
+        //todo 将响应结果发给请求者
+        //promise.future() 是一个异步结果
+        // getContext().dispatcher()  提供执行“管道（Pipe）”数据传输任务的线程池
+        // sender = 请求者
+        //采用的是闭包值捕获机制。它在执行这一行代码的瞬间，就将当时合法的 sender 引用值牢牢地锁死并绑定在了管道的终点上。
+        // 无论这个 Future 过了多久才完成，结果都一定会精准、安全地送达最初的那个发件人手里
         Patterns.pipe(promise.future(), getContext().dispatcher()).to(sender);
     }
 
