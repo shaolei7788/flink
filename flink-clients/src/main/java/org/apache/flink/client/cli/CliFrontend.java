@@ -89,6 +89,7 @@ import static java.lang.Math.min;
 import static org.apache.flink.client.cli.CliFrontendParser.HELP_OPTION;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
+// 提交作业入口
 /** Implementation of a simple command line frontend for executing programs. */
 public class CliFrontend {
 

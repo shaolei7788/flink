@@ -3,7 +3,7 @@ AI数据分析智能问数系统
 
 
 全部编译（加上 -o 离线模式）
-mvn clean package -o  -DskipTests -Djdk21 -Pjava21-target -Drat.skip=true -Dcheckstyle.skip -Dcheckstyle.failOnViolation=false -Dspotbugs.skip=true -Denforcer.skip=true -Dspotless.skip=true  -Dmaven.repo.local=D:\apache-maven-3.8.4\repository
+mvn clean package -o  -DskipTests -Djdk21 -Pjava21-target -Drat.skip=true -Dcheckstyle.skip -Dcheckstyle.failOnViolation=false -Dspotbugs.skip=true -Denforcer.skip=true -Dspotless.skip=true
 
 
 只编译特定的子模块

@@ -163,60 +163,105 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
 
     private final JobMasterConfiguration jobMasterConfiguration;
 
+    //当前 JobMaster 进程的唯一身份标识（通常是一个 UUID）。
+    // 当 JobMaster 向 ResourceManager 注册、或者与 TaskManager 建立连接时，必须携带这个 ResourceID，以便其他组件在集群大盘中识别并跟踪它
     private final ResourceID resourceId;
 
+    //作业的拓扑结构图（执行计划）。这是 Flink 2.2 引入的最新抽象（替代了旧版的 JobGraph）。
+    // 它包含了用户代码编译出来的算子链（JobVertex）、数据流向关系以及作业 ID（JobID）。JobMaster 的所有调度工作（构建 ExecutionGraph）都以此为蓝本
     private final ExecutionPlan executionPlan;
 
+    //RPC 远程调用的硬性超时时间限制。JobMaster 在向外（如向 ResourceManager 申请资源、向 TaskManager 部署任务）
+    // 发起异步 Pekko RPC 请求时，所有的 ask() 操作都会绑定这个超时时间。一旦超过该时间未收到响应，就会抛出 AskTimeoutException
     private final Duration rpcTimeout;
 
+    //高可用（HA）服务门面接口。它提供了访问分布式协调中心（如 ZooKeeper、Kubernetes ConfigMaps）的能力。
+    // JobMaster 借助它来获取集群其他核心组件（如 ResourceManager）的 Leader 地址信息，并在作业结束时通过它清理 HA 存储中的元数据
     private final HighAvailabilityServices highAvailabilityServices;
 
+    //中央文件服务（BlobServer）的写入器。在作业运行期间，如果有动态生成的持久化数据
+    // （如大规模的执行计划归档、运行时产生的特定指标文件、或者需要分发给 TaskManager 的临时数据），JobMaster 会通过 blobWriter 将其上传到集群的 BlobServer 中
     private final BlobWriter blobWriter;
 
+    //心跳服务工厂。JobMaster 启动后，需要维持与 ResourceManager 以及所有承载该作业的 TaskManager 之间的双向心跳。
+    // 该服务负责创建和管理这些心跳监控器（HeartbeatMonitor），一旦判定某台 TaskManager 心跳超时（失联），立即触发任务局部重启
     private final HeartbeatServices heartbeatServices;
 
+    //专用的定时与延迟任务线程池。主要负责处理有时间属性的异步逻辑，例如：Slot 申请的超时检查、延迟重启策略（发生故障后等待 5 秒再重启）、定期清理内部缓存等
     private final ScheduledExecutorService futureExecutor;
 
+    //专用的阻塞式 I/O 线程池。为了不阻塞核心的 RPC 线程（Pekko 线程），所有涉及磁盘读写、本地文件加载、网络大文件流传输（如读取或写入分布式存储、反序列化大对象）的操作，JobMaster 都会强制丢进 ioExecutor 线程池中异步执行
     private final Executor ioExecutor;
 
+    //作业终结状态回调通知器。当整个作业正常执行完毕（FINISHED），或者遭遇不可逆的失败（FAILED）、以及被用户手动取消（CANCELED）达到最终状态时，
+    // JobMaster 会调用这个接口。它会向上通知 Dispatcher：“我的项目做完了，结果是 X，你可以把我注销并回收资源了”
     private final OnCompletionActions jobCompletionActions;
 
+    //致命错误熔断器。处理 JVM 级别的灾难性错误（如 OutOfMemoryError 堆溢出、未捕获的线程死锁或极端的 RPC 系统崩溃）。
+    // 一旦触发，它会直接让整个 JobMaster 崩溃退出或让进程自杀，从而依赖外部（如 K8s/Yarn）的容器自愈机制重新拉起，避免僵尸进程卡死
     private final FatalErrorHandler fatalErrorHandler;
 
+    //用户代码类加载器（通常是 AppClassLoader 或 Flink 自定义的倒置类加载器 ChildFirstClassLoader）。JobMaster 在反序列化用户提交的自定义 DataStream 算子、UDF（用户自定义函数）、或者解析 ExecutionPlan 中的具体配置时，
+    // 必须使用这个特定的加载器，以防止用户依赖的第三方 JAR 包与 Flink 框架自身的系统 JAR 包发生类冲突（ClassCastException/NoClassDefFoundError）
     private final ClassLoader userCodeLoader;
 
+    //Slot 资源池服务。作业运行所需的所有 Slot 都由它来统一管理。它充当作业内部的“资源账本”，记录当前作业向外申请到了多少 Slot、哪些被占用了、哪些正处于空闲
     private final SlotPoolService slotPoolService;
 
+    //JobMaster 实例化的时间戳（毫秒）。记录该 JobMaster 对象在内存中被 new 出来的精确物理时间点
     private final long initializationTimestamp;
 
+    //作用：控制是否需要反向解析 TaskManager 的主机名。设计意图：一个开关参数（对应配置项）。
+    // 当 TaskManager 向 JobMaster 提供 Slot 时，如果此开关为 true，JobMaster 会尝试通过网络解析将 IP 地址转换为 Domain/HostName（主机名）。
+    // 在某些没有配置内网 DNS 或容器内网络环境复杂的集群（如某些 K8s 部署）中，反向解析可能导致严重的网络超时卡顿，此时将其设为 false 可以直接使用 IP 从而跳过解析
     private final boolean retrieveTaskManagerHostName;
 
     // --------- ResourceManager --------
-
+    //用于动态监听并获取当前集群中最新的 Leader ResourceManager 的 RPC 地址
     private final LeaderRetrievalService resourceManagerLeaderRetriever;
 
     // --------- TaskManagers --------
-
+    //只有在 registeredTaskManagers 列表里的 TaskManager，它的 Slot 才能被该作业正式部署 Task。
+    // 当某个 TaskManager 带着 Slot 来向作业报到（offerSlots）并握手成功后，它的身份元数据（TaskManagerRegistration）就会被记录在这里；
+    // 一旦心跳断开，则会从该 Map 中移除，实现了单个作业视角下的物理节点健康状态追踪
     private final Map<ResourceID, TaskManagerRegistration> registeredTaskManagers;
 
+    //shuffleMaster 负责在 Master 端 为作业的所有中间结果分区（IntermediateResultPartition）申请、分配、注册和销毁物理存储资源。
+    // 当作业结束或需要清理中间数据时，JobMaster 会通过它通知底层的物理混洗大盘释放网络和磁盘缓存
     private final ShuffleMaster<?> shuffleMaster;
 
     // --------- Scheduler --------
-
+    //下一代调度器引擎（如 AdaptiveScheduler 或 DefaultScheduler）。
+    // JobMaster 本身不直接做调度算法，而是委托给它。它负责决定何时启动 Task、按什么顺序调度，以及在发生 Task 失败时如何触发局部或全局重启策略
     private final SchedulerNG schedulerNG;
 
+    //当 schedulerNG 驱动作业的状态发生切换时（例如从 CREATED \(\rightarrow \) RUNNING，或者 RUNNING \(\rightarrow \) FAILING），该监听器会第一时间捕获事件。
+    // 它负责将状态变更同步传导给外部组件（如通知 Dispatcher 更新全局大盘、触发 JobResultStore 的持久化写入，或通知 ExecutionGraphCache 清空 Web UI 缓存）
     private final JobManagerJobStatusListener jobStatusListener;
 
+    //作用：当前作业在 Master 端的指标监控根分组。设计意图：这是 Flink 强大的 Metric 系统的锚点。通过这个组，
+    // JobMaster 可以向外界暴露和注册当前作业特有的各项核心监控指标，例如：作业当前的重启次数（numRestarts）、作业运行总时间、当前处于各种状态的任务数量（Running Tasks, Failed Tasks）、以及 Checkpoint 的耗时与成功率。
+    // 我们在 Flink Web UI 页面上看到的各类实时折线图和计数器，底层数据源全部由它在收集和输出。
     private final JobManagerJobMetricGroup jobManagerJobMetricGroup;
 
     // -------- Misc ---------
-
+    //作用：分布式用户累加器在 Master 端的中央汇聚表。设计意图：当用户在代码中使用 LongCounter 或自定义 Accumulator 时，各个 TaskManager 子任务在运行期间会不断累加本地数据。当 Task 结束、触发 Checkpoint 或定期发送 RPC 状态汇报时，会把结果捎带回 JobMaster。
+    // JobMaster 通过这个 Map 进行全局合并（Merge），供 Web UI（对应 SubtasksAllAccumulatorsHandler）或在作业结束后供 Client 读取
     private final Map<String, Object> accumulators;
 
+    //作用：中间数据分区（Shuffle 数据）生命周期追踪器。设计意图：负责记录作业运行过程中，哪些 TaskManager 产生了哪些物理数据块（ResultPartition），
+    // 尤其是流处理的动态交换数据以及批处理产生的临时落盘分区。
+    // 当 Task 因故障失败时，partitionTracker 决定哪些数据分区依然有效可读，哪些分区已经损坏需要通知下游重新拉起上游重算
     private final JobMasterPartitionTracker partitionTracker;
 
+    //Task 部署状态“追踪器” 实时记录和跟踪每个 Task 当前被真正部署到了哪个具体的 TaskManager 上
     private final ExecutionDeploymentTracker executionDeploymentTracker;
+    //则是一个对账器。当 JobMaster 与某个 TaskManager 建立或恢复连接时，对账器会强制两边核对账本：“我（Master）认为有 3 个 Task 在你那跑，
+    // 你（TM）看看对不对”。如果对不上（比如 TM 侧其实已经 OOM 重启了，或者 TM 上多出了僵尸 Task），对账器会下发清理或纠正指令
     private final ExecutionDeploymentReconciler executionDeploymentReconciler;
+
+    //当作业发生崩溃抛出复杂的 StackTrace（堆栈异常）时，普通的日志很难看懂。这些富化器插件会介入，对异常文本进行捕获和深度分析（例如判断是由于 HDFS 网卡打满导致的超时，还是由于用户 UDF 报了空指针），
+    // 并将分析后的友好标签和诊断分类注入到异常信息中，最终呈现在 Web UI 上（对应 JobExceptionsHandler）
     private final Collection<FailureEnricher> failureEnrichers;
 
     // -------- Mutable fields ---------
@@ -227,15 +272,20 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
 
     @Nullable private EstablishedResourceManagerConnection establishedResourceManagerConnection;
 
-    private HeartbeatManager<TaskExecutorToJobManagerHeartbeatPayload, AllocatedSlotReport>
-            taskManagerHeartbeatManager;
+
+    private HeartbeatManager<TaskExecutorToJobManagerHeartbeatPayload, AllocatedSlotReport> taskManagerHeartbeatManager;
 
     private HeartbeatManager<Void, Void> resourceManagerHeartbeatManager;
 
+    //集群黑名单熔断处理器 在云原生或大规模混合部署环境中，经常会出现“坏节点（Bad Node）”——机器没挂，但磁盘坏了或网络极慢，
+    // 导致调度到它上面的 Task 屡屡失败（黑洞效应）。blocklistHandler 会统计 Task 的失败率，
+    // 一旦发现某个 TaskManager 表现异常，会将其拉入黑名单，在接下来的调度中禁止把任务分给它，从而保障整个作业的整体产出率
     private final BlocklistHandler blocklistHandler;
 
-    private final Map<ResultPartitionID, PartitionWithMetrics> fetchedPartitionsWithMetrics =
-            new HashMap<>();
+    //作用：带有监控指标的数据分区缓存映射表。设计意图：专门用于高频缓存和监控混洗（Shuffle）过程中的物理分区指标。
+    // 例如记录每个数据分区当前的网络吞吐、积压的数据量（Backlog）大小等。
+    // Web UI 在渲染背压图或 Shuffle 数据大盘时，会通过 RPC 访问这个 Map，避免每次都实时计算，极大提高了监控数据的检索效率
+    private final Map<ResultPartitionID, PartitionWithMetrics> fetchedPartitionsWithMetrics = new HashMap<>();
 
     /**
      * A flag that indicates whether to fetch and retain partitions on task managers. This will
@@ -244,10 +294,16 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
      * partitions, as defined in {@code requireToFetchPartitions}, are either fetched or when a
      * timeout occurs.
      */
+    //作用：是否开启“获取并保留分区指标”的控制开关（状态标记）。设计意图：这是一个动态的布尔标记。当没有外部监控请求（如 Web UI 对应页面未打开）时，该值为 false，JobMaster 不会主动去高频维护复杂的分区指标，节省 CPU 与网络带宽。
+    // 一旦 Web UI 发起请求或者内部调度器（如自适应调度、预测执行）需要评估数据积压时，该值会被置为 true，激活接下来的指标抓取流水线
     private boolean fetchAndRetainPartitions = false;
 
+    //作用：待抓取的目标分区 ID 任务集合。设计意图：一个内存 HashSet，记录了当前明确需要获取最新指标的物理数据分区清单。因为一个分布式作业可能会产生千万级的数据分区，全量抓取不切实际。该属性精准过滤出当前处于活跃状态、或下游正在等待消费的、或前端页面正在请求的 ResultPartitionID。
+    // JobMaster 会拿着这个精确的清单，定向去对应的 TaskManager 发起 RPC 抓取，实现按需拉取（Lazy/On-Demand Fetch）
     private Set<ResultPartitionID> partitionsToFetch;
 
+    //异步抓取分区指标的“期约通道”（Future 凭证）。设计意图：由于向多台远端 TaskManager 请求分区指标是一个耗时的网络 I/O 过程，JobMaster 绝不能原地阻塞等待。当抓取任务启动时，JobMaster 会先实例化这个 fetchPartitionsFuture 并直接返回给调用方（例如正在等待响应的 REST Handler）。随后，底层的网络线程池会在后台异步收集各个 TaskManager 返回的 PartitionWithMetrics（带有吞吐、反压、积压量等指标的分区实体）。当清单 partitionsToFetch 中的所有分区指标全部收集齐备并写入缓存后，该 Future 会被调用 complete(...)。此时，
+    // 挂起等待的 REST 请求会被立刻唤醒，将数据序列化为 JSON 吐给 Web UI，整个过程实现了完全的非阻塞事件驱动（Event-Driven）
     private CompletableFuture<Collection<PartitionWithMetrics>> fetchPartitionsFuture;
 
     // ------------------------------------------------------------------------
@@ -393,9 +449,8 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                                                 .setSeverity("INFO")
                                                 .setAttribute(
                                                         "newJobStatus", newJobStatus.name())));
-
-        this.schedulerNG =
-                createScheduler(
+        //
+        this.schedulerNG = createScheduler(//
                         slotPoolServiceSchedulerFactory,
                         executionDeploymentTracker,
                         jobManagerJobMetricGroup,
@@ -418,7 +473,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
             JobStatusListener jobStatusListener)
             throws Exception {
         final SchedulerNG scheduler =
-                slotPoolServiceSchedulerFactory.createScheduler(
+                slotPoolServiceSchedulerFactory.createScheduler(//
                         log,
                         executionPlan,
                         ioExecutor,
@@ -472,6 +527,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
     @Override
     protected void onStart() throws JobMasterException {
         try {
+            //开始作业的调度
             startJobExecution();
         } catch (Exception e) {
             final JobMasterException jobMasterException =
@@ -524,6 +580,8 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
      * @param taskExecutionState New task execution state for a given task
      * @return Acknowledge the task execution state update
      */
+    //接收 Task 状态变更的 RPC 汇报入口。当远端 TaskManager 上的某个 Subtask 状态发生改变（例如从 DEPLOYING 变成 RUNNING，或者发生异常变成 FAILED），
+    // TaskManager 会通过此 RPC 接口向 JobMaster 报告。JobMaster 收到后会更新 executionGraph 并触发相应的后续逻辑（如推进下游或启动 Failover）
     @Override
     public CompletableFuture<Acknowledge> updateTaskExecutionState(
             final TaskExecutionState taskExecutionState) {
@@ -728,6 +786,8 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         }
     }
 
+    //TaskManager 向作业“献上”Slot。当 ResourceManager 分配了资源后，
+    // TaskManager 会主动调用 JobMaster 的这个接口，把具体的物理 Slot（通过 SlotOffer 包装）交给作业。JobMaster 会将其放入 slotPoolService 中供调度器分配给具体的 Task
     @Override
     public CompletableFuture<Collection<SlotOffer>> offerSlots(
             final ResourceID taskManagerId,
@@ -954,6 +1014,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         return CompletableFuture.completedFuture(schedulerNG.requestCheckpointStats());
     }
 
+    //外部触发 Checkpoint 的入口（例如用户在 Web UI 上点击，或者通过命令手动触发）
     @Override
     public CompletableFuture<CompletedCheckpoint> triggerCheckpoint(
             final CheckpointType checkpointType, final Duration timeout) {
@@ -970,6 +1031,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         return schedulerNG.triggerSavepoint(targetDirectory, cancelJob, formatType);
     }
 
+    //带 Savepoint 停止作业（对应 DELETE /jobs/:jobid/stop）。它会触发一次特殊的 Savepoint，在确保存储成功后，优雅地停止所有的 Task 并让作业正常终结
     @Override
     public CompletableFuture<String> stopWithSavepoint(
             @Nullable final String targetDirectory,
@@ -1166,14 +1228,14 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         JobShuffleContext context = new JobShuffleContextImpl(executionPlan.getJobID(), this);
         shuffleMaster.registerJob(context);
 
-        startJobMasterServices();
+        startJobMasterServices();//
 
         log.info(
                 "Starting execution of job '{}' ({}) under job master id {}.",
                 executionPlan.getName(),
                 executionPlan.getJobID(),
                 getFencingToken());
-
+        //【重点】会调度作业的执行
         startScheduling();
     }
 
@@ -1261,6 +1323,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
     }
 
     private void startScheduling() {
+        // DefaultScheduler#startScheduling  SchedulerBase#startScheduling
         schedulerNG.startScheduling();
     }
 
@@ -1328,8 +1391,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
 
     private void notifyOfNewResourceManagerLeader(
             final String newResourceManagerAddress, final ResourceManagerId resourceManagerId) {
-        resourceManagerAddress =
-                createResourceManagerAddress(newResourceManagerAddress, resourceManagerId);
+        resourceManagerAddress = createResourceManagerAddress(newResourceManagerAddress, resourceManagerId);
 
         reconnectToResourceManager(
                 new FlinkException(
@@ -1358,7 +1420,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
 
     private void tryConnectToResourceManager() {
         if (resourceManagerAddress != null) {
-            connectToResourceManager();
+            connectToResourceManager();//
         }
     }
 
@@ -1387,16 +1449,13 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         final ResourceManagerId resourceManagerId = success.getResourceManagerId();
 
         // verify the response with current connection
-        if (resourceManagerConnection != null
-                && Objects.equals(
-                        resourceManagerConnection.getTargetLeaderId(), resourceManagerId)) {
+        if (resourceManagerConnection != null && Objects.equals(resourceManagerConnection.getTargetLeaderId(), resourceManagerId)) {
 
             log.info(
                     "JobManager successfully registered at ResourceManager, leader id: {}.",
                     resourceManagerId);
 
-            final ResourceManagerGateway resourceManagerGateway =
-                    resourceManagerConnection.getTargetGateway();
+            final ResourceManagerGateway resourceManagerGateway = resourceManagerConnection.getTargetGateway();
 
             final ResourceID resourceManagerResourceId = success.getResourceManagerResourceId();
 
@@ -1513,9 +1572,8 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                     MdcUtils.wrapRunnable(
                             MdcUtils.asContextData(executionPlan.getJobID()),
                             () ->
-                                    notifyOfNewResourceManagerLeader(
-                                            leaderAddress,
-                                            ResourceManagerId.fromUuidOrNull(leaderSessionID))));
+                                    //
+                                    notifyOfNewResourceManagerLeader(leaderAddress, ResourceManagerId.fromUuidOrNull(leaderSessionID))));
         }
 
         @Override
@@ -1601,6 +1659,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                         // filter out outdated connections
                         //noinspection ObjectEquality
                         if (this == resourceManagerConnection) {
+                            //
                             establishResourceManagerConnection(success);
                         }
                     });

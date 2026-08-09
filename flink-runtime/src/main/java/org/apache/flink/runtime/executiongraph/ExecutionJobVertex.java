@@ -194,7 +194,7 @@ public class ExecutionJobVertex
             long createTimestamp,
             SubtaskAttemptNumberStore initialAttemptCounts)
             throws JobException {
-        initialize(
+        initialize(//
                 executionHistorySizeLimit,
                 timeout,
                 createTimestamp,
@@ -236,7 +236,7 @@ public class ExecutionJobVertex
         // create all task vertices
         for (int i = 0; i < this.parallelismInfo.getParallelism(); i++) {
             ExecutionVertex vertex =
-                    createExecutionVertex(
+                    createExecutionVertex(//
                             this,
                             i,
                             producedDataSets,
@@ -294,7 +294,7 @@ public class ExecutionJobVertex
             long createTimestamp,
             int executionHistorySizeLimit,
             int initialAttemptCount) {
-        return new ExecutionVertex(
+        return new ExecutionVertex(//
                 jobVertex,
                 subTaskIndex,
                 producedDataSets,

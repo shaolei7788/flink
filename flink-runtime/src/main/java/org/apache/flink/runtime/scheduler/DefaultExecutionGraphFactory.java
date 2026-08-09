@@ -151,8 +151,7 @@ public class DefaultExecutionGraphFactory implements ExecutionGraphFactory {
                     }
                 };
 
-        final ExecutionGraph newExecutionGraph =
-                DefaultExecutionGraphBuilder.buildGraph(
+        final ExecutionGraph newExecutionGraph = DefaultExecutionGraphBuilder.buildGraph(//
                         jobGraph,
                         configuration,
                         futureExecutor,

@@ -195,6 +195,7 @@ public class DefaultExecutionGraphBuilder {
                     jobName,
                     jobId);
         }
+        //
         executionGraph.attachJobGraph(sortedTopology, jobManagerJobMetricGroup);
 
         if (log.isDebugEnabled()) {

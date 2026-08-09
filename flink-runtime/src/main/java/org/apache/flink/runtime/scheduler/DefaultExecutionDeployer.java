@@ -100,7 +100,7 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
         final List<ExecutionDeploymentHandle> deploymentHandles =
                 createDeploymentHandles(
                         executionsToDeploy, requiredVersionByVertex, executionSlotAssignmentMap);
-
+        //
         waitForAllSlotsAndDeploy(deploymentHandles);
     }
 
@@ -151,6 +151,7 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
     private void waitForAllSlotsAndDeploy(final List<ExecutionDeploymentHandle> deploymentHandles) {
         FutureUtils.assertNoException(
                 assignAllResourcesAndRegisterProducedPartitions(deploymentHandles)
+                        // 部署所有的 Task
                         .handle(deployAll(deploymentHandles)));
     }
 
@@ -187,6 +188,7 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
                 checkState(slotAssigned.isDone());
 
                 FutureUtils.assertNoException(
+                        //
                         slotAssigned.handle(deployOrHandleError(deploymentHandle)));
             }
             return null;
@@ -289,16 +291,15 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
         };
     }
 
-    private BiFunction<Object, Throwable, Void> deployOrHandleError(
+    private BiFunction<Object, Throwable, Void> deployOrHandleError(//
             final ExecutionDeploymentHandle deploymentHandle) {
 
         return (ignored, throwable) -> {
-            final ExecutionVertexVersion requiredVertexVersion =
-                    deploymentHandle.getRequiredVertexVersion();
+            //
+            final ExecutionVertexVersion requiredVertexVersion = deploymentHandle.getRequiredVertexVersion();
             final Execution execution = deploymentHandle.getExecution();
 
-            if (execution.getState() != ExecutionState.SCHEDULED
-                    || executionVertexVersioner.isModified(requiredVertexVersion)) {
+            if (execution.getState() != ExecutionState.SCHEDULED || executionVertexVersioner.isModified(requiredVertexVersion)) {
                 if (throwable == null) {
                     log.debug(
                             "Refusing to assign slot to execution {} because this deployment was "
@@ -309,7 +310,8 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
             }
 
             if (throwable == null) {
-                deployTaskSafe(execution);
+                //
+                deployTaskSafe(execution);//
             } else {
                 handleTaskDeploymentFailure(execution, throwable);
             }
@@ -319,6 +321,7 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
 
     private void deployTaskSafe(final Execution execution) {
         try {
+            //DefaultExecutionOperations#deploy
             executionOperations.deploy(execution);
         } catch (Throwable e) {
             handleTaskDeploymentFailure(execution, e);

@@ -206,13 +206,16 @@ import java.util.concurrent.TimeUnit;
 public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndpoint
         implements LeaderContender, JsonArchivist {
 
+    //用于动态获取当前集群中处于 Leader 状态的 Dispatcher（或 JobMaster）的 Gateway。因为所有 Web 请求最终都需要提交给 Leader 处理，该属性确保了请求路由的正确性
     protected final GatewayRetriever<? extends T> leaderRetriever;
+    //保存 Flink 集群的全局配置（即 flink-conf.yaml 中的内容），用于在 Web 页面上展示集群配置，或在处理请求时读取相关限制参数
     protected final Configuration clusterConfiguration;
     protected final RestHandlerConfiguration restConfiguration;
     private final GatewayRetriever<ResourceManagerGateway> resourceManagerRetriever;
     private final TransientBlobService transientBlobService;
+    //专用的线程池，用于执行 Web 监控内部的各种异步任务、定时清理缓存或处理延迟请求
     protected final ScheduledExecutorService executor;
-
+    //缓存作业的执行图（ExecutionGraph）。因为 Web UI 会高频刷新以展示作业状态，直接从 JobManager 获取会造成巨大的 RPC 压力。该缓存能显著减轻 JobManager 的负担
     private final ExecutionGraphCache executionGraphCache;
     private final CheckpointStatsCache checkpointStatsCache;
     private final Cache<JobID, CompletableFuture<CheckpointStatsSnapshot>>
@@ -287,21 +290,21 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                 .build();
     }
 
+    // 最核心的路由注册方法。在此方法中，Flink 会实例化并绑定数百个具体的 Handler。
     @Override
     protected List<Tuple2<RestHandlerSpecification, ChannelInboundHandler>> initializeHandlers(
             final CompletableFuture<String> localAddressFuture) {
-        ArrayList<Tuple2<RestHandlerSpecification, ChannelInboundHandler>> handlers =
-                new ArrayList<>(30);
+        //保存了所有 REST 接口规格（如 URL 路径、请求方法）与具体业务处理器（Handlers）的映射关系
+        ArrayList<Tuple2<RestHandlerSpecification, ChannelInboundHandler>> handlers = new ArrayList<>(30);
 
-        final Collection<Tuple2<RestHandlerSpecification, ChannelInboundHandler>>
-                webSubmissionHandlers = initializeWebSubmissionHandlers(localAddressFuture);
+        final Collection<Tuple2<RestHandlerSpecification, ChannelInboundHandler>> webSubmissionHandlers = initializeWebSubmissionHandlers(localAddressFuture);
         handlers.addAll(webSubmissionHandlers);
         final boolean hasWebSubmissionHandlers = !webSubmissionHandlers.isEmpty();
 
         final Duration asyncOperationStoreDuration =
                 clusterConfiguration.get(RestOptions.ASYNC_OPERATION_STORE_DURATION);
         final Duration timeout = restConfiguration.getTimeout();
-
+        // 集群概览。返回当前集群的全局数据，如可用的 TaskSlot 总数、已占用的 Slot 数、存活的 TaskManager 数量以及当前运行的作业总数
         ClusterOverviewHandler clusterOverviewHandler =
                 new ClusterOverviewHandler(
                         leaderRetriever,
@@ -319,28 +322,30 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                         hasWebSubmissionHandlers,
                         restConfiguration.isWebCancelEnabled(),
                         restConfiguration.isWebRescaleEnabled());
-
+        // 绑定路由：GET /jobs 极其轻量级地返回当前集群中所有作业的 JobID 以及对应的 JobStatus（如 RUNNING, FINISHED）
         JobIdsHandler jobIdsHandler =
                 new JobIdsHandler(
                         leaderRetriever,
                         timeout,
                         responseHeaders,
                         JobIdsWithStatusesOverviewHeaders.getInstance());
-
+        //绑定路由：GET /jobs/:jobid/status
+        // （通常嵌套在具体作业的路径下）核心作用：精准查询某一个特定作业的当前运行状态
         JobStatusHandler jobStatusHandler =
                 new JobStatusHandler(
                         leaderRetriever,
                         timeout,
                         responseHeaders,
                         JobStatusInfoHeaders.getInstance());
-
+        //绑定路由：GET /jobs/overview 或 GET /v1/jobs/overview
+        //返回当前集群内所有作业的详细概览快照。它是 Flink Web UI 首页（Dashboard）的核心数据源
         JobsOverviewHandler jobsOverviewHandler =
                 new JobsOverviewHandler(
                         leaderRetriever,
                         timeout,
                         responseHeaders,
                         JobsOverviewHeaders.getInstance());
-
+        //配置查看。返回当前集群生效的全部 flink-conf.yaml 配置项
         ClusterConfigHandler clusterConfigurationHandler =
                 new ClusterConfigHandler(
                         leaderRetriever,
@@ -426,7 +431,7 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                         executor,
                         checkpointStatsSnapshotCache,
                         checkpointStatsCache);
-
+        //异常堆栈查看。当作业失败或发生异常时，负责收集并返回引发错误的根源异常（Root Exception）及最近发生的异常历史列表
         JobExceptionsHandler jobExceptionsHandler =
                 new JobExceptionsHandler(
                         leaderRetriever,
@@ -435,7 +440,7 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                         JobExceptionsHeaders.getInstance(),
                         executionGraphCache,
                         executor);
-
+        //
         JobVertexAccumulatorsHandler jobVertexAccumulatorsHandler =
                 new JobVertexAccumulatorsHandler(
                         leaderRetriever,
@@ -453,7 +458,7 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                         SubtasksAllAccumulatorsHeaders.getInstance(),
                         executionGraphCache,
                         executor);
-
+        //TaskManager 列表。展示当前集群中所有注册的 TaskManager 节点的 IP、端口、硬件资源（CPU、内存）以及 Slot 占用情况
         TaskManagersHandler taskManagersHandler =
                 new TaskManagersHandler(
                         leaderRetriever,
@@ -461,7 +466,7 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                         responseHeaders,
                         TaskManagersHeaders.getInstance(),
                         resourceManagerRetriever);
-
+        //单个节点详情。精确查看某一个 TaskManager 的详细内存划分（堆内存、堆外内存、托管内存等）、线程数以及环境配置
         TaskManagerDetailsHandler taskManagerDetailsHandler =
                 new TaskManagerDetailsHandler(
                         leaderRetriever,
@@ -470,7 +475,7 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                         TaskManagerDetailsHeaders.getInstance(),
                         resourceManagerRetriever,
                         metricFetcher);
-
+        // 作业详情大盘。返回作业的整体拓扑图（Topology）、各个 Vertex（算子链）的当前状态（RUNNING、FINISHED 等）、启动时间以及吞吐指标
         final JobDetailsHandler jobDetailsHandler =
                 new JobDetailsHandler(
                         leaderRetriever,
@@ -498,11 +503,12 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                         SubtasksTimesHeaders.getInstance(),
                         executionGraphCache,
                         executor);
-
+        //指标查询。支持根据指定的 Metric 名称（如 numRecordsInPerSecond 吞吐量）查询算子或节点的实时数值
         final JobVertexMetricsHandler jobVertexMetricsHandler =
                 new JobVertexMetricsHandler(
                         leaderRetriever, timeout, responseHeaders, metricFetcher);
 
+        //
         final JobVertexWatermarksHandler jobVertexWatermarksHandler =
                 new JobVertexWatermarksHandler(
                         leaderRetriever,
@@ -551,9 +557,8 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                         executionGraphCache,
                         executor,
                         metricFetcher);
-
-        final JobExecutionResultHandler jobExecutionResultHandler =
-                new JobExecutionResultHandler(leaderRetriever, timeout, responseHeaders);
+        //用于客户端（如集群外部的 Client）阻塞等待异步作业的最终执行结果（成功/失败/被取消）
+        final JobExecutionResultHandler jobExecutionResultHandler = new JobExecutionResultHandler(leaderRetriever, timeout, responseHeaders);
 
         final String defaultSavepointDir =
                 clusterConfiguration.get(CheckpointingOptions.SAVEPOINT_DIRECTORY);
@@ -572,10 +577,11 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                 new SavepointHandlers.SavepointStatusHandler(
                         leaderRetriever, timeout, responseHeaders);
 
+        // 触发快照。异步向 JobMaster 发起触发 Checkpoint 或 Savepoint 的请求，并返回一个全局唯一的 TriggerId
         final CheckpointHandlers.CheckpointTriggerHandler checkpointTriggerHandler =
                 new CheckpointHandlers.CheckpointTriggerHandler(
                         leaderRetriever, timeout, responseHeaders);
-
+        //查询快照进度。由于 Savepoint 是异步执行的，客户端会通过该 Handler 带着 TriggerId 轮询检查快照是否完成以及最终的存储路径
         final CheckpointHandlers.CheckpointStatusHandler checkpointStatusHandler =
                 new CheckpointHandlers.CheckpointStatusHandler(
                         leaderRetriever, timeout, responseHeaders);
@@ -628,7 +634,7 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                         responseHeaders,
                         JobVertexBackPressureHeaders.getInstance(),
                         metricFetcher);
-
+        //常规取消（Cancel 路由）绑定路径：DELETE /jobs/:jobid内部机制：传入 TerminationMode.CANCEL。当调用此接口时，底层算子会立即收到 cancel() 方法调用并尽快中断线程
         final JobCancellationHandler jobCancelTerminationHandler =
                 new JobCancellationHandler(
                         leaderRetriever,
@@ -645,7 +651,8 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                         responseHeaders,
                         JobCancellationHeaders.getInstance(),
                         TerminationModeQueryParameter.TerminationMode.CANCEL);
-
+        //绑定路径：DELETE /jobs/:jobid/stop（或旧版的 /yarn-cancel）内部机制：传入 TerminationMode.STOP。
+        // 这是一种更优雅的结束方式，它会通知 Source 端停止发送新数据，等现有数据处理完毕后再关闭作业，通常要求 Source 实现了 StoppableFunction 接口
         // this is kept just for legacy reasons. STOP has been replaced by STOP-WITH-SAVEPOINT.
         final JobCancellationHandler jobStopTerminationHandler =
                 new JobCancellationHandler(
@@ -1145,6 +1152,7 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
 
     @Override
     public void startInternal() throws Exception {
+        //
         leaderElection.startLeaderElection(this);
 
         startExecutionGraphCacheCleanupTask();
@@ -1246,7 +1254,7 @@ public class WebMonitorEndpoint<T extends RestfulGateway> extends RestServerEndp
                             "The thread priority must be within (%s, %s) but it was %s.",
                             Thread.MIN_PRIORITY, Thread.MAX_PRIORITY, threadPriority));
         }
-
+        // 创建固定的线程池
         return Executors.newScheduledThreadPool(
                 numThreads,
                 new ExecutorThreadFactory.Builder()

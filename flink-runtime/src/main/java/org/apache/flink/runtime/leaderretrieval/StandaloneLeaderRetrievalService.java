@@ -92,6 +92,7 @@ public class StandaloneLeaderRetrievalService implements LeaderRetrievalService 
             // directly notify the listener, because we already know the leading JobManager's
             // leaderAddress = pekko.tcp://flink@localhost:6123/user/rpc/resourcemanager_*
             // leaderId = 00000000-0000-0000-0000-000000000000
+            //直接通知 leader resourcemanager 地址
             //RpcGatewayRetriever#notifyLeaderAddress  LeaderRetriever#notifyLeaderAddress
             //System.out.println(listener.getClass().getName() + " start ");
             listener.notifyLeaderAddress(leaderAddress, leaderId);//

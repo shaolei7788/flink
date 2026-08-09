@@ -148,7 +148,7 @@ public class ExecutionVertex
         this.timeout = timeout;
         this.inputSplits = new ArrayList<>();
 
-        this.currentExecution = createNewExecution(createTimestamp);
+        this.currentExecution = createNewExecution(createTimestamp);//
 
         getExecutionGraphAccessor().registerExecution(currentExecution);
     }
@@ -158,6 +158,7 @@ public class ExecutionVertex
     // --------------------------------------------------------------------------------------------
 
     Execution createNewExecution(final long timestamp) {
+        //
         return new Execution(
                 getExecutionGraphAccessor().getFutureExecutor(),
                 this,

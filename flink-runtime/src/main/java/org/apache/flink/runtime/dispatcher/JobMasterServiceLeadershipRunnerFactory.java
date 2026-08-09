@@ -51,8 +51,9 @@ import static org.apache.flink.util.Preconditions.checkArgument;
 public enum JobMasterServiceLeadershipRunnerFactory implements JobManagerRunnerFactory {
     INSTANCE;
 
+
     @Override
-    public JobManagerRunner createJobManagerRunner(
+    public JobManagerRunner createJobManagerRunner(//
             ExecutionPlan executionPlan,
             Configuration configuration,
             RpcService rpcService,
@@ -72,8 +73,7 @@ public enum JobMasterServiceLeadershipRunnerFactory implements JobManagerRunnerF
 
         final JobResultStore jobResultStore = highAvailabilityServices.getJobResultStore();
 
-        final LeaderElection jobManagerLeaderElection =
-                highAvailabilityServices.getJobManagerLeaderElection(executionPlan.getJobID());
+        final LeaderElection jobManagerLeaderElection = highAvailabilityServices.getJobManagerLeaderElection(executionPlan.getJobID());
 
         final SlotPoolServiceSchedulerFactory slotPoolServiceSchedulerFactory =
                 DefaultSlotPoolServiceSchedulerFactory.fromConfiguration(
@@ -104,8 +104,7 @@ public enum JobMasterServiceLeadershipRunnerFactory implements JobManagerRunnerF
                             userCodeClassLoader, jobManagerServices.getFutureExecutor());
         }
 
-        final DefaultJobMasterServiceFactory jobMasterServiceFactory =
-                new DefaultJobMasterServiceFactory(
+        final DefaultJobMasterServiceFactory jobMasterServiceFactory = new DefaultJobMasterServiceFactory(
                         MdcUtils.scopeToJob(
                                 executionPlan.getJobID(), jobManagerServices.getIoExecutor()),
                         rpcService,
@@ -122,7 +121,7 @@ public enum JobMasterServiceLeadershipRunnerFactory implements JobManagerRunnerF
                         initializationTimestamp);
 
         final DefaultJobMasterServiceProcessFactory jobMasterServiceProcessFactory =
-                new DefaultJobMasterServiceProcessFactory(
+                new DefaultJobMasterServiceProcessFactory(//
                         executionPlan.getJobID(),
                         executionPlan.getName(),
                         executionPlan.getJobType(),
@@ -130,7 +129,7 @@ public enum JobMasterServiceLeadershipRunnerFactory implements JobManagerRunnerF
                         initializationTimestamp,
                         jobMasterServiceFactory);
 
-        return new JobMasterServiceLeadershipRunner(
+        return new JobMasterServiceLeadershipRunner(//
                 jobMasterServiceProcessFactory,
                 jobManagerLeaderElection,
                 jobResultStore,

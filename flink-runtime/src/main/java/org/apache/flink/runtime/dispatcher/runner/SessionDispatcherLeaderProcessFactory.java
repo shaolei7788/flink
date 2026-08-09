@@ -49,7 +49,8 @@ public class SessionDispatcherLeaderProcessFactory implements DispatcherLeaderPr
 
     @Override
     public DispatcherLeaderProcess create(UUID leaderSessionID) {
-        return SessionDispatcherLeaderProcess.create(
+        //
+        return SessionDispatcherLeaderProcess.create(//
                 leaderSessionID,
                 dispatcherGatewayServiceFactory,
                 jobPersistenceComponentFactory.createExecutionPlanStore(),

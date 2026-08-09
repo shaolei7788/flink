@@ -869,7 +869,8 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
 
         attachJobVertices(verticesToAttach, jobManagerJobMetricGroup);
         if (!isDynamic) {
-            initializeJobVertices(verticesToAttach);
+            // isDynamic = false
+            initializeJobVertices(verticesToAttach);//
         }
 
         // the topology assigning should happen before notifying new vertices to failoverStrategy
@@ -952,6 +953,7 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
 
         for (JobVertex jobVertex : topologicallySorted) {
             final ExecutionJobVertex ejv = tasks.get(jobVertex.getID());
+            //
             initializeJobVertex(ejv, createTimestamp);
         }
     }
@@ -969,7 +971,7 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
         jobVertexInputInfos.forEach(
                 (resultId, info) ->
                         this.vertexInputInfoStore.put(ejv.getJobVertexId(), resultId, info));
-
+        //ExecutionJobVertex#initialize
         ejv.initialize(
                 executionHistorySizeLimit,
                 rpcTimeout,

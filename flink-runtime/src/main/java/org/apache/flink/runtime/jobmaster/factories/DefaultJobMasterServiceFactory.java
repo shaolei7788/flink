@@ -97,15 +97,15 @@ public class DefaultJobMasterServiceFactory implements JobMasterServiceFactory {
 
         return CompletableFuture.supplyAsync(
                 FunctionUtils.uncheckedSupplier(
+                        //
                         () -> internalCreateJobMasterService(leaderSessionId, onCompletionActions)),
                 executor);
     }
 
     private JobMasterService internalCreateJobMasterService(
             UUID leaderSessionId, OnCompletionActions onCompletionActions) throws Exception {
-
-        final JobMaster jobMaster =
-                new JobMaster(
+        //todo 创建 JobMaster 对象
+        final JobMaster jobMaster = new JobMaster(//
                         rpcService,
                         JobMasterId.fromUuidOrNull(leaderSessionId),
                         jobMasterConfiguration,
@@ -125,8 +125,7 @@ public class DefaultJobMasterServiceFactory implements JobMasterServiceFactory {
                                         executionPlan.getJobID(), shuffleMaster, lookup),
                         new DefaultExecutionDeploymentTracker(),
                         DefaultExecutionDeploymentReconciler::new,
-                        BlocklistUtils.loadBlocklistHandlerFactory(
-                                jobMasterConfiguration.getConfiguration()),
+                        BlocklistUtils.loadBlocklistHandlerFactory(jobMasterConfiguration.getConfiguration()),
                         failureEnrichers,
                         initializationTimestamp);
 

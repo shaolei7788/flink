@@ -82,9 +82,8 @@ public class SessionDispatcherLeaderProcess extends AbstractDispatcherLeaderProc
     @Override
     protected void onStart() {
         startServices();
-
-        onGoingRecoveryOperation =
-                createDispatcherBasedOnRecoveredExecutionPlansAndRecoveredDirtyJobResults();
+        //
+        onGoingRecoveryOperation = createDispatcherBasedOnRecoveredExecutionPlansAndRecoveredDirtyJobResults();
     }
 
     private void startServices() {
@@ -104,15 +103,15 @@ public class SessionDispatcherLeaderProcess extends AbstractDispatcherLeaderProc
             Collection<ExecutionPlan> executionPlans,
             Collection<JobResult> recoveredDirtyJobResults) {
         runIfStateIs(
-                State.RUNNING, () -> createDispatcher(executionPlans, recoveredDirtyJobResults));
+                //
+                State.RUNNING, () -> createDispatcher(executionPlans, recoveredDirtyJobResults));//
     }
 
     private void createDispatcher(
             Collection<ExecutionPlan> executionPlans,
             Collection<JobResult> recoveredDirtyJobResults) {
-
-        final DispatcherGatewayService dispatcherService =
-                dispatcherGatewayServiceFactory.create(
+        // DefaultDispatcherGatewayServiceFactory#create
+        final DispatcherGatewayService dispatcherService = dispatcherGatewayServiceFactory.create(//
                         DispatcherId.fromUuid(getLeaderSessionId()),
                         executionPlans,
                         recoveredDirtyJobResults,
@@ -135,7 +134,7 @@ public class SessionDispatcherLeaderProcess extends AbstractDispatcherLeaderProc
                                                 .map(JobResult::getJobId)
                                                 .collect(Collectors.toSet())),
                         ioExecutor)
-                .thenAcceptBoth(dirtyJobsFuture, this::createDispatcherIfRunning)
+                .thenAcceptBoth(dirtyJobsFuture, this::createDispatcherIfRunning)//
                 .handle(this::onErrorIfRunning);
     }
 
@@ -322,6 +321,7 @@ public class SessionDispatcherLeaderProcess extends AbstractDispatcherLeaderProc
             JobResultStore jobResultStore,
             Executor ioExecutor,
             FatalErrorHandler fatalErrorHandler) {
+        //
         return new SessionDispatcherLeaderProcess(
                 leaderSessionId,
                 dispatcherFactory,

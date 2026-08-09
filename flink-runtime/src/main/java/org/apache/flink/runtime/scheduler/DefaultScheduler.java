@@ -141,7 +141,7 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
             ExecutionPlanSchedulingContext executionPlanSchedulingContext)
             throws Exception {
 
-        super(
+        super(//
                 log,
                 jobGraph,
                 ioExecutor,
@@ -245,6 +245,7 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
                 "Starting scheduling with scheduling strategy [{}]",
                 schedulingStrategy.getClass().getName());
         transitionToRunning();
+        //PipelinedRegionSchedulingStrategy#startScheduling
         schedulingStrategy.startScheduling();
     }
 
@@ -484,7 +485,7 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
                 verticesToDeploy.stream()
                         .map(this::getCurrentExecutionOfVertex)
                         .collect(Collectors.toList());
-
+        //DefaultExecutionDeployer#allocateSlotsAndDeploy
         executionDeployer.allocateSlotsAndDeploy(executionsToDeploy, requiredVersionByVertex);
     }
 

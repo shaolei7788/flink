@@ -230,7 +230,11 @@ public class FineGrainedSlotManager implements SlotManager {
         sendNotEnoughResourceNotifications = failUnfulfillableRequest;
 
         if (failUnfulfillableRequest && !unfulfillableJobs.isEmpty()) {
+            //遍历所有资源不足的job
             for (JobID jobId : unfulfillableJobs) {
+                // 异步通知对应的 JobManager（或 JobMaster）资源分配失败。
+                // 这使得作业能够立即知晓资源不足，从而快速失败（Fail-Fast），而不是一直盲目卡在 CREATED 或 RESTARTING 状态无限期等待
+                //ResourceEventListenerImpl#notEnoughResourceAvailable
                 resourceEventListener.notEnoughResourceAvailable(
                         jobId, resourceTracker.getAcquiredResources(jobId));
             }
@@ -451,11 +455,14 @@ public class FineGrainedSlotManager implements SlotManager {
             taskManagerTracker.addTaskManager(taskExecutorConnection, totalResourceProfile, defaultSlotResourceProfile);
 
             if (initialSlotReport.hasAllocatedSlot()) {
+                // taskexecutor 被分配slot的情况下
                 slotStatusSyncer.reportSlotStatus(taskExecutorConnection.getInstanceID(), initialSlotReport);
             }
 
             if (matchedPendingTaskManagerOptional.isPresent()) {
+                // 有挂起的PendingTaskManager 并且有匹配的slot
                 PendingTaskManager pendingTaskManager = matchedPendingTaskManagerOptional.get();
+                // 为挂起的PendingTaskManager 匹配slot
                 allocateSlotsForRegisteredPendingTaskManager(pendingTaskManager, taskExecutorConnection.getInstanceID());
                 taskManagerTracker.removePendingTaskManager(pendingTaskManager.getPendingTaskManagerId());
                 return RegistrationResult.SUCCESS;

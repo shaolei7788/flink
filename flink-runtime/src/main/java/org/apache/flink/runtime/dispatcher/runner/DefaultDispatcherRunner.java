@@ -116,13 +116,14 @@ public final class DefaultDispatcherRunner implements DispatcherRunner, LeaderCo
                             getClass().getSimpleName(),
                             leaderSessionID,
                             DispatcherLeaderProcess.class.getSimpleName());
+                    //
                     startNewDispatcherLeaderProcess(leaderSessionID);
                 });
     }
 
     private void startNewDispatcherLeaderProcess(UUID leaderSessionID) {
         stopDispatcherLeaderProcess();
-
+        //
         dispatcherLeaderProcess = createNewDispatcherLeaderProcess(leaderSessionID);
 
         final DispatcherLeaderProcess newDispatcherLeaderProcess = dispatcherLeaderProcess;
@@ -141,6 +142,7 @@ public final class DefaultDispatcherRunner implements DispatcherRunner, LeaderCo
     }
 
     private DispatcherLeaderProcess createNewDispatcherLeaderProcess(UUID leaderSessionID) {
+        //
         final DispatcherLeaderProcess newDispatcherLeaderProcess =
                 dispatcherLeaderProcessFactory.create(leaderSessionID);
 

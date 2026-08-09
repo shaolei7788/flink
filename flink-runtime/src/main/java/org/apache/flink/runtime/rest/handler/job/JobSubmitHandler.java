@@ -70,26 +70,34 @@ public final class JobSubmitHandler
 
     public JobSubmitHandler(
             GatewayRetriever<? extends DispatcherGateway> leaderRetriever,
-            Duration timeout,
+            Duration timeout,//600s
             Map<String, String> headers,
             Executor executor,
             Configuration configuration) {
+        //
         super(leaderRetriever, timeout, headers, JobSubmitHeaders.getInstance());
         this.executor = executor;
         this.configuration = configuration;
     }
 
+    //处理作业提交的请求
     @Override
     protected CompletableFuture<JobSubmitResponseBody> handleRequest(
+            //包装了当前的 HTTP 请求。通过它可以拿到用户上传的物理文件、由 JSON 请求体反序列化得到的 Java 对象（JobSubmitRequestBody）以及 URL 参数
             @Nonnull HandlerRequest<JobSubmitRequestBody> request,
+            //当前集群处于 Leader 状态的 Dispatcher 的 RPC 代理（Gateway）。通过它可以向集群核心组件发送 RPC 命名控制指令（如 submitJob）
             @Nonnull DispatcherGateway gateway)
             throws RestHandlerException {
+        //从 Netty 的 Multipart HTTP 请求中提取用户本次上传的所有临时本地文件（包括作业图文件、JAR 包、依赖的 Artifact 文件等）
         final Collection<File> uploadedFiles = request.getUploadedFiles();
+        //使用 Java Stream 流将文件集合转换成一个 Map 映射
         final Map<String, Path> nameToFile =
                 uploadedFiles.stream()
                         .collect(Collectors.toMap(File::getName, Path::fromLocalFile));
 
         if (uploadedFiles.size() != nameToFile.size()) {
+            // 同名文件去重与冲突校验。如果 uploadedFiles 的数量和 Map 的数量不一致，说明用户上传了重名的文件（导致 Collectors.toMap 时发生了覆盖或冲突）
+            //防止前端错误或多线程上传时引发文件覆盖，确保上传的文件一一对应。如果不相等，直接向客户端返回 HTTP 400 (Bad Request)
             throw new RestHandlerException(
                     String.format(
                             "The number of uploaded files was %s than the expected count. Expected: %s Actual %s",
@@ -98,7 +106,7 @@ public final class JobSubmitHandler
                             uploadedFiles.size()),
                     HttpResponseStatus.BAD_REQUEST);
         }
-
+        //获取 HTTP 请求体中携带的 JSON 元数据（包含了执行计划文件名、关联的 JAR 包列表、分布式缓存分布式文件等信息）
         final JobSubmitRequestBody requestBody = request.getRequestBody();
 
         if (requestBody.executionPlanFileName == null) {
@@ -108,26 +116,34 @@ public final class JobSubmitHandler
                             JobSubmitRequestBody.FIELD_NAME_JOB_GRAPH),
                     HttpResponseStatus.BAD_REQUEST);
         }
-
-        CompletableFuture<ExecutionPlan> executionPlanFuture =
-                loadExecutionPlan(requestBody, nameToFile);
-
+        // 根据 requestBody.executionPlanFileName 去刚才的 nameToFile 映射中找到对应的磁盘临时文件。读取该文件，
+        // 并将其反序列化（Deserialization）**为内存中的 Flink ExecutionPlan（即传统意义上的 JobGraph）对象
+        CompletableFuture<ExecutionPlan> executionPlanFuture = loadExecutionPlan(requestBody, nameToFile);
+        // 从用户上传的文件大盘（nameToFile）中，根据请求体里指定的 JAR 包名称列表（jarFileNames），筛选出本作业真正需要用到的、属于用户代码的 JAR 包文件集合
         Collection<Path> jarFiles = getJarFilesToUpload(requestBody.jarFileNames, nameToFile);
+        // 处理分布式缓存文件。提取用户随作业一同提交的其他辅助依赖资产（如文本配置、机器学习模型、字典文件等），并以 (注册名, 临时文件路径) 的元组（Tuple2）形式封存
+        Collection<Tuple2<String, Path>> artifacts = getArtifactFilesToUpload(requestBody.artifactFileNames, nameToFile);
 
-        Collection<Tuple2<String, Path>> artifacts =
-                getArtifactFilesToUpload(requestBody.artifactFileNames, nameToFile);
-
+        //将作业的依赖文件真正上传到集群的 BlobServer 注册中心
+        //它等待 executionPlanFuture 反序列化完成后，将获取到的 jarFiles 和 artifacts 通过 RPC 上传到 Flink 的中央文件服务（BlobServer）。
+        // BlobServer 会返回唯一的 BlobKey，随后这些 Key 会被注入、回写到 ExecutionPlan 对象的配置信息中，从而得到一个资源就绪、具备完整运行时上下文的“最终版执行计划”（finalizedExecutionPlan）
         CompletableFuture<ExecutionPlan> finalizedExecutionPlanFuture =
-                uploadExecutionPlanFiles(
-                        gateway, executionPlanFuture, jarFiles, artifacts, configuration);
-
+                uploadExecutionPlanFiles(gateway, executionPlanFuture, jarFiles, artifacts, configuration);
+        // 正式向集群提交作业（核心 RPC 交互）
+        //当上面的文件全部上传完毕、执行计划最终定型后，解开 Future 包裹拿到 executionPlan
         CompletableFuture<Acknowledge> jobSubmissionFuture =
                 finalizedExecutionPlanFuture.thenCompose(
+                        //提交作业
+                        //会通过Pekko 将作业正式递交给 Dispatcher
+                        // Dispatcher#submitJob。  600s
                         executionPlan -> gateway.submitJob(executionPlan, timeout));
-
+        //使用 thenCombine 将 jobSubmissionFuture（代表提交成功）和最开始的 executionPlanFuture（为了拿作业 ID）进行合并组合
+        //当且仅当上述的所有异步链路（反序列化 \(\rightarrow \) 文件上传 \(\rightarrow \) RPC 提交成功）全部顺利完成时，该方法最终返回一个 JobSubmitResponseBody。
+        // 其内部包含该作业的监控路由路径（例如 /jobs/4a3b2c...），前端（Web UI）拿到该路径后，便可以立即跳转到该作业的详情页
         return jobSubmissionFuture.thenCombine(
                 executionPlanFuture,
                 (ack, executionPlan) ->
+                        //
                         new JobSubmitResponseBody("/jobs/" + executionPlan.getJobID()));
     }
 

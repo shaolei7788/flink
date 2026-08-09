@@ -52,7 +52,7 @@ public class DispatcherRestEndpoint extends WebMonitorEndpoint<DispatcherGateway
 
     private WebMonitorExtension webSubmissionExtension;
 
-    public DispatcherRestEndpoint(
+    public DispatcherRestEndpoint(//
             GatewayRetriever<DispatcherGateway> leaderRetriever,
             Configuration clusterConfiguration,
             RestHandlerConfiguration restConfiguration,
@@ -83,17 +83,16 @@ public class DispatcherRestEndpoint extends WebMonitorEndpoint<DispatcherGateway
     @Override
     protected List<Tuple2<RestHandlerSpecification, ChannelInboundHandler>> initializeHandlers(
             final CompletableFuture<String> localAddressFuture) {
-        //
+        //初始化各个handler
         List<Tuple2<RestHandlerSpecification, ChannelInboundHandler>> handlers = super.initializeHandlers(localAddressFuture);
 
         // Add the Dispatcher specific handlers
-
+        // 600s
         final Duration timeout = restConfiguration.getTimeout();
 
-        JobSubmitHandler jobSubmitHandler =
-                new JobSubmitHandler(
-                        leaderRetriever, timeout, responseHeaders, executor, clusterConfiguration);
-
+        //作业提交入口。处理通过 Web UI 或 CLI 提交的 JAR 包及拓扑结构，将作业递交给 Dispatcher 启动
+        JobSubmitHandler jobSubmitHandler = new JobSubmitHandler(leaderRetriever, timeout, responseHeaders, executor, clusterConfiguration);
+        //todo 添加JobSubmitHandler
         handlers.add(Tuple2.of(jobSubmitHandler.getMessageHeaders(), jobSubmitHandler));
 
         return handlers;

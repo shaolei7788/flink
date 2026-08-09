@@ -364,7 +364,7 @@ public class TaskManagerRunner implements FatalErrorHandler {
             //初始化 HighAvailabilityServices（高可用与 Leader 动态寻址服务）。
             //初始化 HeartbeatServices（负责和 JobManager 保持心跳的定时器）。初始化 MetricRegistry（监控指标度量框架）。
             //初始化 TaskExecutorBlobService（负责同步和缓存 Jar 包/大文件的 BLOB 存储服务）。组装完这些后，再将这些拼好的材料塞入 TaskExecutor
-            //初始化 TaskExecutorService 对象 【核心】
+            //初始化 TaskExecutorService 对象 【重点】
             startTaskManagerRunnerServices();
             //todo TaskExecutorToServiceAdapter#start
             taskExecutorService.start();

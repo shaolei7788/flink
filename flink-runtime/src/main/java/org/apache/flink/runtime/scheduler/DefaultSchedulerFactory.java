@@ -136,10 +136,9 @@ public class DefaultSchedulerFactory implements SchedulerNGFactory {
                         partitionTracker);
 
         final CheckpointsCleaner checkpointsCleaner =
-                new CheckpointsCleaner(
-                        jobMasterConfiguration.get(CheckpointingOptions.CLEANER_PARALLEL_MODE));
+                new CheckpointsCleaner(jobMasterConfiguration.get(CheckpointingOptions.CLEANER_PARALLEL_MODE));
 
-        return new DefaultScheduler(
+        return new DefaultScheduler(//
                 log,
                 jobGraph,
                 ioExecutor,

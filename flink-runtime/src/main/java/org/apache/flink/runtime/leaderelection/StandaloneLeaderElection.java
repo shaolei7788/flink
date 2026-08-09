@@ -55,6 +55,7 @@ public class StandaloneLeaderElection implements LeaderElection {
                     "No LeaderContender should have been registered with this LeaderElection, yet.");
             this.leaderContender = contender;
             // ResourceManagerServiceImpl#grantLeadership
+            // JobMasterServiceLeadershipRunner#grantLeadership
             // 内定当前leaderContender 是leader了
             this.leaderContender.grantLeadership(sessionID);
         }

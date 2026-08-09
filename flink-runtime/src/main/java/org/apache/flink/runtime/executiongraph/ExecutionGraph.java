@@ -220,7 +220,7 @@ public interface ExecutionGraph extends AccessExecutionGraph {
 
     default void initializeJobVertex(ExecutionJobVertex ejv, long createTimestamp)
             throws JobException {
-        initializeJobVertex(
+        initializeJobVertex(//
                 ejv,
                 createTimestamp,
                 VertexInputInfoComputationUtils.computeVertexInputInfos(

@@ -174,6 +174,8 @@ public abstract class RestServerEndpoint implements RestService {
      *
      * @throws Exception if we cannot start the RestServerEndpoint
      */
+    //当您在浏览器中刷新 Flink Web UI，或者使用 flink run -m <host>:<port> 提交作业时：
+    // Netty 收到请求 → 2. WebMonitorEndpoint 匹配路由 → 3. 对应的 Handler 借助 leaderRetriever 向 Dispatcher 发起 RPC 请求 → 4. 结果返回给用户
     public final void start() throws Exception {
         synchronized (lock) {
             Preconditions.checkState(
@@ -183,7 +185,7 @@ public abstract class RestServerEndpoint implements RestService {
 
             final Router router = new Router();
             final CompletableFuture<String> restAddressFuture = new CompletableFuture<>();
-            // handlers =
+            // handlers = 是一个大集合 DispatcherRestEndpoint#initializeHandlers
             handlers = initializeHandlers(restAddressFuture);
 
             /* sort the handlers such that they are ordered the following:
@@ -197,6 +199,7 @@ public abstract class RestServerEndpoint implements RestService {
             Collections.sort(handlers, RestHandlerUrlComparator.INSTANCE);
 
             checkAllEndpointsAndHandlersAreUnique(handlers);
+            //注册handler
             handlers.forEach(handler -> registerHandler(router, handler, log));
 
             MultipartRoutes multipartRoutes = createMultipartRoutes(handlers);
@@ -243,13 +246,9 @@ public abstract class RestServerEndpoint implements RestService {
                         }
                     };
 
-            NioEventLoopGroup bossGroup =
-                    new NioEventLoopGroup(
-                            1, new ExecutorThreadFactory("flink-rest-server-netty-boss"));
-            NioEventLoopGroup workerGroup =
-                    new NioEventLoopGroup(
-                            0, new ExecutorThreadFactory("flink-rest-server-netty-worker"));
-
+            NioEventLoopGroup bossGroup = new NioEventLoopGroup(1, new ExecutorThreadFactory("flink-rest-server-netty-boss"));
+            NioEventLoopGroup workerGroup = new NioEventLoopGroup(0, new ExecutorThreadFactory("flink-rest-server-netty-worker"));
+            // 创建ServerBootstrap对象 netty框架
             bootstrap = new ServerBootstrap();
             bootstrap
                     .group(bossGroup, workerGroup)
@@ -258,6 +257,7 @@ public abstract class RestServerEndpoint implements RestService {
 
             Iterator<Integer> portsIterator;
             try {
+                //
                 portsIterator = NetUtils.getPortRangeFromString(restBindPortRange);
             } catch (IllegalConfigurationException e) {
                 throw e;
@@ -271,6 +271,7 @@ public abstract class RestServerEndpoint implements RestService {
                 try {
                     chosenPort = portsIterator.next();
                     final ChannelFuture channel;
+                    //
                     if (restBindAddress == null) {
                         channel = bootstrap.bind(chosenPort);
                     } else {
@@ -303,17 +304,17 @@ public abstract class RestServerEndpoint implements RestService {
             } else {
                 advertisedAddress = bindAddress.getAddress().getHostAddress();
             }
-
+            //
             port = bindAddress.getPort();
 
             log.info("Rest endpoint listening at {}:{}", advertisedAddress, port);
-
+            //
             restBaseUrl = new URL(determineProtocol(), advertisedAddress, port, "").toString();
 
             restAddressFuture.complete(restBaseUrl);
 
             state = State.RUNNING;
-
+            //
             startInternal();
         }
     }
@@ -521,6 +522,7 @@ public abstract class RestServerEndpoint implements RestService {
                     specificationHandler.f1,
                     specificationHandler.f0.getHttpMethod(),
                     route);
+            //
             registerHandler(
                     router,
                     route,

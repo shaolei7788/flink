@@ -184,6 +184,7 @@ public class PipelinedRegionSchedulingStrategy implements SchedulingStrategy {
                 IterableUtils.toStream(schedulingTopology.getAllPipelinedRegions())
                         .filter(this::isSourceRegion)
                         .collect(Collectors.toSet());
+        //
         maybeScheduleRegions(sourceRegions);
     }
 
@@ -221,15 +222,15 @@ public class PipelinedRegionSchedulingStrategy implements SchedulingStrategy {
     @Override
     public void onPartitionConsumable(final IntermediateResultPartitionID resultPartitionId) {}
 
-    private void maybeScheduleRegions(final Set<SchedulingPipelinedRegion> regions) {
+    private void maybeScheduleRegions(final Set<SchedulingPipelinedRegion> regions) {//
         final Set<SchedulingPipelinedRegion> regionsToSchedule = new HashSet<>();
         Set<SchedulingPipelinedRegion> nextRegions = regions;
         while (!nextRegions.isEmpty()) {
             nextRegions = addSchedulableAndGetNextRegions(nextRegions, regionsToSchedule);
         }
         // schedule regions in topological order.
-        SchedulingStrategyUtils.sortPipelinedRegionsInTopologicalOrder(
-                        schedulingTopology, regionsToSchedule)
+        SchedulingStrategyUtils.sortPipelinedRegionsInTopologicalOrder(schedulingTopology, regionsToSchedule)
+                // scheduleRegion 会调度作业
                 .forEach(this::scheduleRegion);
     }
 
@@ -284,6 +285,7 @@ public class PipelinedRegionSchedulingStrategy implements SchedulingStrategy {
                 areRegionVerticesAllInCreatedState(region),
                 "BUG: trying to schedule a region which is not in CREATED state");
         scheduledRegions.add(region);
+        //DefaultScheduler#allocateSlotsAndDeploy
         schedulerOperations.allocateSlotsAndDeploy(regionVerticesSorted.get(region));
     }
 

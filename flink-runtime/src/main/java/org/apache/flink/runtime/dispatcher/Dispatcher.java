@@ -155,9 +155,11 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
     private final Configuration configuration;
 
     private final ExecutionPlanWriter executionPlanWriter;
+    // 作业结果存储。用于持久化记录已经结束（成功、失败或取消）的作业最终状态与结果。这能确保在集群发生故障恢复时，已经结束的作业不会被错误地重新提交运行
     private final JobResultStore jobResultStore;
 
     private final HighAvailabilityServices highAvailabilityServices;
+    // 用于动态获取当前集群中处于 Leader 状态的 ResourceManager 的 RPC 代理。当作业需要分配 Slot 资源时，Dispatcher 或其拉起的 JobMaster 需要通过它与资源管理器进行通信
     private final GatewayRetriever<ResourceManagerGateway> resourceManagerGatewayRetriever;
     private final JobManagerSharedServices jobManagerSharedServices;
     private final HeartbeatServices heartbeatServices;
@@ -166,6 +168,7 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
     private final FatalErrorHandler fatalErrorHandler;
     private final Collection<FailureEnricher> failureEnrichers;
 
+    //作业运行主注册表。每个作业都由一个 JobManagerRunner（内部包裹着 JobMaster）来负责运行。该属性记录了当前集群中所有正在运行的作业与其对应 Runner 的映射关系
     private final OnMainThreadJobManagerRunnerRegistry jobManagerRunnerRegistry;
 
     private final Collection<ExecutionPlan> recoveredJobs;
@@ -226,7 +229,7 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
             DispatcherBootstrapFactory dispatcherBootstrapFactory,
             DispatcherServices dispatcherServices)
             throws Exception {
-        this(
+        this(//
                 rpcService,
                 fencingToken,
                 recoveredJobs,
@@ -295,7 +298,7 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
         this.historyServerArchivist = dispatcherServices.getHistoryServerArchivist();
 
         this.executionGraphInfoStore = dispatcherServices.getArchivedExecutionGraphStore();
-
+        // jobManagerRunnerFactory = JobMasterServiceLeadershipRunnerFactory
         this.jobManagerRunnerFactory = dispatcherServices.getJobManagerRunnerFactory();
         this.cleanupRunnerFactory = dispatcherServices.getCleanupRunnerFactory();
 
@@ -349,6 +352,7 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
     @Override
     public void onStart() throws Exception {
         try {
+            //启动 dispatcher服务
             startDispatcherServices();
         } catch (Throwable t) {
             final DispatcherException exception =
@@ -368,6 +372,7 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
                         this::onFatalError);
     }
 
+    //
     private void startDispatcherServices() throws Exception {
         try {
             ShuffleMasterSnapshotUtil.restoreOrSnapshotShuffleMaster(
@@ -412,9 +417,9 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
 
         initJobClientExpiredTime(recoveredJob);
 
-        try (MdcCloseable ignored =
-                MdcUtils.withContext(MdcUtils.asContextData(recoveredJob.getJobID()))) {
-            runJob(createJobMasterRunner(recoveredJob), ExecutionType.RECOVERY);
+        try (MdcCloseable ignored = MdcUtils.withContext(MdcUtils.asContextData(recoveredJob.getJobID()))) {
+            JobManagerRunner jobMasterRunner = createJobMasterRunner(recoveredJob);
+            runJob(jobMasterRunner, ExecutionType.RECOVERY);
         } catch (Throwable throwable) {
             onFatalError(
                     new DispatcherException(
@@ -522,14 +527,17 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
 
     @Override
     public CompletableFuture<Acknowledge> submitJob(ExecutionPlan executionPlan, Duration timeout) {
+        //获取jobId
         final JobID jobID = executionPlan.getJobID();
         try (MdcCloseable ignored = MdcUtils.withContext(MdcUtils.asContextData(jobID))) {
             log.info("Received job submission '{}' ({}).", executionPlan.getName(), jobID);
         }
+        //校验作业 ID 是否已存在或已结束
         return isInGloballyTerminalState(jobID)
                 .thenComposeAsync(
                         isTerminated -> {
-                            if (isTerminated) {
+                            if (isTerminated) {// 提交新作业 false
+                                //终止状态
                                 log.warn(
                                         "Ignoring job submission '{}' ({}) because the job already "
                                                 + "reached a globally-terminal state (i.e. {}) in a "
@@ -556,6 +564,7 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
                                                         + "have resources configured. The limitation will be "
                                                         + "removed in future versions."));
                             } else {
+                                //todo 提交作业
                                 return internalSubmitJob(executionPlan);
                             }
                         },
@@ -589,9 +598,10 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
     private CompletableFuture<Boolean> isInGloballyTerminalState(JobID jobId) {
         return jobResultStore.hasJobResultEntryAsync(jobId);
     }
-
+    //executionPlan = StreamGraph(jobId: f6b34761d00ecc090a52f9217d74e91a)
     private CompletableFuture<Acknowledge> internalSubmitJob(ExecutionPlan executionPlan) {
         if (executionPlan instanceof JobGraph) {
+            // false
             applyParallelismOverrides((JobGraph) executionPlan);
         }
 
@@ -599,11 +609,11 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
 
         // track as an outstanding job
         submittedAndWaitingTerminationJobIDs.add(executionPlan.getJobID());
-
-        return waitForTerminatingJob(
-                        executionPlan.getJobID(), executionPlan, this::persistAndRunJob)
+        // 会执行 persistAndRunJob
+        return waitForTerminatingJob(executionPlan.getJobID(), executionPlan, this::persistAndRunJob)
                 .handle(
                         (ignored, throwable) ->
+                                // 作业启动完后执行
                                 handleTermination(executionPlan.getJobID(), throwable))
                 .thenCompose(Function.identity())
                 .whenComplete(
@@ -642,15 +652,22 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
         return CompletableFuture.completedFuture(Acknowledge.get());
     }
 
+    //
     private void persistAndRunJob(ExecutionPlan executionPlan) throws Exception {
+        //StandaloneExecutionPlanStore#putExecutionPlan 空方法
         executionPlanWriter.putExecutionPlan(executionPlan);
+        //
         initJobClientExpiredTime(executionPlan);
-        runJob(createJobMasterRunner(executionPlan), ExecutionType.SUBMISSION);
+        //创建JobManagerRunner  jobMasterRunner = JobMasterServiceLeadershipRunner
+        JobManagerRunner jobMasterRunner = createJobMasterRunner(executionPlan);//
+        //运行job
+        runJob(jobMasterRunner, ExecutionType.SUBMISSION);//
     }
 
     private JobManagerRunner createJobMasterRunner(ExecutionPlan executionPlan) throws Exception {
         Preconditions.checkState(!jobManagerRunnerRegistry.isRegistered(executionPlan.getJobID()));
-        return jobManagerRunnerFactory.createJobManagerRunner(
+        //JobMasterServiceLeadershipRunner  JobMasterServiceLeadershipRunnerFactory#createJobManagerRunner
+        return jobManagerRunnerFactory.createJobManagerRunner(//
                 executionPlan,
                 configuration,
                 getRpcService(),
@@ -672,16 +689,19 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
                 getIoExecutor(dirtyJobResult.getJobId()));
     }
 
+    //  JobMasterServiceLeadershipRunner
     private void runJob(JobManagerRunner jobManagerRunner, ExecutionType executionType)
             throws Exception {
+        // 【重点】JobMasterServiceLeadershipRunner#start
         jobManagerRunner.start();
+        //注册 jobManagerRunner
         jobManagerRunnerRegistry.register(jobManagerRunner);
 
         final JobID jobId = jobManagerRunner.getJobID();
 
         final CompletableFuture<CleanupJobState> cleanupJobStateFuture =
-                jobManagerRunner
-                        .getResultFuture()
+                //获取作业的运行结果
+                jobManagerRunner.getResultFuture()
                         .handleAsync(
                                 (jobManagerRunnerResult, throwable) -> {
                                     Preconditions.checkState(
@@ -783,6 +803,7 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
                 Collections.unmodifiableSet(jobManagerRunnerRegistry.getRunningJobIds()));
     }
 
+    //清理、删除指定的物理 Savepoint 文件
     @Override
     public CompletableFuture<Acknowledge> disposeSavepoint(String savepointPath, Duration timeout) {
         final ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
@@ -807,6 +828,7 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
                 jobManagerSharedServices.getIoExecutor());
     }
 
+    //取消作业的执行
     @Override
     public CompletableFuture<Acknowledge> cancelJob(JobID jobId, Duration timeout) {
         Optional<JobManagerRunner> maybeJob = getJobManagerRunner(jobId);
@@ -858,6 +880,7 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
                 });
     }
 
+    //获取当前集群所有作业的详细指标与状态计数大盘，对应 JobsOverviewHandler
     @Override
     public CompletableFuture<MultipleJobsDetails> requestMultipleJobDetails(Duration timeout) {
         List<CompletableFuture<Optional<JobDetails>>> individualOptionalJobDetails =
@@ -895,6 +918,7 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
                 });
     }
 
+    // 精准查询某一个特定作业的当前状态（如 RUNNING、CANCELED），对应上一轮提到的 JobStatusHandler
     @Override
     public CompletableFuture<JobStatus> requestJobStatus(JobID jobId, Duration timeout) {
         Optional<JobManagerRunner> maybeJob = getJobManagerRunner(jobId);
@@ -1585,9 +1609,10 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
         return optionalJobInformation;
     }
 
-    private CompletableFuture<Void> waitForTerminatingJob(
-            JobID jobId, ExecutionPlan executionPlan, ThrowingConsumer<ExecutionPlan, ?> action) {
+    // action = this::persistAndRunJob
+    private CompletableFuture<Void> waitForTerminatingJob(JobID jobId, ExecutionPlan executionPlan, ThrowingConsumer<ExecutionPlan, ?> action) {
         final CompletableFuture<Void> jobManagerTerminationFuture =
+                //
                 getJobTerminationFuture(jobId)
                         .exceptionally(
                                 (Throwable throwable) -> {
@@ -1605,6 +1630,7 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
                 FunctionUtils.uncheckedConsumer(
                         (ignored) -> {
                             jobManagerRunnerTerminationFutures.remove(jobId);
+                            //todo 执行 this::persistAndRunJob
                             action.accept(executionPlan);
                         }));
     }

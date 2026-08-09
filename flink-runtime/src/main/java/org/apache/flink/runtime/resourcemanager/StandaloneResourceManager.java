@@ -110,7 +110,7 @@ public class StandaloneResourceManager extends ResourceManager<ResourceID> {
 
     private void startStartupPeriod() {
         setFailUnfulfillableRequest(false);
-
+        // startupPeriodMillis = 300000
         final long startupPeriodMillis = startupPeriodTime.toMillis();
 
         if (startupPeriodMillis > 0) {

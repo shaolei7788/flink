@@ -167,6 +167,16 @@ public class PekkoRpcServiceUtils {
 
         final String hostPort = NetUtils.unresolvedHostAndPortToNormalizedString(hostname, port);
         // pekko.tcp://flink@localhost:6123/user/rpc/resourcemanager_*
+        //TaskManager 启动时，必须知道去哪里报到。它会通过读取配置中的 jobmanager.rpc.address 和 jobmanager.rpc.port: 6123，跨网络给这个端口发送 RPC 请求
+        //ResourceManager 会在这个端口上监听并接收 TaskManager 的注册信息，随后它们之间后续的所有底层心跳包，全都是通过 6123 这个网络通道进行传输。
+
+        //你可能会奇怪，ResourceManager、Dispatcher、JobMaster 明明是不同的组件，为什么能共用 6123 这一个端口？
+        // 这是因为 Flink 底层使用了 Akka / Netty 这一套基于 Actor 模型的 RPC 框架。6123 端口在操作系统层面，只对应一个统一的 RPC Endpoint（网关服务）。
+        // 当请求发送到 6123 端口时，Flink 会在数据包里带上目标组件的路径（URL）。
+        // 类似于 Web 服务的路由分配：
+        //  路径里带有 /resourcemanager_* 就会被分发给 ResourceManager 处理器。
+        //  路径里带有 /dispatcher_* 就会分发给 Dispatcher。
+        //  路径里带有 /jobmaster_* 就会分发给对应的 JobMaster
         return internalRpcUrl(endpointName, Optional.of(new RemoteAddressInformation(hostPort, protocol)));//
     }
 

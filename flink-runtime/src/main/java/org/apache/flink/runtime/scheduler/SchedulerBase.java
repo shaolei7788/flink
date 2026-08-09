@@ -251,8 +251,7 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
                                         jobManagerJobMetricGroup,
                                         jobMasterConfiguration.get(CHECKPOINT_SPAN_DETAIL_LEVEL),
                                         null));
-        this.executionGraph =
-                createAndRestoreExecutionGraph(
+        this.executionGraph = createAndRestoreExecutionGraph(//
                         completedCheckpointStore,
                         checkpointsCleaner,
                         checkpointIdCounter,
@@ -330,6 +329,7 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
 
     public static VertexParallelismStore computeVertexParallelismStore(
             Iterable<JobVertex> vertices, Function<JobVertex, Integer> defaultMaxParallelismFunc) {
+        //
         return computeVertexParallelismStore(
                 vertices, defaultMaxParallelismFunc, SchedulerBase::normalizeParallelism);
     }
@@ -390,6 +390,7 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
      */
     public static VertexParallelismStore computeVertexParallelismStore(
             Iterable<JobVertex> vertices) {
+        //
         return computeVertexParallelismStore(vertices, SchedulerBase::getDefaultMaxParallelism);
     }
 
@@ -401,6 +402,7 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
      * @return the computed parallelism store
      */
     public static VertexParallelismStore computeVertexParallelismStore(JobGraph jobGraph) {
+        //
         return computeVertexParallelismStore(jobGraph.getVertices());
     }
 
@@ -425,9 +427,8 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
                             executionStateMetricsRegistrars.toArray(
                                     new ExecutionStateUpdateListener[0]));
         }
-
-        final ExecutionGraph newExecutionGraph =
-                executionGraphFactory.createAndRestoreExecutionGraph(
+        //
+        final ExecutionGraph newExecutionGraph = executionGraphFactory.createAndRestoreExecutionGraph(
                         jobGraph,
                         completedCheckpointStore,
                         checkpointsCleaner,
@@ -678,7 +679,7 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
                 executionGraph.getStatusTimestamp(JobStatus.INITIALIZING),
                 jobStatusMetricsSettings);
         operatorCoordinatorHandler.startAllOperatorCoordinators();
-        startSchedulingInternal();
+        startSchedulingInternal();//
     }
 
     public static void registerJobMetrics(

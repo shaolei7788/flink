@@ -102,7 +102,7 @@ public abstract class RegisteredRpcConnection<
                 !isConnected() && pendingRegistration == null,
                 "The RPC connection is already started");
         //todo
-        final RetryingRegistration<F, G, S, R> newRegistration = createNewRegistration();
+        final RetryingRegistration<F, G, S, R> newRegistration = createNewRegistration();//
 
         if (REGISTRATION_UPDATER.compareAndSet(this, null, newRegistration)) {
             newRegistration.startRegistration();
@@ -265,7 +265,7 @@ public abstract class RegisteredRpcConnection<
                     } else {
                         if (result.isSuccess()) {
                             targetGateway = result.getGateway();
-                            //todo
+                            //todo 注册成功
                             onRegistrationSuccess(result.getSuccess());
                         } else if (result.isRejection()) {
                             onRegistrationRejection(result.getRejection());

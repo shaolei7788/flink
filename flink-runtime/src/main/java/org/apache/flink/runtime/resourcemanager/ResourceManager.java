@@ -224,7 +224,9 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                         this::getNodeIdOfTaskManager,
                         getMainThreadExecutor(),
                         log);
-
+        //standalone 模式 【重点】
+        //有作业时：才会动态创建 JobMaster，并临时开启 JobMaster <--> ResourceManager 的心跳
+        //没作业时：集群中只有 ResourceManager <--> TaskManager 的心跳，维持着整个集群的生命体征
         this.jobManagerHeartbeatManager = NoOpHeartbeatManager.getInstance();
         this.taskManagerHeartbeatManager = NoOpHeartbeatManager.getInstance();
 
@@ -286,7 +288,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
             //创建taskManager的心跳管理器
             //创建jobManager的心跳管理器
             startHeartbeatServices();
-            //
+            // FineGrainedSlotManager#start
             slotManager.start(
                     getFencingToken(),
                     getMainThreadExecutor(),
@@ -373,7 +375,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
     // ------------------------------------------------------------------------
     //  RPC methods
     // ------------------------------------------------------------------------
-
+    // 处理JobMaster 发送的注册请求
     @Override
     public CompletableFuture<RegistrationResponse> registerJobMaster(
             final JobMasterId jobMasterId,
@@ -444,7 +446,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                             // leadingJobMasterId 是 jobMasterIdFuture 的返回结果
                             (JobMasterGateway jobMasterGateway, JobMasterId leadingJobMasterId) -> {
                                 if (Objects.equals(leadingJobMasterId, jobMasterId)) {
-                                    // 注册JobMaster
+                                    // 注册 JobMaster
                                     return registerJobMasterInternal(
                                             jobMasterGateway,
                                             jobId,
@@ -527,10 +529,13 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
     //会记录该TaskManager 一共有几个Slot，每个 Slot 的cpu 内存情况，是否被分配了作业，AllocationID（属于哪个作业）哪些 Slot 还是完全干净、空闲的
     @Override
     public CompletableFuture<Acknowledge> sendSlotReport(
+            // tm01
             ResourceID taskManagerResourceId,
+            // "4440d0af037d4ff1800d91e01c09cea2"
             InstanceID taskManagerRegistrationId,
+            //"SlotReport{SlotStatus{slotID=tm01_0, allocationID=null, jobID=null, resourceProfile=ResourceProfile{cpuCores=1, taskHeapMemory=512.000mb (536870912 bytes), taskOffHeapMemory=128.000mb (134217728 bytes), managedMemory=512.000mb (536870912 bytes), networkMemory=128.000mb (134217728 bytes)}}}"
             SlotReport slotReport,
-            Duration timeout) {
+            Duration timeout) {//10s
         //获取TaskExecutor的注册信息
         final WorkerRegistration<WorkerType> workerTypeWorkerRegistration = taskExecutors.get(taskManagerResourceId);
         //上报slot的TaskExecutor 跟 已注册的TaskExecutor 是同一个
@@ -571,13 +576,14 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
     protected void onWorkerRegistered(WorkerType worker, WorkerResourceSpec workerResourceSpec) {
         // noop
     }
-
+    //处理 TaskManager 发送过来的心跳
     @Override
     public CompletableFuture<Void> heartbeatFromTaskManager(
             final ResourceID resourceID, final TaskExecutorHeartbeatPayload heartbeatPayload) {
         return taskManagerHeartbeatManager.receiveHeartbeat(resourceID, heartbeatPayload);
     }
 
+    //处理 JobMaster 发送过来的心跳
     @Override
     public CompletableFuture<Void> heartbeatFromJobManager(final ResourceID resourceID) {
         return jobManagerHeartbeatManager.receiveHeartbeat(resourceID, null);
@@ -1406,7 +1412,10 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
      *
      * @param failUnfulfillableRequest whether to fail unfulfillable requests
      */
+    //当参数传入 true 时，Flink 会遍历当前所有处于等待队列中的 Slot 请求（pendingSlotRequests）。
+    // 如果发现某个请求所需的资源配置（ResourceProfile）超出了集群现有或潜在能提供的最大资源上限，该方法会将这些请求标记为失败，并从队列中移除
     protected void setFailUnfulfillableRequest(boolean failUnfulfillableRequest) {
+        //
         slotManager.setFailUnfulfillableRequest(failUnfulfillableRequest);
     }
 
@@ -1445,7 +1454,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
         public void notEnoughResourceAvailable(
                 JobID jobId, Collection<ResourceRequirement> acquiredResources) {
             validateRunsInMainThread();
-
+            //
             JobManagerRegistration jobManagerRegistration = jobManagerRegistrations.get(jobId);
             if (jobManagerRegistration != null) {
                 jobManagerRegistration

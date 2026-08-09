@@ -120,8 +120,7 @@ import static org.apache.flink.util.Preconditions.checkState;
  * a completed call is as expected, and trigger correcting actions if it is not. Many actions are
  * also idempotent (like canceling).
  */
-public class Execution
-        implements AccessExecution, Archiveable<ArchivedExecution>, LogicalSlot.Payload {
+public class Execution implements AccessExecution, Archiveable<ArchivedExecution>, LogicalSlot.Payload {
 
     private static final Logger LOG = DefaultExecutionGraph.LOG;
 
@@ -573,9 +572,10 @@ public class Execution
      *
      * @throws JobException if the execution cannot be deployed to the assigned resource
      */
+    //
     public void deploy() throws JobException {
         assertRunningInJobMasterMainThread();
-
+        //
         final LogicalSlot slot = assignedResource;
 
         checkNotNull(
@@ -590,8 +590,10 @@ public class Execution
         }
 
         // make sure exactly one deployment call happens from the correct state
+        // previous = SCHEDULED
         ExecutionState previous = this.state;
         if (previous == SCHEDULED) {
+            // 将状态转换为 DEPLOYING
             if (!transitionState(previous, DEPLOYING)) {
                 // race condition, someone else beat us to the deploying call.
                 // this should actually not happen and indicates a race somewhere else
@@ -657,12 +659,15 @@ public class Execution
             taskDeploymentDescriptorFuture
                     .thenComposeAsync(
                             deploymentDescriptor ->
+                                    //【重点】向TaskManager 提交作业
+                                    // deploymentDescriptor = "TaskDeploymentDescriptor [execution id: b84e28a53deb8ecf529310c261c56211_cbc357ccb763df2852fee8c4fc7d55f2_0_0, produced partitions: [ResultPartitionDeploymentDescriptor [PartitionDescriptor: PartitionDescriptor [result id: 52fee8c49de88554cbc357cc58cf0e8a, partition id: 52fee8c49de88554cbc357cc58cf0e8a#0, partition type: PIPELINED_BOUNDED, subpartitions: 1, connection index: 1230969116, is broadcast: false, is all-to-all distribution: true], ShuffleDescriptor: org.apache.flink.runtime.shuffle.NettyShuffleDescriptor@65c557d]], input gates: []]"
+                                    // rpcTimeout = 300s
                                     taskManagerGateway.submitTask(deploymentDescriptor, rpcTimeout),
                             executor)
                     .whenCompleteAsync(
                             (ack, failure) ->
-                                    handleDeploymentCompletionAndCleanup(
-                                            maybeOffloadedTaskRestoreCleanupRef, ack, failure),
+                                    //
+                                    handleDeploymentCompletionAndCleanup(maybeOffloadedTaskRestoreCleanupRef, ack, failure),
                             jobMasterMainThreadExecutor);
 
         } catch (Throwable t) {

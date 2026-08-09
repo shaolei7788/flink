@@ -151,13 +151,13 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             new ExponentialBackoffRetryStrategy(
                                     12, Duration.ofMillis(10), Duration.ofMillis(50)));
 
+            // 创建固定的线程池
             final ScheduledExecutorService executor = WebMonitorEndpoint.createExecutorService(
-                            configuration.get(RestOptions.SERVER_NUM_THREADS),
+                            configuration.get(RestOptions.SERVER_NUM_THREADS),// 4
                             configuration.get(RestOptions.SERVER_THREAD_PRIORITY),
                             "DispatcherRestEndpoint");
-
-            final long updateInterval =
-                    configuration.get(MetricOptions.METRIC_FETCHER_UPDATE_INTERVAL).toMillis();
+            // updateInterval = 10000
+            final long updateInterval = configuration.get(MetricOptions.METRIC_FETCHER_UPDATE_INTERVAL).toMillis();
             final MetricFetcher metricFetcher =
                     updateInterval == 0
                             ? VoidMetricFetcher.INSTANCE
@@ -170,12 +170,14 @@ public class DefaultDispatcherResourceManagerComponentFactory
             // 基于 Netty 启动 Flink 的 REST 接口和 Web 管理控制台
             //它会加载所有的 REST 处理器（Handlers），比如查看作业列表、提交作业、查看 TaskManager 状态等接口。
             //客户端（如 Flink CLI、浏览器）后续所有与集群的 HTTP 交互都由它接收
+            // SessionRestEndpointFactory#createRestEndpoint
+            // webMonitorEndpoint = DispatcherRestEndpoint
             webMonitorEndpoint = restEndpointFactory.createRestEndpoint(
                             configuration,
                             dispatcherGatewayRetriever,
                             resourceManagerGatewayRetriever,
                             blobServer,
-                            executor,
+                            executor,//
                             metricFetcher,
                             highAvailabilityServices.getClusterRestEndpointLeaderElection(),
                             fatalErrorHandler);

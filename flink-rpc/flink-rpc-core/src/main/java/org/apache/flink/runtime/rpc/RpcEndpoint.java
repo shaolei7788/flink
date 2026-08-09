@@ -230,6 +230,7 @@ public abstract class RpcEndpoint implements RpcGateway, AutoCloseableAsync {
         validateRunsInMainThread();
         isRunning = true;
         //todo  如果是 ResourceManager 调用  ResourceManager#onStart
+        //todo  如果是 JobManager 调用  JobManager#onStart
         onStart();
     }
 
