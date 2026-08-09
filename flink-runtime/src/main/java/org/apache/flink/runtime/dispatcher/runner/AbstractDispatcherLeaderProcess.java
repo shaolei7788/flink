@@ -92,12 +92,15 @@ public abstract class AbstractDispatcherLeaderProcess implements DispatcherLeade
 
     @Override
     public final void start() {
+        //
         runIfStateIs(State.CREATED, this::startInternal);
     }
 
     private void startInternal() {
         log.info("Start {}.", getClass().getSimpleName());
+        //更改状态为 RUNNING
         state = State.RUNNING;
+        //
         onStart();
     }
 
@@ -209,6 +212,7 @@ public abstract class AbstractDispatcherLeaderProcess implements DispatcherLeade
     }
 
     final void runIfStateIs(State expectedState, Runnable action) {
+        //
         runIfState(expectedState::equals, action);
     }
 
@@ -217,8 +221,11 @@ public abstract class AbstractDispatcherLeaderProcess implements DispatcherLeade
     }
 
     private void runIfState(Predicate<State> actionPredicate, Runnable action) {
+        //
         synchronized (lock) {
+            // CREATED
             if (actionPredicate.test(state)) {
+                //
                 action.run();
             }
         }

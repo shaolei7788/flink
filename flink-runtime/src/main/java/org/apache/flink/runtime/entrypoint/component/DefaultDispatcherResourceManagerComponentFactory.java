@@ -239,6 +239,7 @@ public class DefaultDispatcherResourceManagerComponentFactory
                             failureEnrichers);
 
             log.debug("Starting Dispatcher.");
+            //DefaultDispatcherRunner DefaultDispatcherRunnerFactory#createDispatcherRunner
             dispatcherRunner = dispatcherRunnerFactory.createDispatcherRunner(
                             highAvailabilityServices.getDispatcherLeaderElection(),
                             fatalErrorHandler,

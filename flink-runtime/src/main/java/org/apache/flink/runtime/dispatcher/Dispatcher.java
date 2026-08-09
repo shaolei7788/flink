@@ -375,6 +375,7 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
     //
     private void startDispatcherServices() throws Exception {
         try {
+
             ShuffleMasterSnapshotUtil.restoreOrSnapshotShuffleMaster(
                     jobManagerSharedServices.getShuffleMaster(),
                     configuration,

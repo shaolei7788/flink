@@ -37,6 +37,9 @@ public class HaServicesJobPersistenceComponentFactory implements JobPersistenceC
 
     @Override
     public ExecutionPlanStore createExecutionPlanStore() {
+        //AbstractNonHaServices#getExecutionPlanStore
+        //StandaloneExecutionPlanStore  highAvailabilityServices = StandaloneHaServices
+        // StandaloneExecutionPlanStore
         return create(highAvailabilityServices::getExecutionPlanStore, ExecutionPlanStore.class);
     }
 
@@ -47,6 +50,7 @@ public class HaServicesJobPersistenceComponentFactory implements JobPersistenceC
 
     private <T> T create(SupplierWithException<T, ? extends Exception> supplier, Class<T> clazz) {
         try {
+            //
             return supplier.get();
         } catch (Exception e) {
             throw new FlinkRuntimeException(

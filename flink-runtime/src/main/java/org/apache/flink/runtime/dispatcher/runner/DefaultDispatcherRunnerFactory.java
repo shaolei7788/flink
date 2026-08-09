@@ -56,9 +56,8 @@ public class DefaultDispatcherRunnerFactory implements DispatcherRunnerFactory {
                         rpcService,
                         partialDispatcherServices,
                         fatalErrorHandler);
-
-        return DefaultDispatcherRunner.create(
-                leaderElection, fatalErrorHandler, dispatcherLeaderProcessFactory);
+        //
+        return DefaultDispatcherRunner.create(leaderElection, fatalErrorHandler, dispatcherLeaderProcessFactory);//
     }
 
     public static DefaultDispatcherRunnerFactory createSessionRunner(

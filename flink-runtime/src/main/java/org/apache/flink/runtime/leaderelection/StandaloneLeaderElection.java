@@ -56,6 +56,7 @@ public class StandaloneLeaderElection implements LeaderElection {
             this.leaderContender = contender;
             // ResourceManagerServiceImpl#grantLeadership
             // JobMasterServiceLeadershipRunner#grantLeadership
+            // DefaultDispatcherRunner#grantLeadership
             // 内定当前leaderContender 是leader了
             this.leaderContender.grantLeadership(sessionID);
         }

@@ -81,6 +81,7 @@ public class SessionDispatcherLeaderProcess extends AbstractDispatcherLeaderProc
 
     @Override
     protected void onStart() {
+        //
         startServices();
         //
         onGoingRecoveryOperation = createDispatcherBasedOnRecoveredExecutionPlansAndRecoveredDirtyJobResults();
@@ -88,6 +89,7 @@ public class SessionDispatcherLeaderProcess extends AbstractDispatcherLeaderProc
 
     private void startServices() {
         try {
+            // StandaloneExecutionPlanStore#start 空方法
             executionPlanStore.start(this);
         } catch (Exception e) {
             throw new FlinkRuntimeException(

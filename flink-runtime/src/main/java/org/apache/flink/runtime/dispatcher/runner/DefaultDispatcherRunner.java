@@ -75,6 +75,8 @@ public final class DefaultDispatcherRunner implements DispatcherRunner, LeaderCo
     }
 
     void start() throws Exception {
+        //开始leader 选举
+        //StandaloneLeaderElection#startLeaderElection
         leaderElection.startLeaderElection(this);
     }
 
@@ -122,13 +124,15 @@ public final class DefaultDispatcherRunner implements DispatcherRunner, LeaderCo
     }
 
     private void startNewDispatcherLeaderProcess(UUID leaderSessionID) {
+        //停止之前的Dispatcher
         stopDispatcherLeaderProcess();
-        //
+        // DispatcherLeaderProcess
         dispatcherLeaderProcess = createNewDispatcherLeaderProcess(leaderSessionID);
 
         final DispatcherLeaderProcess newDispatcherLeaderProcess = dispatcherLeaderProcess;
         FutureUtils.assertNoException(
                 previousDispatcherLeaderProcessTerminationFuture.thenRun(
+                        //AbstractDispatcherLeaderProcess#start
                         newDispatcherLeaderProcess::start));
     }
 
@@ -234,8 +238,8 @@ public final class DefaultDispatcherRunner implements DispatcherRunner, LeaderCo
             DispatcherLeaderProcessFactory dispatcherLeaderProcessFactory)
             throws Exception {
         final DefaultDispatcherRunner dispatcherRunner =
-                new DefaultDispatcherRunner(
-                        leaderElection, fatalErrorHandler, dispatcherLeaderProcessFactory);
+                new DefaultDispatcherRunner(leaderElection, fatalErrorHandler, dispatcherLeaderProcessFactory);
+        //
         dispatcherRunner.start();
         return dispatcherRunner;
     }
