@@ -195,7 +195,7 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
                         taskFailureCtx,
                         globalFailureCtx,
                         jobManagerJobMetricGroup);
-
+        //
         this.schedulingStrategy =
                 schedulingStrategyFactory.createInstance(this, getSchedulingTopology());
 
@@ -207,7 +207,7 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
         startUpAction.accept(mainThreadExecutor);
 
         this.executionDeployer =
-                executionDeployerFactory.createInstance(
+                executionDeployerFactory.createInstance(//
                         log,
                         executionSlotAllocator,
                         executionOperations,
@@ -244,6 +244,7 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
         log.info(
                 "Starting scheduling with scheduling strategy [{}]",
                 schedulingStrategy.getClass().getName());
+        //将状态从创建改为运行
         transitionToRunning();
         //PipelinedRegionSchedulingStrategy#startScheduling
         schedulingStrategy.startScheduling();
@@ -478,6 +479,7 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
 
     @Override
     public void allocateSlotsAndDeploy(final List<ExecutionVertexID> verticesToDeploy) {
+        //wordcount 并行度为2 时 verticesToDeploy size = 5
         final Map<ExecutionVertexID, ExecutionVertexVersion> requiredVersionByVertex =
                 executionVertexVersioner.recordVertexModifications(verticesToDeploy);
 

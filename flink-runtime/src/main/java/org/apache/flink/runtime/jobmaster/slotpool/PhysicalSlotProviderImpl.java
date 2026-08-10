@@ -75,8 +75,8 @@ public class PhysicalSlotProviderImpl implements PhysicalSlotProvider {
                                 entry -> {
                                     Optional<PhysicalSlot> availablePhysicalSlot = entry.getValue();
                                     SlotRequestId slotRequestId = entry.getKey();
-                                    PhysicalSlotRequest physicalSlotRequest =
-                                            physicalSlotRequestsById.get(slotRequestId);
+                                    //
+                                    PhysicalSlotRequest physicalSlotRequest = physicalSlotRequestsById.get(slotRequestId);
                                     SlotProfile slotProfile = physicalSlotRequest.getSlotProfile();
 
                                     CompletableFuture<PhysicalSlot> slotFuture =
@@ -84,8 +84,8 @@ public class PhysicalSlotProviderImpl implements PhysicalSlotProvider {
                                                     .map(CompletableFuture::completedFuture)
                                                     .orElseGet(
                                                             () ->
-                                                                    requestNewSlot(
-                                                                            physicalSlotRequest));
+                                                                    //申请新的slot
+                                                                    requestNewSlot(physicalSlotRequest));
 
                                     return slotFuture.thenApply(
                                             physicalSlot ->
@@ -131,7 +131,8 @@ public class PhysicalSlotProviderImpl implements PhysicalSlotProvider {
     private CompletableFuture<PhysicalSlot> requestNewSlot(
             PhysicalSlotRequest physicalSlotRequest) {
         if (physicalSlotRequest.willSlotBeOccupiedIndefinitely()) {
-            return slotPool.requestNewAllocatedSlot(physicalSlotRequest, null);
+            //
+            return slotPool.requestNewAllocatedSlot(physicalSlotRequest, null);// 请求新的AllocatedSlot
         } else {
             return slotPool.requestNewAllocatedBatchSlot(physicalSlotRequest);
         }

@@ -449,7 +449,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                                                 .setSeverity("INFO")
                                                 .setAttribute(
                                                         "newJobStatus", newJobStatus.name())));
-        //
+        // DefaultScheduler 【重点】
         this.schedulerNG = createScheduler(//
                         slotPoolServiceSchedulerFactory,
                         executionDeploymentTracker,
@@ -472,6 +472,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
             JobManagerJobMetricGroup jobManagerJobMetricGroup,
             JobStatusListener jobStatusListener)
             throws Exception {
+        //DefaultScheduler
         final SchedulerNG scheduler =
                 slotPoolServiceSchedulerFactory.createScheduler(//
                         log,
@@ -786,8 +787,9 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         }
     }
 
-    //TaskManager 向作业“献上”Slot。当 ResourceManager 分配了资源后，
-    // TaskManager 会主动调用 JobMaster 的这个接口，把具体的物理 Slot（通过 SlotOffer 包装）交给作业。JobMaster 会将其放入 slotPoolService 中供调度器分配给具体的 Task
+
+    // 处理 TaskManager 分配给 JobMaster slot的请求
+    // JobMaster 会将其放入 slotPoolService 中供调度器分配给具体的 Task
     @Override
     public CompletableFuture<Collection<SlotOffer>> offerSlots(
             final ResourceID taskManagerId,
@@ -804,12 +806,12 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         final RpcTaskManagerGateway rpcTaskManagerGateway =
                 new RpcTaskManagerGateway(
                         taskManagerRegistration.getTaskExecutorGateway(), getFencingToken());
-
-        return CompletableFuture.completedFuture(
-                slotPoolService.offerSlots(
-                        taskManagerRegistration.getTaskManagerLocation(),
-                        rpcTaskManagerGateway,
-                        slots));
+        //DeclarativeSlotPoolBridge#offerSlots
+        Collection<SlotOffer> slotOffers = slotPoolService.offerSlots(//
+                taskManagerRegistration.getTaskManagerLocation(),
+                rpcTaskManagerGateway,
+                slots);
+        return CompletableFuture.completedFuture(slotOffers);
     }
 
     @Override
@@ -1235,17 +1237,18 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                 executionPlan.getName(),
                 executionPlan.getJobID(),
                 getFencingToken());
-        //【重点】会调度作业的执行
+        //【重点】 会调度作业的执行
         startScheduling();
     }
 
     private void startJobMasterServices() throws Exception {
         try {
+            //
             this.taskManagerHeartbeatManager = createTaskManagerHeartbeatManager(heartbeatServices);
-            this.resourceManagerHeartbeatManager =
-                    createResourceManagerHeartbeatManager(heartbeatServices);
+            this.resourceManagerHeartbeatManager = createResourceManagerHeartbeatManager(heartbeatServices);
 
             // start the slot pool make sure the slot pool now accepts messages for this leader
+            //
             slotPoolService.start(getFencingToken(), getAddress());
 
             // job is ready to go, try to establish connection with resource manager
@@ -1464,7 +1467,8 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                             resourceManagerGateway, resourceManagerResourceId);
 
             blocklistHandler.registerBlocklistListener(resourceManagerGateway);
-            slotPoolService.connectToResourceManager(resourceManagerGateway);
+            //
+            slotPoolService.connectToResourceManager(resourceManagerGateway);//
             partitionTracker.connectToResourceManager(resourceManagerGateway);
 
             resourceManagerHeartbeatManager.monitorTarget(
@@ -1660,7 +1664,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                         //noinspection ObjectEquality
                         if (this == resourceManagerConnection) {
                             //
-                            establishResourceManagerConnection(success);
+                            establishResourceManagerConnection(success);//
                         }
                     });
         }
@@ -1714,6 +1718,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
             handleTaskManagerConnectionLoss(resourceID, new TimeoutException(message));
         }
 
+        //
         private void handleTaskManagerConnectionLoss(ResourceID resourceID, Exception cause) {
             validateRunsInMainThread();
             disconnectTaskManager(resourceID, cause);
@@ -1753,6 +1758,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
 
     private class ResourceManagerHeartbeatListener implements HeartbeatListener<Void, Void> {
 
+        //通知心跳超时
         @Override
         public void notifyHeartbeatTimeout(final ResourceID resourceId) {
             try (MdcUtils.MdcCloseable ignored =
@@ -1773,6 +1779,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                     && establishedResourceManagerConnection
                             .getResourceManagerResourceID()
                             .equals(resourceId)) {
+                //重新跟ResourceManager 建立连接
                 reconnectToResourceManager(cause);
             }
         }

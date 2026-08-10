@@ -92,8 +92,7 @@ public class DefaultJobMasterServiceFactory implements JobMasterServiceFactory {
     }
 
     @Override
-    public CompletableFuture<JobMasterService> createJobMasterService(
-            UUID leaderSessionId, OnCompletionActions onCompletionActions) {
+    public CompletableFuture<JobMasterService> createJobMasterService(UUID leaderSessionId, OnCompletionActions onCompletionActions) {
 
         return CompletableFuture.supplyAsync(
                 FunctionUtils.uncheckedSupplier(
@@ -128,7 +127,7 @@ public class DefaultJobMasterServiceFactory implements JobMasterServiceFactory {
                         BlocklistUtils.loadBlocklistHandlerFactory(jobMasterConfiguration.getConfiguration()),
                         failureEnrichers,
                         initializationTimestamp);
-
+        // 会调度作业的执行
         jobMaster.start();
 
         return jobMaster;

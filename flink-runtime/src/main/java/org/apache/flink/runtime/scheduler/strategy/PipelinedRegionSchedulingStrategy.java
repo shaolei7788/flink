@@ -47,8 +47,7 @@ public class PipelinedRegionSchedulingStrategy implements SchedulingStrategy {
     private final SchedulingTopology schedulingTopology;
 
     /** External consumer regions of each ConsumedPartitionGroup. */
-    private final Map<ConsumedPartitionGroup, Set<SchedulingPipelinedRegion>>
-            partitionGroupConsumerRegions = new IdentityHashMap<>();
+    private final Map<ConsumedPartitionGroup, Set<SchedulingPipelinedRegion>> partitionGroupConsumerRegions = new IdentityHashMap<>();
 
     private final Map<SchedulingPipelinedRegion, List<ExecutionVertexID>> regionVerticesSorted =
             new IdentityHashMap<>();
@@ -61,8 +60,7 @@ public class PipelinedRegionSchedulingStrategy implements SchedulingStrategy {
     private final Set<ConsumedPartitionGroup> crossRegionConsumedPartitionGroups =
             Collections.newSetFromMap(new IdentityHashMap<>());
 
-    private final Set<SchedulingPipelinedRegion> scheduledRegions =
-            Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<SchedulingPipelinedRegion> scheduledRegions = Collections.newSetFromMap(new IdentityHashMap<>());
 
     public PipelinedRegionSchedulingStrategy(
             final SchedulerOperations schedulerOperations,
@@ -83,8 +81,7 @@ public class PipelinedRegionSchedulingStrategy implements SchedulingStrategy {
         initProducedPartitionGroupsOfRegion();
 
         for (SchedulingExecutionVertex vertex : schedulingTopology.getVertices()) {
-            final SchedulingPipelinedRegion region =
-                    schedulingTopology.getPipelinedRegionOfVertex(vertex.getId());
+            final SchedulingPipelinedRegion region = schedulingTopology.getPipelinedRegionOfVertex(vertex.getId());
             regionVerticesSorted
                     .computeIfAbsent(region, r -> new ArrayList<>())
                     .add(vertex.getId());
@@ -180,12 +177,14 @@ public class PipelinedRegionSchedulingStrategy implements SchedulingStrategy {
 
     @Override
     public void startScheduling() {
-        final Set<SchedulingPipelinedRegion> sourceRegions =
-                IterableUtils.toStream(schedulingTopology.getAllPipelinedRegions())
+        //DefaultSchedulingPipelinedRegion
+        //捞出全局所有的流水线区域
+        Iterable<? extends SchedulingPipelinedRegion> allPipelinedRegions = schedulingTopology.getAllPipelinedRegions();
+        //精准过滤，锁定最源头的“根区域”
+        final Set<SchedulingPipelinedRegion> sourceRegions = IterableUtils.toStream(allPipelinedRegions)
                         .filter(this::isSourceRegion)
                         .collect(Collectors.toSet());
-        //
-        maybeScheduleRegions(sourceRegions);
+        maybeScheduleRegions(sourceRegions);//
     }
 
     private boolean isSourceRegion(SchedulingPipelinedRegion region) {
@@ -226,12 +225,16 @@ public class PipelinedRegionSchedulingStrategy implements SchedulingStrategy {
         final Set<SchedulingPipelinedRegion> regionsToSchedule = new HashSet<>();
         Set<SchedulingPipelinedRegion> nextRegions = regions;
         while (!nextRegions.isEmpty()) {
+            //
             nextRegions = addSchedulableAndGetNextRegions(nextRegions, regionsToSchedule);
         }
+        // size = 1
+        List<SchedulingPipelinedRegion> schedulingPipelinedRegions = SchedulingStrategyUtils.sortPipelinedRegionsInTopologicalOrder(
+                schedulingTopology,
+                regionsToSchedule);
         // schedule regions in topological order.
-        SchedulingStrategyUtils.sortPipelinedRegionsInTopologicalOrder(schedulingTopology, regionsToSchedule)
-                // scheduleRegion 会调度作业
-                .forEach(this::scheduleRegion);
+        // scheduleRegion 会调度作业
+        schedulingPipelinedRegions.forEach(this::scheduleRegion);
     }
 
     private Set<SchedulingPipelinedRegion> addSchedulableAndGetNextRegions(
@@ -394,7 +397,7 @@ public class PipelinedRegionSchedulingStrategy implements SchedulingStrategy {
         public SchedulingStrategy createInstance(
                 final SchedulerOperations schedulerOperations,
                 final SchedulingTopology schedulingTopology) {
-            return new PipelinedRegionSchedulingStrategy(schedulerOperations, schedulingTopology);
+            return new PipelinedRegionSchedulingStrategy(schedulerOperations, schedulingTopology);//
         }
     }
 }

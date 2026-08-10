@@ -130,7 +130,7 @@ public class DeclarativeSlotPoolService implements SlotPoolService {
         this.resourceRequirementServiceConnectionManager =
                 DefaultDeclareResourceRequirementServiceConnectionManager.create(
                         componentMainThreadExecutor);
-
+        //
         onStart();
 
         state = State.STARTED;
@@ -297,8 +297,9 @@ public class DeclarativeSlotPoolService implements SlotPoolService {
 
         resourceRequirementServiceConnectionManager.connect(
                 resourceRequirements ->
-                        resourceManagerGateway.declareRequiredResources(
-                                jobMasterId, resourceRequirements, rpcTimeout));
+                        //【重点】JobMaster 向 resourceManager 声明所需要的资源  即所需slot数量
+                        // resourceRequirements.getResourceRequirements() = ResourceRequirement{resourceProfile=ResourceProfile{UNKNOWN}, numberOfRequiredSlots=2}
+                        resourceManagerGateway.declareRequiredResources(jobMasterId, resourceRequirements, rpcTimeout));
 
         declareResourceRequirements(declarativeSlotPool.getResourceRequirements());
     }

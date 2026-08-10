@@ -145,48 +145,96 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
 
     private final Logger log;
 
+    //作用：客户端提交上来的原始作业拓扑图。
+    //职责：包含了用户代码编译出的 JobVertex、并行度配置以及全局的 ExecutionConfig。调度器需要对照它来构建和恢复物理执行图。它是整个作业的“出厂配置说明书”
     private final JobGraph jobGraph;
 
+    //作用：作业的基本身份信息封装。
+    //职责：包含作业 ID（JobID）和作业名称（JobName）等静态元数据。主要用于日志打印、监控组装以及向外部集群（如 Kubernetes, YARN）声明身份
     protected final JobInfo jobInfo;
 
+    //作用：核心物理执行图。职责：Flink 调度的“灵魂数据结构”。它将 JobGraph 的逻辑节点展开为具体的物理节点（ExecutionVertex 和 Execution 尝试）。
+    //它死死掐住所有 Task 当前的物理状态（是 DEPLOYING、RUNNING 还是 FAILED），并管理所有的中间结果数据块（IntermediateResult）
     private final ExecutionGraph executionGraph;
 
+    //作用：面向调度算法的“轻量级拓扑视图”。职责：这是 ExecutionGraph 的一个只读、解耦的视图。
+    //为了不让调度策略（SchedulingStrategy）直接修改沉重的 ExecutionGraph，Flink 抽象出了它。
+    // 调度算法（如基于流水线区域的调度）只需要查询它，就能知道节点之间的拓扑依赖关系
     private final SchedulingTopology schedulingTopology;
 
+    //作用：状态（Keyed State）数据位置检索器。职责：当作业从 Checkpoint 或 Savepoint 恢复时，有些状态很大，已经下载到了某些具体的 TaskManager 节点的本地磁盘上。
+    // 这个组件告诉调度器：“某个 Subtask 的状态在 A 机器上”，调度器就会优先把该 Subtask 调度到 A 机器，从而避免跨节点传输几十 GB 状态数据的网络开销（状态本地性）
     protected final StateLocationRetriever stateLocationRetriever;
 
+    //作用：上游输入数据位置检索器。职责：主要用于运行期调度（尤其是批处理和上下游有依赖的流处理）。
+    //它能实时查到上游 Task 运行在哪台机器、哪个端口。当下游 Task 准备启动时，调度器利用它来让下游尽量贴近上游部署，实现“数据本地性”，减少 Shuffle 时的网络带宽消耗
     protected final InputsLocationsRetriever inputsLocationsRetriever;
 
+    //作用：已完成检查点的存储管理器。职责：负责在外部持久化存储（如 HDFS、S3 或 ZooKeeper/Etcd 节点）中维护最近成功的 Checkpoint 元数据列表。
+    //当整个集群发生灾难性崩溃重启时，调度器会从这里捞出最新的一次成功记录来进行全盘状态恢复
     private final CompletedCheckpointStore completedCheckpointStore;
 
+    //作用：过期/废弃检查点文件的异步清理器。职责：防止外部存储被垃圾文件塞满。
+    //当新的 Checkpoint 成功导致旧的过期，或者作业被彻底取消时，它会通过专门的线程池异步去 HDFS/S3 上删除那些不再需要的历史状态文件，确保不阻塞主调度的执行
     private final CheckpointsCleaner checkpointsCleaner;
 
+    //作用：全局自增的 Checkpoint ID 计数器。职责：在分布式环境下保证生成的 Checkpoint ID（如 1, 2, 3...）是全局唯一且严格递增的。
+    //它通常由高可用组件（如 ZooKeeper 或 Kubernetes ConfigMap）来持久化驱动，即使 JobManager 挂了，重启后拿到的 ID 也能续得上
     private final CheckpointIDCounter checkpointIdCounter;
 
+    //作用：作业级别的监控指标组（Metrics Group）。职责：Flink 监控系统的入口。
+    //作业当前的吞吐量、延时、Checkpoint 成功率、当前状态、重启次数等所有您在 Web UI 上看得到的指标，都是通过这个属性注册并上报给 Prometheus 或 InfluxDB 的
     protected final JobManagerJobMetricGroup jobManagerJobMetricGroup;
 
+    //作用：任务版本（Version）控制与并发安全校验器。职责：防止**“过期的并发修改”**。在高度异步的分布式环境下，Slot 申请成功通知、TaskManager 挂掉通知可能是交织在一起的。
+    // 该组件为每个 ExecutionVertex 维护一个版本号（ExecutionVertexVersion）。
+    // 当调度器下发指令或处理 Failover 时，会比对版本号，如果发现是个“迟到的过期通知”，则直接丢弃，避免引发状态错乱
     protected final ExecutionVertexVersioner executionVertexVersioner;
 
+    //作用：键值状态（Queryable State）查询处理器。职责：用于支持 Flink 的“可查询状态”功能。
+    //当外部客户端想不通过 Sink 算子，直接通过 RPC 查询某个正在运行的算子内部的 State 时，该组件负责定位该 Key 存储在哪个 TaskManager 上，并协调路由
     private final KvStateHandler kvStateHandler;
 
+    //作用：执行图的辅助处理器/对外包装器。
+    // 职责：辅助 SchedulerBase 处理一些与 ExecutionGraph 相关的异步和对外 RPC 请求。例如，将一些复杂的内部执行状态转换为外部 REST API 能够识别的 JSON 格式数据
     private final ExecutionGraphHandler executionGraphHandler;
 
+    //作用：算子协调器（Operator Coordinator）的核心处理器。职责：Flink 许多高级数据源/汇（如新版 Kafka Source、Iceberg/Hudi Sink）不仅仅运行在 TaskManager 上，在 JobManager 端还有一个“大脑”，即 OperatorCoordinator。该组件负责管理这些大脑的生命周期。
+    //典型场景：Kafka Source 的 Coordinator 负责在 JobManager 端动态发现 Topic 分区，并通过这个 Handler 将分区分配指令发送给各个 TM 上的 Task。它还深度参与 Checkpoint 的触发与对齐
     protected final OperatorCoordinatorHandler operatorCoordinatorHandler;
 
+    //作用：调度器主线程执行器。职责：这是 Flink 架构设计中最核心的安全防线。
+    // Flink 为了避免使用复杂的分布式锁和多线程同步锁，采用了Actor单线程模型。所有改变作业状态、处理 Task 失败、触发 Checkpoint 的代码，
+    // 都必须包裹在 mainThreadExecutor.execute(...) 中。它确保了 SchedulerBase 内部的所有操作都是串行、无锁且线程安全的
     private final ComponentMainThreadExecutor mainThreadExecutor;
 
+    //作用：固定大小的先进先出（FIFO）异常历史队列。职责：负责存储最近发生的一批根源异常（Root Exceptions）。当作业频繁发生局部失败或重启时，
+    // 它会记录每一次失败的详细堆栈、发生时间以及受影响的 Task。这就是您在 Flink Web UI 的 "Exceptions" -> "Exception History" 标签页中看到的数据来源
     private final BoundedFIFOQueue<RootExceptionHistoryEntry> exceptionHistory;
 
+    //作用：最近一次发生的根源异常记录指针。职责：单独指向最后一次导致作业发生全局或局部 Failover 的那个核心异常。
+    // 当外部组件（如 REST API）快速查询当前作业为什么又重启时，可以直接返回这个指针指向的内容，无需遍历整个历史队列
     private RootExceptionHistoryEntry latestRootExceptionEntry;
 
+    //作用：执行图工厂。职责：负责创建 ExecutionGraph 实例。从 JobGraph 转换到 ExecutionGraph 的逻辑非常复杂（涉及高可用恢复、安全配置、流/批模式判定、各种 Coordinator 的注入），
+    // 这些繁琐的组装逻辑被抽离到了这个工厂类中，使 SchedulerBase 的构造函数更加干净
     private final ExecutionGraphFactory executionGraphFactory;
 
+    //作用：作业状态指标的配置策略开关。职责：控制哪些作业状态（如 RUNNING, FAILING, RESTARTING）的时间指标需要被统计并上报。
+    // 为了性能考虑，Flink 允许通过配置（如 MetricOptions.JOB_STATUS_METRICS）来裁剪不需要的监控指标，该属性负责读取和执行这些裁剪规则
     private final MetricOptions.JobStatusMetricsSettings jobStatusMetricsSettings;
 
+    //作用：部署状态耗时监控指标。职责：专门用来监控 Task 从 CREATED -> SCHEDULED -> DEPLOYING -> RUNNING 各个阶段所消耗的时间。
+    // 在排查集群资源瓶颈时极其有用。如果这个指标显示 DEPLOYING 时间极长，说明网络下发 Jar 包慢或者 TaskManager 初始化过慢
     private final DeploymentStateTimeMetrics deploymentStateTimeMetrics;
 
+    //作用：Task 执行状态指标注册器列表。职责：负责把物理图上成百上千个具体的 Execution（Subtask 尝试）的状态计数器注册到 Flink 的 Metrics 系统中。通过它，
+    // Prometheus 才能拉取到诸如“当前有多少个 Task 处于 FAILED 状态”这样的聚合指标
     private final List<ExecutionStatusMetricsRegistrar> executionStateMetricsRegistrars;
 
+    //作用：节点数据结束（EndOfData）事件监听器。职责：在流批一体架构中（尤其是批处理或有限流中），
+    // 当一个 JobVertex 的所有上游 Subtask 都发送完了最后一批数据，会向下游发送一个 EndOfData 信号。该监听器在 JobManager 端捕捉这个事件，
+    // 用来精准判定“某个阶段的任务已经把活干完了”，从而通知调度器可以开始回收资源，或者允许下游算子做最后的 close() / endInput() 善后工作
     private final VertexEndOfDataListener vertexEndOfDataListener;
 
     public SchedulerBase(
@@ -236,6 +284,7 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
         this.executionStateMetricsRegistrars.add(
                 new DeploymentStateTimeMetrics(jobGraph.getJobType(), jobStatusMetricsSettings));
         if (jobGraph.getJobType() == JobType.STREAMING) {
+            // 作业类型
             this.executionStateMetricsRegistrars.add(
                     new AllSubTasksRunningOrFinishedStateTimeMetrics(
                             jobGraph.getJobType(), jobStatusMetricsSettings));
@@ -417,7 +466,9 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
             VertexParallelismStore vertexParallelismStore,
             ExecutionPlanSchedulingContext executionPlanSchedulingContext)
             throws Exception {
-
+        //1. 聚合状态更新监听器 (Metric 联动)
+        //这里将之前传入的多个指标注册器（executionStateMetricsRegistrars）合并为一个统一的监听器。这个监听器会被注入到执行图中。
+        // 一旦后续某个具体的 Subtask 状态发生改变（比如从 DEPLOYING 变成 RUNNING），该监听器就会第一时间收到通知，并立刻更新 Web UI 和 Prometheus 上的 Metrics 计数器
         final ExecutionStateUpdateListener combinedExecutionStateUpdateListener;
         if (executionStateMetricsRegistrars.size() == 1) {
             combinedExecutionStateUpdateListener = executionStateMetricsRegistrars.get(0);
@@ -427,8 +478,11 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
                             executionStateMetricsRegistrars.toArray(
                                     new ExecutionStateUpdateListener[0]));
         }
-        //
-        final ExecutionGraph newExecutionGraph = executionGraphFactory.createAndRestoreExecutionGraph(
+        //2. 调用工厂真正构建与恢复物理图
+        // Create（创建）：它委托给 executionGraphFactory（执行图工厂），根据最初的 jobGraph（用户的拓扑和并行度参数）将逻辑节点展开成物理节点。
+        // Restore（恢复）：这是流处理容错的核心。它将 completedCheckpointStore（已完成的检查点仓库）传进去。
+        //如果该作业是从某个 Checkpoint 或 Savepoint 恢复的，工厂会在这个阶段将历史的状态元数据重新绑定到各个物理算子节点上
+        final ExecutionGraph newExecutionGraph = executionGraphFactory.createAndRestoreExecutionGraph(//
                         jobGraph,
                         completedCheckpointStore,
                         checkpointsCleaner,
@@ -443,10 +497,21 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
                         getMarkPartitionFinishedStrategy(),
                         executionPlanSchedulingContext,
                         log);
-
+        //3. 绑定内部失败监听器
+        //作用：建立 Task 崩溃时的“报警热线”。解释：当作业运行起来后，如果某个 TaskManager 上的 Task 发生了异常（如空指针、网络断开），
+        // ExecutionGraph 内部会最先感知到。通过绑定这个 UpdateSchedulerNgOnInternalFailuresListener(this)，
+        // 一旦发生内部 Task 失败，就会立刻反向通知外部的调度器（即当前的 SchedulerBase），从而触发 Flink 的局部恢复（Region Failover）或全局重启策略
         newExecutionGraph.setInternalTaskFailuresListener(
                 new UpdateSchedulerNgOnInternalFailuresListener(this));
+        //4. 注册作业状态监听器 (生命周期监控)
+        //作用：监控作业整体状态的流转。解释：注册一个监听器来死死盯着整个 Job 的状态（如 JobStatus 从 CREATED 变为 RUNNING，或变为 FINISHED/FAILED）。
+        // 当状态改变时，通知外部组件（如 Dispatcher、Web UI 服务）同步更新状态
         newExecutionGraph.registerJobStatusListener(jobStatusListener);
+        //5. 绑定并启动主线程执行器
+        //将核心的单线程执行器 mainThreadExecutor 传给 ExecutionGraph。
+        // 从这一刻起，整个 ExecutionGraph 内部的所有状态修改逻辑，都将严格在 Flink 的这个主线程中串行执行，确保了多线程环境下的绝对数据安全。
+        // 调用 start() 也意味着物理执行图正式进入就绪状态
+        //DefaultExecutionGraph#start
         newExecutionGraph.start(mainThreadExecutor);
 
         return newExecutionGraph;
@@ -605,6 +670,7 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
     }
 
     protected final void transitionToRunning() {
+        //DefaultExecutionGraph#transitionToRunning 将状态从创建改为运行
         executionGraph.transitionToRunning();
     }
 
@@ -679,6 +745,7 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
                 executionGraph.getStatusTimestamp(JobStatus.INITIALIZING),
                 jobStatusMetricsSettings);
         operatorCoordinatorHandler.startAllOperatorCoordinators();
+        //DefaultScheduler#startSchedulingInternal
         startSchedulingInternal();//
     }
 

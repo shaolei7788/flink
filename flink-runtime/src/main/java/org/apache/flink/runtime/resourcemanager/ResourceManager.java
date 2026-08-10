@@ -612,8 +612,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
             JobMasterId jobMasterId, ResourceRequirements resourceRequirements, Duration timeout) {
         final JobID jobId = resourceRequirements.getJobId();
         try (MdcCloseable ignored = MdcUtils.withContext(MdcUtils.asContextData(jobId))) {
-            final JobManagerRegistration jobManagerRegistration =
-                    jobManagerRegistrations.get(jobId);
+            final JobManagerRegistration jobManagerRegistration = jobManagerRegistrations.get(jobId);
 
             if (null != jobManagerRegistration) {
                 if (Objects.equals(jobMasterId, jobManagerRegistration.getJobMasterId())) {
@@ -621,8 +620,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
                             .thenApply(
                                     acknowledge -> {
                                         validateRunsInMainThread();
-                                        slotManager.processResourceRequirements(
-                                                resourceRequirements);
+                                        slotManager.processResourceRequirements(resourceRequirements);
                                         return null;
                                     });
                 } else {

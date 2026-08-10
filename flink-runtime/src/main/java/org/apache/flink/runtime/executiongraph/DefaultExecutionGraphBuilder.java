@@ -74,6 +74,7 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  */
 public class DefaultExecutionGraphBuilder {
 
+    //完成从逻辑拓扑（JobGraph）到物理执行图（ExecutionGraph）的“完全实例化与物理展开”
     public static DefaultExecutionGraph buildGraph(
             JobGraph jobGraph,
             Configuration jobManagerConfig,
@@ -176,7 +177,8 @@ public class DefaultExecutionGraphBuilder {
         // set the basic properties
 
         try {
-            executionGraph.setPlan(JsonPlanGenerator.generatePlan(jobGraph));
+            JobPlanInfo.Plan plan = JsonPlanGenerator.generatePlan(jobGraph);
+            executionGraph.setPlan(plan);
         } catch (Throwable t) {
             log.warn("Cannot create plan for job", t);
             // give the graph an empty plan
@@ -309,7 +311,7 @@ public class DefaultExecutionGraphBuilder {
             final CheckpointCoordinatorConfiguration chkConfig =
                     snapshotSettings.getCheckpointCoordinatorConfiguration();
 
-            executionGraph.enableCheckpointing(
+            executionGraph.enableCheckpointing(//
                     chkConfig,
                     hooks,
                     checkpointIdCounter,

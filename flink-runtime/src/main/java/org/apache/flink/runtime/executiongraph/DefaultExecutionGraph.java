@@ -482,8 +482,7 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
                 buildOpCoordinatorCheckpointContexts();
 
         checkpointStatsTracker = checkNotNull(statsTracker, "CheckpointStatsTracker");
-        checkpointCoordinatorConfiguration =
-                checkNotNull(chkConfig, "CheckpointCoordinatorConfiguration");
+        checkpointCoordinatorConfiguration = checkNotNull(chkConfig, "CheckpointCoordinatorConfiguration");
 
         CheckpointFailureManager failureManager =
                 new CheckpointFailureManager(
@@ -516,8 +515,7 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
                                         "Checkpoint Timer")));
 
         // create the coordinator that triggers and commits checkpoints and holds the state
-        checkpointCoordinator =
-                new CheckpointCoordinator(
+        checkpointCoordinator = new CheckpointCoordinator(
                         jobInformation.getJobId(),
                         chkConfig,
                         operatorCoordinators,

@@ -55,6 +55,14 @@ import java.util.function.Function;
  *   <li>{@link Exception} to signal an unexpected failure
  * </ul>
  */
+//异步初始化 JobMaster：由于作业图（JobGraph）的恢复、状态后端（State Backend）的初始化或 Savepoint 的加载可能非常耗时，
+// 它负责在后台异步创建并启动真正的 JobMaster 实例
+
+//管理作业生命周期状态：它定义并跟踪作业从 INITIALIZING（初始化中）到 RUNNING（运行中）或 FAILED（失败）的状态过渡
+//提供 RPC 访问网关（Gateway）：它对外暴露一个 CompletableFuture<JobMasterGateway>。当 JobMaster 真正启动并准备就绪后，该 Future 会被完成，允许 Dispatcher 或 ResourceManager 等外部组件与其建立 RPC 通信。
+//
+// 异常捕获与容错：如果在 JobMaster 启动或加载状态时发生任何异常（例如未找到 Savepoint 文件、类找不到、依赖冲突等），它会捕获这些错误，并将作业状态标记为失败，
+// 同时抛出经典的 JobInitializationException: Could not start the JobMaster 异常日志
 public class DefaultJobMasterServiceProcess
         implements JobMasterServiceProcess, OnCompletionActions {
 
@@ -70,11 +78,9 @@ public class DefaultJobMasterServiceProcess
 
     private final CompletableFuture<Void> terminationFuture = new CompletableFuture<>();
 
-    private final CompletableFuture<JobManagerRunnerResult> resultFuture =
-            new CompletableFuture<>();
+    private final CompletableFuture<JobManagerRunnerResult> resultFuture = new CompletableFuture<>();
 
-    private final CompletableFuture<JobMasterGateway> jobMasterGatewayFuture =
-            new CompletableFuture<>();
+    private final CompletableFuture<JobMasterGateway> jobMasterGatewayFuture = new CompletableFuture<>();
 
     private final CompletableFuture<String> leaderAddressFuture = new CompletableFuture<>();
 
@@ -89,6 +95,7 @@ public class DefaultJobMasterServiceProcess
         this.jobId = jobId;
         this.leaderSessionId = leaderSessionId;
         //创建 JobMasterService
+        //DefaultJobMasterServiceFactory#createJobMasterService
         this.jobMasterServiceFuture = jobMasterServiceFactory.createJobMasterService(leaderSessionId, this);
 
         jobMasterServiceFuture.whenComplete(
@@ -111,6 +118,7 @@ public class DefaultJobMasterServiceProcess
                                                         jobInitializationException)),
                                         jobInitializationException));
                     } else {
+                        //
                         registerJobMasterServiceFutures(jobMasterService);
                     }
                 });

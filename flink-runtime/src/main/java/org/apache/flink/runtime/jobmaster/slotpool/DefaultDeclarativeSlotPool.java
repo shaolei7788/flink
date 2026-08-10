@@ -150,7 +150,7 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
         }
         totalResourceRequirements = totalResourceRequirements.add(increment);
 
-        doDeclareResourceRequirements(false);
+        doDeclareResourceRequirements(false);//
     }
 
     @Override
@@ -165,6 +165,7 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
 
     private void doDeclareResourceRequirements(boolean internalAdjust) {
         if (slotRequestMaxInterval.toMillis() <= 0L) {
+            // 不需要任何延迟
             declareResourceRequirements();
         } else {
             cancelSlotRequestFutureTaskIfNeeded();
@@ -176,10 +177,12 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
             slotRequestFuture =
                     componentMainThreadExecutor.schedule(
                             () -> {
+                                // 1. 真正执行 RPC 宣告
                                 declareResourceRequirements();
-                                if (!internalAdjust) {
-                                    resourceRequestStable = true;
-                                    resourceRequestStableListener.notifyResourceRequestStable();
+                                if (!internalAdjust) { // internalAdjust = false
+                                    //
+                                    resourceRequestStable = true;//标记资源已稳定
+                                    resourceRequestStableListener.notifyResourceRequestStable();//// 3. 回调通知
                                 }
                             },
                             slotRequestMaxInterval.toMillis(),
@@ -219,11 +222,10 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
     public Collection<ResourceRequirement> getResourceRequirements() {
         final Collection<ResourceRequirement> currentResourceRequirements = new ArrayList<>();
 
-        for (Map.Entry<ResourceProfile, Integer> resourceRequirement :
-                totalResourceRequirements.getResourcesWithCount()) {
+        for (Map.Entry<ResourceProfile, Integer> resourceRequirement : totalResourceRequirements.getResourcesWithCount()) {
             currentResourceRequirements.add(
-                    ResourceRequirement.create(
-                            resourceRequirement.getKey(), resourceRequirement.getValue()));
+                    //
+                    ResourceRequirement.create(resourceRequirement.getKey(), resourceRequirement.getValue()));
         }
 
         return currentResourceRequirements;
@@ -237,8 +239,8 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
             long currentTime) {
 
         log.debug("Received {} slot offers from TaskExecutor {}.", offers, taskManagerLocation);
-
-        return internalOfferSlots(
+        //DefaultDeclarativeSlotPool#internalOfferSlots
+        return internalOfferSlots(//
                 offers,
                 taskManagerLocation,
                 taskManagerGateway,
@@ -246,6 +248,8 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
                 this::matchWithOutstandingRequirement);
     }
 
+    // [TaskManager] 提供物理资源 SlotOffer ➔ 注册为 【AllocatedSlot】 放入 JobMaster 的 SlotPool 中
+    // [JobMaster] 调度任务 ➔ 从池中挑出 AllocatedSlot ➔ 切割/包装成 【LogicalSlot】 ➔ 交付给 Task 运行
     private Collection<SlotOffer> internalOfferSlots(
             Collection<? extends SlotOffer> offers,
             TaskManagerLocation taskManagerLocation,
@@ -260,10 +264,11 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
                 // we have already accepted this offer
                 acceptedSlotOffers.add(offer);
             } else {
+                //将SlotOffer 封装成 AllocatedSlot
                 Optional<AllocatedSlot> acceptedSlot =
-                        matchOfferWithOutstandingRequirements(
-                                offer, taskManagerLocation, taskManagerGateway, matchingCondition);
+                        matchOfferWithOutstandingRequirements(offer, taskManagerLocation, taskManagerGateway, matchingCondition);//
                 if (acceptedSlot.isPresent()) {
+                    //
                     acceptedSlotOffers.add(offer);
                     acceptedSlots.add(acceptedSlot.get());
                 } else {
@@ -328,8 +333,7 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
             TaskManagerGateway taskManagerGateway,
             Function<ResourceProfile, Optional<ResourceProfile>> matchingCondition) {
 
-        final Optional<ResourceProfile> match =
-                matchingCondition.apply(slotOffer.getResourceProfile());
+        final Optional<ResourceProfile> match = matchingCondition.apply(slotOffer.getResourceProfile());
 
         if (match.isPresent()) {
             final ResourceProfile matchedRequirement = match.get();
@@ -340,8 +344,7 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
 
             increaseAvailableResources(ResourceCounter.withResource(matchedRequirement, 1));
 
-            final AllocatedSlot allocatedSlot =
-                    createAllocatedSlot(slotOffer, taskManagerLocation, taskManagerGateway);
+            final AllocatedSlot allocatedSlot = createAllocatedSlot(slotOffer, taskManagerLocation, taskManagerGateway);//
 
             // store the ResourceProfile against which the given slot has matched for future
             // book-keeping
@@ -355,6 +358,7 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
 
     private Optional<ResourceProfile> matchWithOutstandingRequirement(
             ResourceProfile resourceProfile) {
+        //
         return requirementMatcher.match(
                 resourceProfile,
                 totalResourceRequirements,
@@ -370,10 +374,11 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
             SlotOffer slotOffer,
             TaskManagerLocation taskManagerLocation,
             TaskManagerGateway taskManagerGateway) {
-        return new AllocatedSlot(
+        //将SlotOffer包装成AllocatedSlot
+        return new AllocatedSlot(//
                 slotOffer.getAllocationId(),
                 taskManagerLocation,
-                slotOffer.getSlotIndex(),
+                slotOffer.getSlotIndex(),// 2/3
                 slotOffer.getResourceProfile(),
                 taskManagerGateway);
     }

@@ -258,7 +258,7 @@ public class CheckpointCoordinator {
 
     // --------------------------------------------------------------------------------------------
 
-    public CheckpointCoordinator(
+    public CheckpointCoordinator(//
             JobID job,
             CheckpointCoordinatorConfiguration chkConfig,
             Collection<OperatorCoordinatorCheckpointContext> coordinatorsToCheckpoint,
@@ -1728,10 +1728,11 @@ public class CheckpointCoordinator {
      *     Execution#setInitialState(JobManagerTaskRestore)}.
      * @return True, if a checkpoint was found and its state was restored, false otherwise.
      */
+    //
     public boolean restoreInitialCheckpointIfPresent(final Set<ExecutionJobVertex> tasks)
             throws Exception {
         final OptionalLong restoredCheckpointId =
-                restoreLatestCheckpointedStateInternal(
+                restoreLatestCheckpointedStateInternal(//
                         tasks,
                         OperatorCoordinatorRestoreBehavior.RESTORE_IF_CHECKPOINT_PRESENT,
                         false, // initial checkpoints exist only on JobManager failover. ok if not
@@ -1794,7 +1795,7 @@ public class CheckpointCoordinator {
 
                 return OptionalLong.empty();
             }
-
+            // 有最近一次的checkpoint
             statsTracker.reportRestoredCheckpoint(
                     latest.getCheckpointID(),
                     latest.getProperties(),
@@ -1833,6 +1834,7 @@ public class CheckpointCoordinator {
                     LOG);
 
             if (operatorCoordinatorRestoreBehavior != OperatorCoordinatorRestoreBehavior.SKIP) {
+                //
                 restoreStateToCoordinators(latest.getCheckpointID(), operatorStates);
             }
 
@@ -2128,8 +2130,7 @@ public class CheckpointCoordinator {
 
         for (OperatorCoordinatorCheckpointContext coordContext : coordinatorsToCheckpoint) {
             final OperatorState state = operatorStates.get(coordContext.operatorId());
-            final ByteStreamStateHandle coordinatorState =
-                    state == null ? null : state.getCoordinatorState();
+            final ByteStreamStateHandle coordinatorState = state == null ? null : state.getCoordinatorState();
             final byte[] bytes = coordinatorState == null ? null : coordinatorState.getData();
             coordContext.resetToCheckpoint(checkpointId, bytes);
         }

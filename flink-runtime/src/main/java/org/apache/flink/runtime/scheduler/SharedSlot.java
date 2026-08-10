@@ -93,8 +93,7 @@ class SharedSlot implements SlotOwner, PhysicalSlot.Payload {
         this.physicalSlotRequestId = physicalSlotRequestId;
         this.physicalSlotResourceProfile = physicalSlotResourceProfile;
         this.executionSlotSharingGroup = executionSlotSharingGroup;
-        this.slotContextFuture =
-                slotContextFuture.thenApply(
+        this.slotContextFuture = slotContextFuture.thenApply(
                         physicalSlot -> {
                             Preconditions.checkState(
                                     physicalSlot.tryAssignPayload(this),
@@ -138,12 +137,12 @@ class SharedSlot implements SlotOwner, PhysicalSlot.Payload {
                 executionSlotSharingGroup.getExecutionVertexIds().contains(executionVertexId),
                 "Trying to allocate a logical slot for execution %s which is not in the ExecutionSlotSharingGroup",
                 executionVertexId);
-        CompletableFuture<SingleLogicalSlot> logicalSlotFuture =
-                requestedLogicalSlots.getValueByKeyA(executionVertexId);
+        CompletableFuture<SingleLogicalSlot> logicalSlotFuture = requestedLogicalSlots.getValueByKeyA(executionVertexId);
         if (logicalSlotFuture != null) {
             LOG.debug("Request for {} already exists", getLogicalSlotString(executionVertexId));
         } else {
-            logicalSlotFuture = allocateNonExistentLogicalSlot(executionVertexId);
+            //
+            logicalSlotFuture = allocateNonExistentLogicalSlot(executionVertexId);//
         }
         return logicalSlotFuture.thenApply(Function.identity());
     }
@@ -155,11 +154,11 @@ class SharedSlot implements SlotOwner, PhysicalSlot.Payload {
         String logMessageBase = getLogicalSlotString(logicalSlotRequestId, executionVertexId);
         LOG.debug("Request a {}", logMessageBase);
 
-        logicalSlotFuture =
-                slotContextFuture.thenApply(
+        logicalSlotFuture = slotContextFuture.thenApply(
                         physicalSlot -> {
                             LOG.debug("Allocated {}", logMessageBase);
-                            return createLogicalSlot(physicalSlot, logicalSlotRequestId);
+                            //创建LogicalSlot
+                            return createLogicalSlot(physicalSlot, logicalSlotRequestId);//
                         });
         requestedLogicalSlots.put(executionVertexId, logicalSlotRequestId, logicalSlotFuture);
 
@@ -179,7 +178,7 @@ class SharedSlot implements SlotOwner, PhysicalSlot.Payload {
 
     private SingleLogicalSlot createLogicalSlot(
             PhysicalSlot physicalSlot, SlotRequestId logicalSlotRequestId) {
-        return new SingleLogicalSlot(
+        return new SingleLogicalSlot(//
                 logicalSlotRequestId,
                 physicalSlot,
                 Locality.UNKNOWN,

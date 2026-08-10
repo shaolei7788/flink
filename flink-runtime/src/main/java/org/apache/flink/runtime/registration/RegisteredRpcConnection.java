@@ -105,6 +105,7 @@ public abstract class RegisteredRpcConnection<
         final RetryingRegistration<F, G, S, R> newRegistration = createNewRegistration();//
 
         if (REGISTRATION_UPDATER.compareAndSet(this, null, newRegistration)) {
+            //开始注册
             newRegistration.startRegistration();
         } else {
             // concurrent start operation

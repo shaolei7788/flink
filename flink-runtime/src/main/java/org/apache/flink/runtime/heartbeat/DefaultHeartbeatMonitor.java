@@ -155,6 +155,7 @@ public class DefaultHeartbeatMonitor<O> implements HeartbeatMonitor<O>, Runnable
     public void run() {
         // The heartbeat has timed out if we're in state running
         if (state.compareAndSet(State.RUNNING, State.TIMEOUT)) {
+            //心跳超时
             heartbeatListener.notifyHeartbeatTimeout(resourceID);
         }
     }

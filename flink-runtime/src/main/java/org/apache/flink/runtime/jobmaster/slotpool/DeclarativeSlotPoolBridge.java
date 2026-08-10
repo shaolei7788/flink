@@ -146,8 +146,9 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
 
     @Override
     protected void onStart() {
-
-        getDeclarativeSlotPool().registerNewSlotsListener(this::newSlotsAreAvailable);
+        //注册获取新slot的监听器
+        // DefaultDeclarativeSlotPool#registerNewSlotsListener
+        getDeclarativeSlotPool().registerNewSlotsListener(this::newSlotsAreAvailable);//
         if (deferSlotAllocation) {
             getDeclarativeSlotPool()
                     .registerResourceRequestStableListener(
@@ -184,10 +185,13 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
         this.isJobRestarting = isJobRestarting;
     }
 
+    //接收ResourceManager提供的slot
     @Override
     public Collection<SlotOffer> offerSlots(
             TaskManagerLocation taskManagerLocation,
             TaskManagerGateway taskManagerGateway,
+            // wordcount offers size = 2
+            // SlotOffer{allocationId=7ed7e8da86faede05a7662e2272b5d6d, slotIndex=3, resourceProfile=ResourceProfile{taskHeapMemory=512.000gb (549755813888 bytes), taskOffHeapMemory=512.000gb (549755813888 bytes), managedMemory=64.000mb (67108864 bytes), networkMemory=32.000mb (33554432 bytes)}}
             Collection<SlotOffer> offers) {
         assertHasBeenStarted();
 
@@ -207,8 +211,9 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
                             getRelativeTimeMillis());
 
         } else {
-            return getDeclarativeSlotPool()
-                    .offerSlots(
+            //DefaultDeclarativeSlotPool#offerSlots
+            //将SlotOffer 封装成 AllocatedSlot
+            return getDeclarativeSlotPool().offerSlots(//
                             offers,
                             taskManagerLocation,
                             taskManagerGateway,
@@ -257,7 +262,7 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
                 newSlotsAvailableForDeferAllocation();
             }
         } else {
-            newSlotsAvailableForDirectlyAllocation(newSlots);
+            newSlotsAvailableForDirectlyAllocation(newSlots);//
         }
     }
 
@@ -311,7 +316,7 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
         final Collection<RequestSlotMatchingStrategy.RequestSlotMatch> requestSlotMatches =
                 requestSlotMatchingStrategy.matchRequestsAndSlots(
                         newSlots, pendingRequests.values(), new HashMap<>());
-        reserveAndFulfillMatchedFreeSlots(requestSlotMatches);
+        reserveAndFulfillMatchedFreeSlots(requestSlotMatches);//
     }
 
     private void reserveAndFulfillMatchedFreeSlots(
@@ -400,7 +405,7 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
                 physicalSlotRequest.getSlotRequestId(),
                 physicalSlotRequest.getPhysicalSlotResourceProfile());
 
-        return internalRequestNewSlot(physicalSlotRequest.toPendingRequest(), timeout);
+        return internalRequestNewSlot(physicalSlotRequest.toPendingRequest(), timeout);//
     }
 
     @Override
@@ -418,7 +423,8 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
 
     private CompletableFuture<PhysicalSlot> internalRequestNewSlot(
             PendingRequest pendingRequest, @Nullable Duration timeout) {
-        internalRequestNewAllocatedSlot(pendingRequest);
+        //
+        internalRequestNewAllocatedSlot(pendingRequest);//
 
         if (timeout == null) {
             return pendingRequest.getSlotFuture();
@@ -446,11 +452,12 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
                 new TimeoutException("Pending slot request timed out in slot pool."));
     }
 
+    //
     private void internalRequestNewAllocatedSlot(PendingRequest pendingRequest) {
         pendingRequests.put(pendingRequest.getSlotRequestId(), pendingRequest);
 
         getDeclarativeSlotPool()
-                .increaseResourceRequirementsBy(
+                .increaseResourceRequirementsBy(//
                         ResourceCounter.withResource(pendingRequest.getResourceProfile(), 1));
     }
 

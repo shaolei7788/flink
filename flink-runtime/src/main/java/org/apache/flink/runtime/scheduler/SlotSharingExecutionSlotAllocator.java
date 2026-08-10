@@ -21,7 +21,6 @@ package org.apache.flink.runtime.scheduler;
 import org.apache.flink.runtime.clusterframework.types.ResourceProfile;
 import org.apache.flink.runtime.clusterframework.types.SlotProfile;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
-import org.apache.flink.runtime.executiongraph.ExecutionVertex;
 import org.apache.flink.runtime.jobmaster.LogicalSlot;
 import org.apache.flink.runtime.jobmaster.SlotRequestId;
 import org.apache.flink.runtime.jobmaster.slotpool.PhysicalSlot;
@@ -62,25 +61,35 @@ import static org.apache.flink.util.Preconditions.checkState;
  * released or canceled.
  */
 class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
+    /** 记录物理 Slot、共享 Slot 和逻辑 Slot 生命周期相关的调试日志。 */
     private static final Logger LOG =
             LoggerFactory.getLogger(SlotSharingExecutionSlotAllocator.class);
 
+    /** 向 Slot 池申请和取消物理 Slot 的入口。 */
     private final PhysicalSlotProvider slotProvider;
 
+    /** 是否将分配出的物理 Slot 标记为长期占用，直到其所属任务明确释放。 */
     private final boolean slotWillBeOccupiedIndefinitely;
 
+    /** 根据执行顶点查找其共享组的策略。 */
     private final SlotSharingStrategy slotSharingStrategy;
 
+    /** 当前仍在使用的共享 Slot；每个共享组最多对应一个共享 Slot。 */
     private final Map<ExecutionSlotSharingGroup, SharedSlot> sharedSlots;
 
+    /** 为一批执行顶点创建共享 Slot 请求画像的工厂。 */
     private final SharedSlotProfileRetrieverFactory sharedSlotProfileRetrieverFactory;
 
+    /** 检查一批物理 Slot 请求是否仍然可满足，并在超时时取消请求。 */
     private final PhysicalSlotRequestBulkChecker bulkChecker;
 
+    /** 一批 Slot 请求允许保持 pending 的最长时间。 */
     private final Duration allocationTimeout;
 
+    /** 共享组未提供显式资源画像时，按执行顶点获取资源需求。 */
     private final Function<ExecutionVertexID, ResourceProfile> resourceProfileRetriever;
 
+    /** 初始化分配器，并关闭 SlotProvider 自带的批量请求超时检查。 */
     SlotSharingExecutionSlotAllocator(
             PhysicalSlotProvider slotProvider,
             boolean slotWillBeOccupiedIndefinitely,
@@ -101,6 +110,12 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
         this.slotProvider.disableBatchSlotRequestTimeoutCheck();
     }
 
+    /**
+     * 为执行尝试分配逻辑 Slot。
+     *
+     * <p>方法先将执行尝试转换为执行顶点，再由共享组完成物理 Slot 的复用，最后将结果映射回
+     * 调用方传入的 {@link ExecutionAttemptID}。同一个执行顶点不能同时存在多个执行尝试。
+     */
     @Override
     public Map<ExecutionAttemptID, ExecutionSlotAssignment> allocateSlotsFor(
             List<ExecutionAttemptID> executionAttemptIds) {
@@ -118,8 +133,9 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
                 executionAttemptIds.stream()
                         .map(ExecutionAttemptID::getExecutionVertexId)
                         .collect(Collectors.toList());
-
-        return allocateSlotsForVertices(vertexIds).stream()
+        //
+        List<SlotExecutionVertexAssignment> slot = allocateSlotsForVertices(vertexIds);
+        return slot.stream()
                 .collect(
                         Collectors.toMap(
                                 vertexAssignment ->
@@ -155,11 +171,11 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
      *
      * @param executionVertexIds Execution vertices to allocate slots for
      */
-    private List<SlotExecutionVertexAssignment> allocateSlotsForVertices(
-            List<ExecutionVertexID> executionVertexIds) {
+    private List<SlotExecutionVertexAssignment> allocateSlotsForVertices(List<ExecutionVertexID> executionVertexIds) {
 
         SharedSlotProfileRetriever sharedSlotProfileRetriever =
                 sharedSlotProfileRetrieverFactory.createFromBulk(new HashSet<>(executionVertexIds));
+        // 同一共享组中的多个执行顶点只需要申请一个物理 Slot。
         Map<ExecutionSlotSharingGroup, List<ExecutionVertexID>> executionsByGroup =
                 executionVertexIds.stream()
                         .collect(
@@ -168,22 +184,22 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
 
         Map<ExecutionSlotSharingGroup, SharedSlot> slots = new HashMap<>(executionsByGroup.size());
         Set<ExecutionSlotSharingGroup> groupsToAssign = new HashSet<>(executionsByGroup.keySet());
-
-        Map<ExecutionSlotSharingGroup, SharedSlot> assignedSlots =
-                tryAssignExistingSharedSlots(groupsToAssign);
+        //尝试找到已存在的共享slot
+        Map<ExecutionSlotSharingGroup, SharedSlot> assignedSlots = tryAssignExistingSharedSlots(groupsToAssign);
         slots.putAll(assignedSlots);
+        //减去上步找到slot的共享组
         groupsToAssign.removeAll(assignedSlots.keySet());
 
         if (!groupsToAssign.isEmpty()) {
-            Map<ExecutionSlotSharingGroup, SharedSlot> allocatedSlots =
-                    allocateSharedSlots(groupsToAssign, sharedSlotProfileRetriever);
+            // 还要slot要申请
+            //为尚未复用共享 Slot 的共享组批量申请物理 Slot
+            Map<ExecutionSlotSharingGroup, SharedSlot> allocatedSlots = allocateSharedSlots(groupsToAssign, sharedSlotProfileRetriever);
             slots.putAll(allocatedSlots);
             groupsToAssign.removeAll(allocatedSlots.keySet());
             Preconditions.checkState(groupsToAssign.isEmpty());
         }
-
-        Map<ExecutionVertexID, SlotExecutionVertexAssignment> assignments =
-                allocateLogicalSlotsFromSharedSlots(slots, executionsByGroup);
+        //按照各个共享组（ExecutionSlotSharingGroup）内部的具体任务清单，切割并派发成一个个供具体 Task（ExecutionVertexID）使用的“逻辑独立槽位”（LogicalSlot）
+        Map<ExecutionVertexID, SlotExecutionVertexAssignment> assignments = allocateLogicalSlotsFromSharedSlots(slots, executionsByGroup);
 
         // we need to pass the slots map to the createBulk method instead of using the allocator's
         // 'sharedSlots'
@@ -195,11 +211,13 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
         return executionVertexIds.stream().map(assignments::get).collect(Collectors.toList());
     }
 
+    /** 取消指定执行尝试尚未完成的逻辑 Slot 请求。 */
     @Override
     public void cancel(ExecutionAttemptID executionAttemptId) {
         cancelLogicalSlotRequest(executionAttemptId.getExecutionVertexId(), null);
     }
 
+    /** 将取消操作转发给执行顶点所属的共享 Slot。 */
     private void cancelLogicalSlotRequest(ExecutionVertexID executionVertexId, Throwable cause) {
         ExecutionSlotSharingGroup executionSlotSharingGroup =
                 slotSharingStrategy.getExecutionSlotSharingGroup(executionVertexId);
@@ -216,23 +234,25 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
         }
     }
 
+    /** 从每个共享 Slot 中为组内执行顶点创建逻辑 Slot 分配结果。 */
     private static Map<ExecutionVertexID, SlotExecutionVertexAssignment>
             allocateLogicalSlotsFromSharedSlots(
                     Map<ExecutionSlotSharingGroup, SharedSlot> slots,
                     Map<ExecutionSlotSharingGroup, List<ExecutionVertexID>> executionsByGroup) {
 
         Map<ExecutionVertexID, SlotExecutionVertexAssignment> assignments = new HashMap<>();
-
-        for (Map.Entry<ExecutionSlotSharingGroup, List<ExecutionVertexID>> entry :
-                executionsByGroup.entrySet()) {
+        //通过这个双层循环，一个 SharedSlot（比如对应的 groupA）可以同时为 executionId_1（Source）、executionId_2（FlatMap）、executionId_3（Sink）分别开出 3 个 LogicalSlot。
+        // 它们在物理上挤在同一个 TaskManager 的 JVM 进程/线程池里，但在调度层面被看作 3 个独立的逻辑槽位
+        for (Map.Entry<ExecutionSlotSharingGroup, List<ExecutionVertexID>> entry : executionsByGroup.entrySet()) {
+            // executionsByGroup size 为2
             ExecutionSlotSharingGroup group = entry.getKey();
             List<ExecutionVertexID> executionIds = entry.getValue();
 
             for (ExecutionVertexID executionId : executionIds) {
-                CompletableFuture<LogicalSlot> logicalSlotFuture =
-                        slots.get(group).allocateLogicalSlot(executionId);
-                SlotExecutionVertexAssignment assignment =
-                        new SlotExecutionVertexAssignment(executionId, logicalSlotFuture);
+                //关键动作：从对应的物理槽位中，为当前任务抠出一个逻辑槽位的 Future 凭证
+                CompletableFuture<LogicalSlot> logicalSlotFuture = slots.get(group).allocateLogicalSlot(executionId);//
+                // 将任务 ID 与其对应的逻辑槽位 Future 绑定封装
+                SlotExecutionVertexAssignment assignment = new SlotExecutionVertexAssignment(executionId, logicalSlotFuture);
                 assignments.put(executionId, assignment);
             }
         }
@@ -240,10 +260,11 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
         return assignments;
     }
 
+    /** 查找本次请求涉及的、已经存在于分配器中的共享 Slot。 */
     private Map<ExecutionSlotSharingGroup, SharedSlot> tryAssignExistingSharedSlots(
             Set<ExecutionSlotSharingGroup> executionSlotSharingGroups) {
-        Map<ExecutionSlotSharingGroup, SharedSlot> assignedSlots =
-                new HashMap<>(executionSlotSharingGroups.size());
+        // 优先复用已有共享 Slot，避免同一共享组在多次调度中重复申请物理 Slot。
+        Map<ExecutionSlotSharingGroup, SharedSlot> assignedSlots = new HashMap<>(executionSlotSharingGroups.size());
         for (ExecutionSlotSharingGroup group : executionSlotSharingGroups) {
             SharedSlot sharedSlot = sharedSlots.get(group);
             if (sharedSlot != null) {
@@ -253,9 +274,11 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
         return assignedSlots;
     }
 
+    /** 为尚未复用共享 Slot 的共享组批量申请物理 Slot，并建立共享 Slot。 */
     private Map<ExecutionSlotSharingGroup, SharedSlot> allocateSharedSlots(
             Set<ExecutionSlotSharingGroup> executionSlotSharingGroups,
             SharedSlotProfileRetriever sharedSlotProfileRetriever) {
+        // 一个共享组对应一个物理请求；请求完成后包装成可复用的 SharedSlot。
 
         List<PhysicalSlotRequest> slotRequests = new ArrayList<>();
         Map<ExecutionSlotSharingGroup, SharedSlot> allocatedSlots = new HashMap<>();
@@ -266,10 +289,8 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
         for (ExecutionSlotSharingGroup group : executionSlotSharingGroups) {
             SlotRequestId physicalSlotRequestId = new SlotRequestId();
             ResourceProfile physicalSlotResourceProfile = getPhysicalSlotResourceProfile(group);
-            SlotProfile slotProfile =
-                    sharedSlotProfileRetriever.getSlotProfile(group, physicalSlotResourceProfile);
-            PhysicalSlotRequest request =
-                    new PhysicalSlotRequest(
+            SlotProfile slotProfile = sharedSlotProfileRetriever.getSlotProfile(group, physicalSlotResourceProfile);
+            PhysicalSlotRequest request = new PhysicalSlotRequest(
                             physicalSlotRequestId,
                             slotProfile,
                             group.getLoading(),
@@ -280,16 +301,16 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
         }
 
         Map<SlotRequestId, CompletableFuture<PhysicalSlotRequest.Result>> allocateResult =
+                // 分配物理slot
+                //PhysicalSlotProviderImpl#allocatePhysicalSlots
                 slotProvider.allocatePhysicalSlots(slotRequests);
 
         allocateResult.forEach(
                 (slotRequestId, resultCompletableFuture) -> {
                     ExecutionSlotSharingGroup group = requestToGroup.get(slotRequestId);
                     CompletableFuture<PhysicalSlot> physicalSlotFuture =
-                            resultCompletableFuture.thenApply(
-                                    PhysicalSlotRequest.Result::getPhysicalSlot);
-                    SharedSlot slot =
-                            new SharedSlot(
+                            resultCompletableFuture.thenApply(PhysicalSlotRequest.Result::getPhysicalSlot);
+                    SharedSlot slot = new SharedSlot(
                                     slotRequestId,
                                     requestToPhysicalResources.get(slotRequestId),
                                     group,
@@ -303,7 +324,9 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
         return allocatedSlots;
     }
 
+    /** 在共享 Slot 为空时移除它，并取消对应的物理 Slot 请求。 */
     private void releaseSharedSlot(ExecutionSlotSharingGroup executionSlotSharingGroup) {
+        // SharedSlot 在所有逻辑 Slot 都释放后回调这里，随后取消底层物理请求。
         SharedSlot slot = sharedSlots.remove(executionSlotSharingGroup);
         Preconditions.checkNotNull(slot);
         Preconditions.checkState(
@@ -316,8 +339,10 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
                         "Slot is being returned from SlotSharingExecutionSlotAllocator."));
     }
 
+    /** 计算共享组对应物理 Slot 所需的资源画像。 */
     private ResourceProfile getPhysicalSlotResourceProfile(
             ExecutionSlotSharingGroup executionSlotSharingGroup) {
+        // 组有显式资源画像时直接使用；否则合并组内各执行顶点的资源需求。
         if (!executionSlotSharingGroup.getResourceProfile().equals(ResourceProfile.UNKNOWN)) {
             return executionSlotSharingGroup.getResourceProfile();
         } else {
@@ -329,9 +354,11 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
         }
     }
 
+    /** 创建并初始化用于超时/可满足性检查的物理 Slot 请求批次。 */
     private SharingPhysicalSlotRequestBulk createBulk(
             Map<ExecutionSlotSharingGroup, SharedSlot> slots,
             Map<ExecutionSlotSharingGroup, List<ExecutionVertexID>> executions) {
+        // Bulk 以共享组为粒度跟踪物理请求，并能在超时或失败时取消对应逻辑请求。
         Map<ExecutionSlotSharingGroup, ResourceProfile> pendingRequests =
                 executions.keySet().stream()
                         .collect(
@@ -346,10 +373,12 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
         return bulk;
     }
 
+    /** 将每个共享 Slot 的异步结果回调绑定到请求批次。 */
     private static void registerPhysicalSlotRequestBulkCallbacks(
             Map<ExecutionSlotSharingGroup, SharedSlot> slots,
             Iterable<ExecutionSlotSharingGroup> executions,
             SharingPhysicalSlotRequestBulk bulk) {
+        // 物理 Slot 成功或失败时同步更新 bulk，避免超时检查误判或继续等待已失败请求。
         for (ExecutionSlotSharingGroup group : executions) {
             CompletableFuture<PhysicalSlot> slotContextFuture =
                     slots.get(group).getSlotContextFuture();
@@ -364,13 +393,16 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
         }
     }
 
-    /** The slot assignment for an {@link ExecutionVertex}. */
+    /** 保存一个执行顶点及其逻辑 Slot future 的内部中间结果。 */
     private static class SlotExecutionVertexAssignment {
 
+        /** 被分配逻辑 Slot 的执行顶点。 */
         private final ExecutionVertexID executionVertexId;
 
+        /** 物理 Slot 就绪后完成的逻辑 Slot future。 */
         private final CompletableFuture<LogicalSlot> logicalSlotFuture;
 
+        /** 创建执行顶点到逻辑 Slot future 的中间映射。 */
         SlotExecutionVertexAssignment(
                 ExecutionVertexID executionVertexId,
                 CompletableFuture<LogicalSlot> logicalSlotFuture) {
@@ -378,10 +410,12 @@ class SlotSharingExecutionSlotAllocator implements ExecutionSlotAllocator {
             this.logicalSlotFuture = checkNotNull(logicalSlotFuture);
         }
 
+        /** 返回该中间结果对应的执行顶点。 */
         ExecutionVertexID getExecutionVertexId() {
             return executionVertexId;
         }
 
+        /** 返回逻辑 Slot 的异步结果。 */
         CompletableFuture<LogicalSlot> getLogicalSlotFuture() {
             return logicalSlotFuture;
         }
