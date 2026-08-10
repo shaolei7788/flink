@@ -296,6 +296,8 @@ public class DeclarativeSlotPoolService implements SlotPoolService {
         assertHasBeenStarted();
 
         resourceRequirementServiceConnectionManager.connect(
+                // 不是立即调用  会在执行完 declareResourceRequirements 里被调用
+                // 后由 sendResourceRequirements 方法的
                 resourceRequirements ->
                         //【重点】JobMaster 向 resourceManager 声明所需要的资源  即所需slot数量
                         // resourceRequirements.getResourceRequirements() = ResourceRequirement{resourceProfile=ResourceProfile{UNKNOWN}, numberOfRequiredSlots=2}

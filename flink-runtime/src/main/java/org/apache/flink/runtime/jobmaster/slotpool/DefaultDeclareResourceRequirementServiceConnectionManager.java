@@ -96,6 +96,7 @@ class DefaultDeclareResourceRequirementServiceConnectionManager
         synchronized (lock) {
             if (isConnected()) {
                 if (resourceRequirementsToSend == currentResourceRequirements) {
+                    // 会调用 DeclarativeSlotPoolService connectToResourceManager 的内部类
                     return service.declareResourceRequirements(resourceRequirementsToSend);
                 } else {
                     LOG.debug("Newer resource requirements found. Stop sending old requirements.");
