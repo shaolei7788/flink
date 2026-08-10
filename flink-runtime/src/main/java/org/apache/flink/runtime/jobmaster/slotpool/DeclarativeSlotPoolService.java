@@ -59,6 +59,7 @@ public class DeclarativeSlotPoolService implements SlotPoolService {
 
     private final Duration rpcTimeout;
 
+    //
     private final DeclarativeSlotPool declarativeSlotPool;
 
     private final Clock clock;
@@ -91,11 +92,10 @@ public class DeclarativeSlotPoolService implements SlotPoolService {
         this.rpcTimeout = rpcTimeout;
         this.registeredTaskManagers = new HashSet<>();
         this.componentMainThreadExecutor = componentMainThreadExecutor;
-
-        this.declarativeSlotPool =
-                declarativeSlotPoolFactory.create(
+        //DefaultDeclarativeSlotPool DefaultDeclarativeSlotPoolFactory#declarativeSlotPoolFactory
+        this.declarativeSlotPool = declarativeSlotPoolFactory.create(
                         jobId,
-                        this::declareResourceRequirements,
+                        this::declareResourceRequirements,//
                         idleSlotTimeout,
                         rpcTimeout,
                         slotRequestMaxInterval,
@@ -291,10 +291,11 @@ public class DeclarativeSlotPoolService implements SlotPoolService {
      */
     protected void onReleaseTaskManager(ResourceCounter previouslyFulfilledRequirement) {}
 
+    //
     @Override
     public void connectToResourceManager(ResourceManagerGateway resourceManagerGateway) {
         assertHasBeenStarted();
-
+        //AbstractServiceConnectionManager#connect
         resourceRequirementServiceConnectionManager.connect(
                 // 不是立即调用  会在执行完 declareResourceRequirements 里被调用
                 // 后由 sendResourceRequirements 方法的
@@ -306,11 +307,16 @@ public class DeclarativeSlotPoolService implements SlotPoolService {
         declareResourceRequirements(declarativeSlotPool.getResourceRequirements());
     }
 
+    //会向ResourceManager 申请slot
     private void declareResourceRequirements(Collection<ResourceRequirement> resourceRequirements) {
         assertHasBeenStarted();
-
-        resourceRequirementServiceConnectionManager.declareResourceRequirements(
-                ResourceRequirements.create(jobId, jobManagerAddress, resourceRequirements));
+        //
+        ResourceRequirements requirements = ResourceRequirements.create(
+                jobId,
+                jobManagerAddress,
+                resourceRequirements);
+        //DefaultDeclareResourceRequirementServiceConnectionManager#declareResourceRequirements
+        resourceRequirementServiceConnectionManager.declareResourceRequirements(requirements);
     }
 
     @Override

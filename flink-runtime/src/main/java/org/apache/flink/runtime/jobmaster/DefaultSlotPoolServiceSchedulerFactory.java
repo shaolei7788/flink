@@ -95,6 +95,7 @@ public final class DefaultSlotPoolServiceSchedulerFactory
             JobID jid,
             DeclarativeSlotPoolFactory declarativeSlotPoolFactory,
             @Nonnull ComponentMainThreadExecutor componentMainThreadExecutor) {
+        //DeclarativeSlotPoolBridge DeclarativeSlotPoolBridgeServiceFactory#createSlotPoolService
         return slotPoolServiceFactory.createSlotPoolService(
                 jid, declarativeSlotPoolFactory, componentMainThreadExecutor);
     }

@@ -39,7 +39,7 @@ public class DefaultDeclarativeSlotPoolFactory implements DeclarativeSlotPoolFac
             Duration rpcTimeout,
             Duration slotRequestMaxInterval,
             @Nonnull ComponentMainThreadExecutor componentMainThreadExecutor) {
-        return new DefaultDeclarativeSlotPool(
+        return new DefaultDeclarativeSlotPool(//
                 jobId,
                 new DefaultAllocatedSlotPool(),
                 notifyNewResourceRequirements,

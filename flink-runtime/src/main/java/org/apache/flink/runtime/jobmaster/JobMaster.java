@@ -414,7 +414,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                         this::getNodeIdOfTaskManager,
                         getMainThreadExecutor(),
                         log);
-
+        //slotPoolService = DeclarativeSlotPoolBridge
         this.slotPoolService =
                 checkNotNull(slotPoolServiceSchedulerFactory)
                         .createSlotPoolService(
@@ -795,17 +795,16 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
             final ResourceID taskManagerId,
             final Collection<SlotOffer> slots,
             final Duration timeout) {
-
+        //获取TaskManager 注册信息
         TaskManagerRegistration taskManagerRegistration = registeredTaskManagers.get(taskManagerId);
 
         if (taskManagerRegistration == null) {
             return FutureUtils.completedExceptionally(
                     new Exception("Unknown TaskManager " + taskManagerId));
         }
-
+        //获取TaskManager 网关
         final RpcTaskManagerGateway rpcTaskManagerGateway =
-                new RpcTaskManagerGateway(
-                        taskManagerRegistration.getTaskExecutorGateway(), getFencingToken());
+                new RpcTaskManagerGateway(taskManagerRegistration.getTaskExecutorGateway(), getFencingToken());
         //DeclarativeSlotPoolBridge#offerSlots
         Collection<SlotOffer> slotOffers = slotPoolService.offerSlots(//
                 taskManagerRegistration.getTaskManagerLocation(),
@@ -1396,7 +1395,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
             final String newResourceManagerAddress, final ResourceManagerId resourceManagerId) {
         resourceManagerAddress = createResourceManagerAddress(newResourceManagerAddress, resourceManagerId);
 
-        reconnectToResourceManager(
+        reconnectToResourceManager(//
                 new FlinkException(
                         String.format(
                                 "ResourceManager leader changed to new address %s",
@@ -1457,7 +1456,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
             log.info(
                     "JobManager successfully registered at ResourceManager, leader id: {}.",
                     resourceManagerId);
-
+            //获取ResourceManager 的连接
             final ResourceManagerGateway resourceManagerGateway = resourceManagerConnection.getTargetGateway();
 
             final ResourceID resourceManagerResourceId = success.getResourceManagerResourceId();
@@ -1467,7 +1466,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                             resourceManagerGateway, resourceManagerResourceId);
 
             blocklistHandler.registerBlocklistListener(resourceManagerGateway);
-            //
+            // JobMaster 向 resourceManager 声明所需要的资源  即所需slot数量
             slotPoolService.connectToResourceManager(resourceManagerGateway);//
             partitionTracker.connectToResourceManager(resourceManagerGateway);
 
@@ -1663,7 +1662,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                         // filter out outdated connections
                         //noinspection ObjectEquality
                         if (this == resourceManagerConnection) {
-                            //
+                            //建立与 ResourceManager
                             establishResourceManagerConnection(success);//
                         }
                     });

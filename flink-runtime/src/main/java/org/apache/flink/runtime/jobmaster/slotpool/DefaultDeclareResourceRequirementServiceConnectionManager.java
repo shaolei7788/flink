@@ -68,8 +68,8 @@ class DefaultDeclareResourceRequirementServiceConnectionManager
             checkNotClosed();
             if (isConnected()) {
                 currentResourceRequirements = resourceRequirements;
-
-                triggerResourceRequirementsSubmission(
+                //触发获取ResourceManager 请求的提交
+                triggerResourceRequirementsSubmission(//
                         Duration.ofMillis(1L),
                         Duration.ofMillis(10000L),
                         currentResourceRequirements);
@@ -84,6 +84,7 @@ class DefaultDeclareResourceRequirementServiceConnectionManager
             ResourceRequirements resourceRequirementsToSend) {
 
         FutureUtils.retryWithDelay(
+                //
                 () -> sendResourceRequirements(resourceRequirementsToSend),
                 new ExponentialBackoffRetryStrategy(
                         Integer.MAX_VALUE, sleepOnError, maxSleepOnError),
@@ -91,20 +92,22 @@ class DefaultDeclareResourceRequirementServiceConnectionManager
                 scheduledExecutor);
     }
 
+    //会发送获取资源的 rpc请求
     private CompletableFuture<Acknowledge> sendResourceRequirements(
             ResourceRequirements resourceRequirementsToSend) {
         synchronized (lock) {
             if (isConnected()) {
                 if (resourceRequirementsToSend == currentResourceRequirements) {
                     // 会调用 DeclarativeSlotPoolService connectToResourceManager 的内部类
+                    // service.declareResourceRequirements(resourceRequirementsToSend) 就是
+                    //todo resourceManagerGateway.declareRequiredResources(jobMasterId, resourceRequirements, rpcTimeout)
                     return service.declareResourceRequirements(resourceRequirementsToSend);
                 } else {
                     LOG.debug("Newer resource requirements found. Stop sending old requirements.");
                     return FutureUtils.completedExceptionally(new CancellationException());
                 }
             } else {
-                LOG.debug(
-                        "Stop sending resource requirements to ResourceManager because it is not connected.");
+                LOG.debug("Stop sending resource requirements to ResourceManager because it is not connected.");
                 return FutureUtils.completedExceptionally(new CancellationException());
             }
         }

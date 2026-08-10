@@ -55,7 +55,7 @@ public class DeclarativeSlotPoolBridgeServiceFactory extends AbstractSlotPoolSer
             @Nonnull JobID jobId,
             DeclarativeSlotPoolFactory declarativeSlotPoolFactory,
             @Nonnull ComponentMainThreadExecutor componentMainThreadExecutor) {
-        return new DeclarativeSlotPoolBridge(
+        return new DeclarativeSlotPoolBridge(//
                 jobId,
                 declarativeSlotPoolFactory,
                 clock,

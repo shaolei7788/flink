@@ -60,6 +60,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /** {@link SlotPool} implementation which uses the {@link DeclarativeSlotPool} to allocate slots. */
+//用于衔接新版声明式资源管理（Declarative Resource Management）与传统命令式 Slot 分配逻辑（Imperative/Allocation-based）的核心桥梁组件
+//Flink 在架构演进中引入了声明式资源管理，即 JobMaster 不再逐个向 ResourceManager 申请具体的 Slot，而是声明当前作业总共需要多少资源（Resource Requirements）
 public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implements SlotPool {
 
     /** Helper class to represent the fulfilled allocation infromation. */
@@ -87,17 +89,33 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
         }
     }
 
+    //记录当前处于挂起（等待中）状态的 Slot 申请。当上层调度器（Scheduler）调用 allocateSlot 申请资源，
+    // 但目前 Slot 池中没有空闲的物理 Slot 时，这个请求就会被封装成 PendingRequest 存入该 Map 中。一旦后续有新 Slot 加入，会从这里取出请求进行匹配
     private final Map<SlotRequestId, PendingRequest> pendingRequests;
+    //记录当前**已经成功分配（已满足）**的 Slot 请求映射关系。当一个挂起的请求成功匹配到了物理 Slot，或者直接从空闲池中拿到了 Slot，
+    // 该记录就会从 pendingRequests 移入 fulfilledRequests。它用于在作业运行期间，追踪哪个 SlotRequestId 正在占用哪一个具体的物理 Slot
     private final Map<SlotRequestId, FulfilledAllocation> fulfilledRequests;
+    //空闲 Slot 的超时释放时间。当某个物理 Slot 变为空闲状态（例如 Task 执行完毕释放了 Slot），且当前作业的整体资源需求不需要它时，它不会立刻归还给集群。
+    // DeclarativeSlotPoolBridge 会启动一个定时器，如果该 Slot 在此时间内一直未被再次复用，就会被正式释放并归还给 ResourceManager
     private final Duration idleSlotTimeout;
 
+    //当有新的物理 Slot 供给（Offer）进来，或者有多个挂起请求和空闲 Slot 需要撮合时，
+    // 该策略决定了“哪一个请求优先分配到哪一个物理 Slot”**。常见的策略比如优先考虑本地性（Locality，即计算节点和数据节点在同一台机器）、或者优先填满已有的 TaskManager
     private final RequestSlotMatchingStrategy requestSlotMatchingStrategy;
 
+    //批处理（Batch）模式下 Slot 请求的超时时间。在流处理中，如果拿不到 Slot 通常会触发 NoResourceAvailableException 导致作业失败；
+    // 而在批处理或有限数据集场景下，资源可能是轮询复用的。这个参数定义了批处理任务在抛出超时异常前，最多可以等待资源的最长时间
     private final Duration batchSlotTimeout;
+    //是否禁用批处理 Slot 超时检查的开关。
+    // 在某些特定场景下（例如处于某些动态调度的中间状态，或者用户显式配置了不超时），通过该布尔值可以临时或全局关闭 batchSlotTimeout 的定时检查机制，防止误判超时
     private boolean isBatchSlotRequestTimeoutCheckDisabled;
 
+    //标记当前作业是否正在重启中。当作业因为异常触发 Failover（故障转移）或正常的全局重启时，该状态会被置为 true。
+    // 此时，DeclarativeSlotPoolBridge 在处理 Slot 释放、保留或者重新申请时会采取不同的逻辑，防止在重启的混乱过渡期将不该释放的 Slot 错误地退还给 ResourceManager
     private boolean isJobRestarting = false;
 
+    //是否开启延迟（推迟）Slot 分配。这是一个优化开关。如果设为 true，当调度器发出申请时，
+    // 它不会立刻去强行绑定和分配 Slot，而是会稍微“等一等”或者将分配时机推迟，以便集齐更多的 Slot 供给或更全的拓扑信息，从而做出全局更优的 Locality（本地性）匹配选择
     private final boolean deferSlotAllocation;
 
     public DeclarativeSlotPoolBridge(
@@ -193,9 +211,11 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
             // wordcount offers size = 2
             // SlotOffer{allocationId=7ed7e8da86faede05a7662e2272b5d6d, slotIndex=3, resourceProfile=ResourceProfile{taskHeapMemory=512.000gb (549755813888 bytes), taskOffHeapMemory=512.000gb (549755813888 bytes), managedMemory=64.000mb (67108864 bytes), networkMemory=32.000mb (33554432 bytes)}}
             Collection<SlotOffer> offers) {
+        //断言DeclarativeSlotPoolService 已经启动
         assertHasBeenStarted();
 
         if (!isTaskManagerRegistered(taskManagerLocation.getResourceID())) {
+            // 忽略 没注册提供slot 的 RM
             log.debug(
                     "Ignoring offered slots from unknown task manager {}.",
                     taskManagerLocation.getResourceID());
@@ -203,6 +223,7 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
         }
 
         if (isJobRestarting) {
+            //当前作业是否正在重启中
             return getDeclarativeSlotPool()
                     .registerSlots(
                             offers,
@@ -249,6 +270,8 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
         getDeclarativeSlotPool().decreaseResourceRequirementsBy(previouslyFulfilledRequirement);
     }
 
+    //被DefaultDeclarativeSlotPool#internalOfferSlots 方法的
+    // newSlotsListener.notifyNewSlotsAreAvailable(acceptedSlots)调用
     @VisibleForTesting
     void newSlotsAreAvailable(Collection<? extends PhysicalSlot> newSlots) {
         log.debug("Received new available slots: {}", newSlots);
@@ -262,6 +285,7 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
                 newSlotsAvailableForDeferAllocation();
             }
         } else {
+            //
             newSlotsAvailableForDirectlyAllocation(newSlots);//
         }
     }
@@ -313,9 +337,9 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
 
     private void newSlotsAvailableForDirectlyAllocation(
             Collection<? extends PhysicalSlot> newSlots) {
+        //SimpleRequestSlotMatchingStrategy#matchRequestsAndSlots
         final Collection<RequestSlotMatchingStrategy.RequestSlotMatch> requestSlotMatches =
-                requestSlotMatchingStrategy.matchRequestsAndSlots(
-                        newSlots, pendingRequests.values(), new HashMap<>());
+                requestSlotMatchingStrategy.matchRequestsAndSlots(newSlots, pendingRequests.values(), new HashMap<>());//
         reserveAndFulfillMatchedFreeSlots(requestSlotMatches);//
     }
 
@@ -330,7 +354,7 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
             Preconditions.checkNotNull(
                     pendingRequests.remove(pendingRequest.getSlotRequestId()),
                     "Cannot fulfill a non existing pending slot request.");
-
+            //
             reserveFreeSlot(slot.getAllocationId(), pendingRequest);
         }
 
@@ -351,14 +375,14 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
         return getDeclarativeSlotPool().getFreeSlotTracker().getFreeSlotsInformation();
     }
 
+    //将一个原本处于闲置状态（Free）的物理槽位正式锁定，分配给指定的任务请求，并在内存中记录这次绑定关系
     private PhysicalSlot reserveFreeSlot(AllocationID allocationId, PendingRequest pendingRequest) {
         SlotRequestId slotRequestId = pendingRequest.getSlotRequestId();
         log.debug("Reserve slot {} for slot request id {}", allocationId, slotRequestId);
-        final PhysicalSlot slot =
-                getDeclarativeSlotPool()
-                        .reserveFreeSlot(allocationId, pendingRequest.getResourceProfile());
-        fulfilledRequests.put(
-                slotRequestId, new FulfilledAllocation(slot, pendingRequest.getLoading()));
+        //底层会将该 Slot 的状态从闲置（Free）更改为已分配/已锁定（Allocated/Reserved），确保该资源不会再被其他请求抢占
+        //DefaultDeclarativeSlotPool#reserveFreeSlot
+        final PhysicalSlot slot = getDeclarativeSlotPool().reserveFreeSlot(allocationId, pendingRequest.getResourceProfile());
+        fulfilledRequests.put(slotRequestId, new FulfilledAllocation(slot, pendingRequest.getLoading()));
         return slot;
     }
 
@@ -454,11 +478,13 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
 
     //
     private void internalRequestNewAllocatedSlot(PendingRequest pendingRequest) {
+        //加入集合中
         pendingRequests.put(pendingRequest.getSlotRequestId(), pendingRequest);
-
-        getDeclarativeSlotPool()
-                .increaseResourceRequirementsBy(//
-                        ResourceCounter.withResource(pendingRequest.getResourceProfile(), 1));
+        ResourceCounter resourceCounter = ResourceCounter.withResource(
+                pendingRequest.getResourceProfile(),
+                1);
+        //DefaultDeclarativeSlotPool#increaseResourceRequirementsBy
+        getDeclarativeSlotPool().increaseResourceRequirementsBy(resourceCounter);
     }
 
     @Override

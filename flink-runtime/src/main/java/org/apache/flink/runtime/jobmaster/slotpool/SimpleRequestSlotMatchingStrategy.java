@@ -34,6 +34,7 @@ import java.util.Map;
 public enum SimpleRequestSlotMatchingStrategy implements RequestSlotMatchingStrategy {
     INSTANCE;
 
+    //为当前等待分配资源的请求（Pending Requests）与可用的物理槽位（Physical Slots）进行基础的资源规格匹配，并建立绑定关系
     @Override
     public Collection<RequestSlotMatch> matchRequestsAndSlots(
             Collection<? extends PhysicalSlot> slots,
@@ -48,9 +49,14 @@ public enum SimpleRequestSlotMatchingStrategy implements RequestSlotMatchingStra
             final Iterator<PendingRequest> pendingRequestIterator = pendingRequestsIndex.iterator();
 
             while (pendingRequestIterator.hasNext()) {
+                //
                 final PendingRequest pendingRequest = pendingRequestIterator.next();
+                //检查当前 Slot 的资源规格（如 CPU、内存等）是否大于或等于请求所要求的资源规格
                 if (slot.getResourceProfile().isMatching(pendingRequest.getResourceProfile())) {
-                    resultingMatches.add(RequestSlotMatch.createFor(pendingRequest, slot));
+                    // 资源匹配
+                    RequestSlotMatch slotMatch = RequestSlotMatch.createFor(pendingRequest, slot);
+                    resultingMatches.add(slotMatch);
+                    //从等待队列中移除该请求
                     pendingRequestIterator.remove();
                     break;
                 }

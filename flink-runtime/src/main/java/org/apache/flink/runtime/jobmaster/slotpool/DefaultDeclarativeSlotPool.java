@@ -177,7 +177,7 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
             slotRequestFuture =
                     componentMainThreadExecutor.schedule(
                             () -> {
-                                // 1. 真正执行 RPC 宣告
+                                //声明资源
                                 declareResourceRequirements();
                                 if (!internalAdjust) { // internalAdjust = false
                                     //
@@ -215,6 +215,8 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
                 resourceRequirements,
                 System.lineSeparator(),
                 fulfilledResourceRequirements);
+        // 会将resourceRequirements 传给  notifyNewResourceRequirements 去执行
+        //DeclarativeSlotPoolService#declareResourceRequirements
         notifyNewResourceRequirements.accept(resourceRequirements);
     }
 
@@ -261,30 +263,33 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
 
         for (SlotOffer offer : offers) {
             if (slotPool.containsSlot(offer.getAllocationId())) {
+                // 已经包含类该slot
                 // we have already accepted this offer
                 acceptedSlotOffers.add(offer);
             } else {
                 //将SlotOffer 封装成 AllocatedSlot
-                Optional<AllocatedSlot> acceptedSlot =
-                        matchOfferWithOutstandingRequirements(offer, taskManagerLocation, taskManagerGateway, matchingCondition);//
+                Optional<AllocatedSlot> acceptedSlot = matchOfferWithOutstandingRequirements(offer, taskManagerLocation, taskManagerGateway, matchingCondition);//
                 if (acceptedSlot.isPresent()) {
-                    //
+                    //匹配
                     acceptedSlotOffers.add(offer);
                     acceptedSlots.add(acceptedSlot.get());
                 } else {
+                    //不匹配
                     log.debug(
                             "Could not match offer {} to any outstanding requirement.",
                             offer.getAllocationId());
                 }
             }
         }
-
+        //
         slotPool.addSlots(acceptedSlots, currentTime);
 
         if (!acceptedSlots.isEmpty()) {
             log.debug(
                     "Acquired new resources; new total acquired resources: {}",
                     fulfilledResourceRequirements);
+            //通知有新 slot 可用
+            //DeclarativeSlotPoolBridge#newSlotsAreAvailable
             newSlotsListener.notifyNewSlotsAreAvailable(acceptedSlots);
         }
 
@@ -332,7 +337,8 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
             TaskManagerLocation taskManagerLocation,
             TaskManagerGateway taskManagerGateway,
             Function<ResourceProfile, Optional<ResourceProfile>> matchingCondition) {
-
+        // slotOffer.getResourceProfile() RM 提供的offer资源
+        // matchingCondition == this::matchWithOutstandingRequirement
         final Optional<ResourceProfile> match = matchingCondition.apply(slotOffer.getResourceProfile());
 
         if (match.isPresent()) {
@@ -356,10 +362,10 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
         return Optional.empty();
     }
 
-    private Optional<ResourceProfile> matchWithOutstandingRequirement(
-            ResourceProfile resourceProfile) {
-        //
-        return requirementMatcher.match(
+    //对RM提供的slot 资源进行匹配 判断是否符合要求
+    private Optional<ResourceProfile> matchWithOutstandingRequirement(ResourceProfile resourceProfile) {
+        //resourceProfile 为 RM 提供的offer资源
+        return requirementMatcher.match(//
                 resourceProfile,
                 totalResourceRequirements,
                 fulfilledResourceRequirements::getResourceCount);
@@ -396,8 +402,7 @@ public class DefaultDeclarativeSlotPool implements DeclarativeSlotPool {
     }
 
     @Override
-    public PhysicalSlot reserveFreeSlot(
-            AllocationID allocationId, ResourceProfile requiredSlotProfile) {
+    public PhysicalSlot reserveFreeSlot(AllocationID allocationId, ResourceProfile requiredSlotProfile) {
         final AllocatedSlot allocatedSlot = slotPool.reserveFreeSlot(allocationId);
 
         Preconditions.checkState(

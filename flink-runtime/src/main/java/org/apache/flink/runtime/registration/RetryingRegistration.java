@@ -145,10 +145,11 @@ public abstract class RetryingRegistration<
             final CompletableFuture<G> rpcGatewayFuture;
 
             if (FencedRpcGateway.class.isAssignableFrom(targetType)) {
+                //获取 指定地址的连接
                 rpcGatewayFuture =
                         (CompletableFuture<G>)
                                 rpcService.connect(
-                                        targetAddress,
+                                        targetAddress,//pekko://flink/user/rpc/resourcemanager_2
                                         fencingToken,
                                         targetType.asSubclass(FencedRpcGateway.class));
             } else {
@@ -160,7 +161,7 @@ public abstract class RetryingRegistration<
                     rpcGatewayFuture.thenAcceptAsync(
                             (G rpcGateway) -> {
                                 log.info("Resolved {} address, beginning registration", targetName);
-                                //tod 注册
+                                //todo 注册
                                 register(
                                         rpcGateway,//resourcemanager 网关对象
                                         1,
