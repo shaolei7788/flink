@@ -87,7 +87,7 @@ public abstract class LeaderRetrievalHandler<T extends RestfulGateway>
                         // gateway =
                         gateway -> {
                             try {
-                                //StaticFileServerHandler#respondAsLeader
+                                //StaticFileServerHandler#respondAsLeader  会生成JobGraph
                                 respondAsLeader(channelHandlerContext, routedRequest, gateway);
                             } catch (Exception e) {
                                 logger.error("Error while responding to the http request.", e);

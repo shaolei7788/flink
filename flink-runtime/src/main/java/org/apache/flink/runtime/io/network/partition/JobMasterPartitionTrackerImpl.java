@@ -83,16 +83,16 @@ public class JobMasterPartitionTrackerImpl
         Preconditions.checkNotNull(producingTaskExecutorId);
         Preconditions.checkNotNull(resultPartitionDeploymentDescriptor);
 
-        // non-releaseByScheduler partitions don't require explicit partition release calls.
+        // non-releaseByScheduler partitions don't require explicit(明确的) partition release calls.
+        // 判断 releaseBy == ReleaseBy.SCHEDULER
         if (!resultPartitionDeploymentDescriptor.getPartitionType().isReleaseByScheduler()) {
+            //
             return;
         }
 
-        final ResultPartitionID resultPartitionId =
-                resultPartitionDeploymentDescriptor.getShuffleDescriptor().getResultPartitionID();
+        final ResultPartitionID resultPartitionId = resultPartitionDeploymentDescriptor.getShuffleDescriptor().getResultPartitionID();
 
-        startTrackingPartition(
-                producingTaskExecutorId, resultPartitionId, resultPartitionDeploymentDescriptor);
+        startTrackingPartition(producingTaskExecutorId, resultPartitionId, resultPartitionDeploymentDescriptor);
     }
 
     @Override
@@ -103,8 +103,7 @@ public class JobMasterPartitionTrackerImpl
         // A partition is registered into 'partitionTable' only when it occupies
         // resource on the corresponding TM;
         if (metaInfo.getShuffleDescriptor().storesLocalResourcesOn().isPresent()) {
-            partitionTable.startTrackingPartitions(
-                    key, Collections.singletonList(resultPartitionId));
+            partitionTable.startTrackingPartitions(key, Collections.singletonList(resultPartitionId));
         }
         partitionInfos.put(resultPartitionId, new PartitionInfo<>(key, metaInfo));
     }

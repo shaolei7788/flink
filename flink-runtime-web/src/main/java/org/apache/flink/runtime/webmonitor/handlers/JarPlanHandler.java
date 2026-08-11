@@ -43,6 +43,8 @@ import java.util.function.Function;
 import static java.util.Objects.requireNonNull;
 
 /** This handler handles requests to fetch the plan for a jar. */
+//当你在 Flink Web UI 页面点击某个 Jar 包，然后点击 "Show Plan"（显示执行计划） 按钮时，
+// 或者通过 REST API 请求 /jars/:jarid/plan 时，触发的才是 JarPlanHandler
 public class JarPlanHandler
         extends AbstractRestHandler<
                 RestfulGateway, JarPlanRequestBody, JobPlanInfo, JarPlanMessageParameters> {
@@ -105,8 +107,8 @@ public class JarPlanHandler
                 () -> {
                     try (PackagedProgram packagedProgram =
                             context.toPackagedProgram(effectiveConfiguration)) {
-                        final JobGraph jobGraph =
-                                context.toJobGraph(packagedProgram, effectiveConfiguration, true);
+                        // 生成JobGraph
+                        final JobGraph jobGraph = context.toJobGraph(packagedProgram, effectiveConfiguration, true);
                         return planGenerator.apply(jobGraph);
                     }
                 },

@@ -80,7 +80,8 @@ public abstract class AbstractRestHandler<
         CompletableFuture<P> response;
 
         try {
-            response = handleRequest(handlerRequest, gateway);
+            // 生成JobGraph
+            response = handleRequest(handlerRequest, gateway);//
         } catch (RestHandlerException e) {
             response = FutureUtils.completedExceptionally(e);
         }

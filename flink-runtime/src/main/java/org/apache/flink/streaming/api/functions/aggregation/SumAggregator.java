@@ -37,7 +37,7 @@ public class SumAggregator<T> extends AggregationFunction<T> {
     private final TypeSerializer<T> serializer;
     private final boolean isTuple;
 
-    public SumAggregator(int pos, TypeInformation<T> typeInfo, ExecutionConfig config) {
+    public SumAggregator(int pos, TypeInformation<T> typeInfo, ExecutionConfig config) {//
         fieldAccessor = FieldAccessorFactory.getAccessor(typeInfo, pos, config);
         adder = SumFunction.getForClass(fieldAccessor.getFieldType().getTypeClass());
         if (typeInfo instanceof TupleTypeInfo) {
@@ -65,13 +65,12 @@ public class SumAggregator<T> extends AggregationFunction<T> {
     @SuppressWarnings("unchecked")
     public T reduce(T value1, T value2) throws Exception {
         if (isTuple) {
+            // tuple 类型
             Tuple result = ((Tuple) value1).copy();
-            return fieldAccessor.set(
-                    (T) result, adder.add(fieldAccessor.get(value1), fieldAccessor.get(value2)));
+            return fieldAccessor.set((T) result, adder.add(fieldAccessor.get(value1), fieldAccessor.get(value2)));
         } else {
             T result = serializer.copy(value1);
-            return fieldAccessor.set(
-                    result, adder.add(fieldAccessor.get(value1), fieldAccessor.get(value2)));
+            return fieldAccessor.set(result, adder.add(fieldAccessor.get(value1), fieldAccessor.get(value2)));
         }
     }
 }

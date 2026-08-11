@@ -65,7 +65,7 @@ public class LocalStreamEnvironment extends StreamExecutionEnvironment {
 
     @Override
     public JobExecutionResult execute(StreamGraph streamGraph) throws Exception {
-        //todo
-        return super.execute(streamGraph);//
+        //StreamExecutionEnvironment#execute
+        return super.execute(streamGraph);
     }
 }

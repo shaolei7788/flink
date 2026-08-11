@@ -1163,13 +1163,14 @@ public class StreamGraph implements Pipeline, ExecutionPlan {
         return getJobGraph(Thread.currentThread().getContextClassLoader(), jobId);
     }
 
-    public JobGraph getJobGraph(ClassLoader userClassLoader) {
-        return getJobGraph(userClassLoader, jobId);
+    public JobGraph getJobGraph(ClassLoader userClassLoader) {//
+        return getJobGraph(userClassLoader, jobId);//
     }
 
     /** Gets the assembled {@link JobGraph} with a specified {@link JobID}. */
     public JobGraph getJobGraph(ClassLoader userClassLoader, @Nullable JobID jobID) {
-        return StreamingJobGraphGenerator.createJobGraph(userClassLoader, this, jobID);
+        //
+        return StreamingJobGraphGenerator.createJobGraph(userClassLoader, this, jobID);//
     }
 
     public String getStreamingPlanAsJSON() {

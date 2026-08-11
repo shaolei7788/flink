@@ -52,6 +52,7 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
 
 /** Default implementation of {@link ExecutionDeployer}. */
+//主要充当了资源分配（Slot 申请）与底层任务发布（Task Deployment）之间的桥梁
 public class DefaultExecutionDeployer implements ExecutionDeployer {
 
     private final Logger log;
@@ -87,7 +88,7 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
             final ExecutionOperations executionOperations,
             final ExecutionVertexVersioner executionVertexVersioner,
             final Duration partitionRegistrationTimeout,
-            final BiConsumer<ExecutionVertexID, AllocationID> allocationReservationFunc,
+            final BiConsumer<ExecutionVertexID, AllocationID> allocationReservationFunc,//DefaultScheduler#startReserveAllocation
             final ComponentMainThreadExecutor mainThreadExecutor) {
 
         this.log = checkNotNull(log);
@@ -99,22 +100,26 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
         this.mainThreadExecutor = checkNotNull(mainThreadExecutor);
     }
 
-    //分配slot 并部署
+    //主要职责是采取“批量申请资源，再统一异步部署”的策略，确保一组属于同一个执行区域（Region）的 Task 能够高效、原子化地运行起来
     @Override
     public void allocateSlotsAndDeploy(
             final List<Execution> executionsToDeploy,
             final Map<ExecutionVertexID, ExecutionVertexVersion> requiredVersionByVertex) {
+        //检查传入的所有 Execution（执行尝试）当前是否处于合法的初始状态（通常是 CREATED）
         validateExecutionStates(executionsToDeploy);
-
+        //将这批 Execution 的生命周期状态从 CREATED 正式切换为 SCHEDULED（已调度）
         transitionToScheduled(executionsToDeploy);
 
-        // 分配slot 如果共享slot没有就 申请新的slot
+        //调用内部的 Slot 分配器（如 ExecutionSlotAllocator），为这一批 Task 批量申请 TaskSlot 资源
+        //Key 是任务的尝试 ID（ExecutionAttemptID），Value 是分配给它的 Slot 目标信息里面包含了未来这个 Task 要运行在哪个 TaskManager、哪个 Slot 上
         final Map<ExecutionAttemptID, ExecutionSlotAssignment> executionSlotAssignmentMap = allocateSlotsFor(executionsToDeploy);
 
+        //将每个 Task 的 Execution 对象、Slot 赋值结果，以及顶层的拓扑版本号（requiredVersionByVertex）打包组合，封装成一个一个的 ExecutionDeploymentHandle
+        //由于 Slot 申请是异步的（资源可能不会立刻到位），Flink 需要一个结构来跟踪“哪个任务对应哪个正在申请的 Slot，且当时调度的拓扑版本是多少”。
+        // requiredVersionByVertex 的引入是为了防止并发 Failover 导致旧版本的调度请求覆盖新版本的请求（分布式并发控制）
         final List<ExecutionDeploymentHandle> deploymentHandles =
-                //
-                createDeploymentHandles(executionsToDeploy, requiredVersionByVertex, executionSlotAssignmentMap);
-        //
+                createDeploymentHandles(executionsToDeploy, requiredVersionByVertex, executionSlotAssignmentMap);//
+        //这是最关键的异步等待机制。它会等待 deploymentHandles 中所有 Slot 的分配 Future 完成
         waitForAllSlotsAndDeploy(deploymentHandles);
     }
 
@@ -145,21 +150,33 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
             final List<Execution> executionsToDeploy,
             final Map<ExecutionVertexID, ExecutionVertexVersion> requiredVersionByVertex,
             final Map<ExecutionAttemptID, ExecutionSlotAssignment> executionSlotAssignmentMap) {
+        //断言确保需要部署的任务数量（executionsToDeploy）与资源分配器返回的 Slot 分配结果数量
         checkState(executionsToDeploy.size() == executionSlotAssignmentMap.size());
         final List<ExecutionDeploymentHandle> deploymentHandles = new ArrayList<>(executionsToDeploy.size());
+        // 遍历executionsToDeploy
         for (final Execution execution : executionsToDeploy) {
+
             final ExecutionSlotAssignment assignment = checkNotNull(executionSlotAssignmentMap.get(execution.getAttemptId()));
 
             final ExecutionVertexID executionVertexId = execution.getVertex().getID();
-            //
-            final ExecutionDeploymentHandle deploymentHandle =
-                    new ExecutionDeploymentHandle(execution, assignment, requiredVersionByVertex.get(executionVertexId));//
+            //使用ExecutionDeploymentHandle封装 Execution、ExecutionSlotAssignment、ExecutionVertexVersion
+            // Execution  任务执行的上下文：包含 Task 的状态机、运行期指标、拓扑中的上下游依赖等
+            // ExecutionSlotAssignment  代表未来这个 Task 会落在哪个物理机器（TaskManager）和哪个 Slot 上
+            // requiredVersionByVertex = 代表该任务在被决定调度时，当前节点（ExecutionVertex）所处的最新版本
+            final ExecutionDeploymentHandle deploymentHandle = new ExecutionDeploymentHandle(execution, assignment, requiredVersionByVertex.get(executionVertexId));//
             deploymentHandles.add(deploymentHandle);
         }
 
-        return deploymentHandles;
+        return deploymentHandles;//size = 5
     }
 
+    //【1. 申请 Slot 成功】
+    //        ↓
+    //【2. 动态激活回调】 ──> 执行 registerProducedPartitions (通知集群我们要在这台机器上产出数据了)
+    //        ↓
+    //【3. 网络分区注册成功 (且未超时)】
+    //        ↓
+    //【4. 真正触发 RPC 提交】 ──> 执行 Execution.deploy() (把代码和参数发往 TaskManager 启动线程)
     private void waitForAllSlotsAndDeploy(final List<ExecutionDeploymentHandle> deploymentHandles) {
         FutureUtils.assertNoException(
                 //1 先执行 assignAllResourcesAndRegisterProducedPartitions
@@ -168,6 +185,7 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
                         .handle(deployAll(deploymentHandles)));
     }
 
+
     private CompletableFuture<Void> assignAllResourcesAndRegisterProducedPartitions(
             final List<ExecutionDeploymentHandle> deploymentHandles) {
         final List<CompletableFuture<Void>> resultFutures = new ArrayList<>();
@@ -175,7 +193,7 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
         for (ExecutionDeploymentHandle deploymentHandle : deploymentHandles) {
             final CompletableFuture<Void> resultFuture =
                     deploymentHandle
-                            //获取槽位
+                            //获取logic slot
                             .getLogicalSlotFuture()
                             //分配资源  无论上一步成功还是失败，handle 都会执行。这确保了如果槽位申请失败，assignResource 内部可以进行相应的状态清理或错误转换
                             .handle(assignResource(deploymentHandle))
@@ -196,11 +214,11 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
         return FutureUtils.waitForAll(resultFutures);
     }
 
-    private BiFunction<Void, Throwable, Void> deployAll(
-            final List<ExecutionDeploymentHandle> deploymentHandles) {
+    private BiFunction<Void, Throwable, Void> deployAll(final List<ExecutionDeploymentHandle> deploymentHandles) {
         return (ignored, throwable) -> {
             propagateIfNonNull(throwable);
             for (final ExecutionDeploymentHandle deploymentHandle : deploymentHandles) {
+                //
                 final CompletableFuture<LogicalSlot> slotAssigned = deploymentHandle.getLogicalSlotFuture();
                 checkState(slotAssigned.isDone());
 
@@ -218,7 +236,7 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
         }
     }
 
-    //
+    //处理单个任务（Execution）与它申请到的物理/逻辑资源（LogicalSlot）之间的异步绑定与状态指派
     private BiFunction<LogicalSlot, Throwable, LogicalSlot> assignResource(
             final ExecutionDeploymentHandle deploymentHandle) {
 
@@ -226,7 +244,7 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
 
             final ExecutionVertexVersion requiredVertexVersion = deploymentHandle.getRequiredVertexVersion();
             final Execution execution = deploymentHandle.getExecution();
-
+            //检查状态
             if (execution.getState() != ExecutionState.SCHEDULED || executionVertexVersioner.isModified(requiredVertexVersion)) {
                 if (throwable == null) {
                     log.debug(
@@ -242,6 +260,7 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
             // this ensures that canceling a pending slot request does not fail
             // a task which is about to cancel.
             if (throwable != null) {
+                // 抛出异常 资源不够
                 throw new CompletionException(maybeWrapWithNoResourceAvailableException(throwable));
             }
 
@@ -258,6 +277,7 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
             // problems to reserve multiple slots for one execution vertex. Besides that, slot
             // reservation is for local recovery and therefore is only needed by streaming jobs, in
             // which case an execution vertex will have one only current execution.
+            //DefaultScheduler#startReserveAllocation
             allocationReservationFunc.accept(execution.getAttemptId().getExecutionVertexId(), logicalSlot.getAllocationId());
 
             return logicalSlot;
@@ -282,33 +302,37 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
         }
     }
 
-    private Function<LogicalSlot, CompletableFuture<Void>> registerProducedPartitions(
-            final ExecutionDeploymentHandle deploymentHandle) {
+
+
+    //向集群的 ShuffleMaster（数据分发管理器）注册该 Task 将要产生（输出）的数据分区（ResultPartitions），并为此注册过程设置一个异步超时机制
+    private Function<LogicalSlot, CompletableFuture<Void>> registerProducedPartitions(final ExecutionDeploymentHandle deploymentHandle) {
 
         return logicalSlot -> {
             // a null logicalSlot means the slot assignment is skipped, in which case
             // the produced partition registration process can be skipped as well
             if (logicalSlot != null) {
                 final Execution execution = deploymentHandle.getExecution();
-                final CompletableFuture<Void> partitionRegistrationFuture =
-                        execution.registerProducedPartitions(logicalSlot.getTaskManagerLocation());
-
+                //logicalSlot.getTaskManagerLocation()  这个 Task 未来会在哪一台具体的物理机器（TaskManager）上运行
+                final CompletableFuture<Void> partitionRegistrationFuture = execution.registerProducedPartitions(logicalSlot.getTaskManagerLocation());
+                //设定了一个硬性超时时间（partitionRegistrationTimeout）。
+                // 如果partitionRegistrationFuture超时未完成，该 Future 将被强制标记为异常失败（TimeoutException），从而触发该任务的调度失败和 Failover 流程，以便快速重试或暴露问题
                 return FutureUtils.orTimeout(
                         partitionRegistrationFuture,
-                        partitionRegistrationTimeout.toMillis(),
+                        partitionRegistrationTimeout.toMillis(),//
                         TimeUnit.MILLISECONDS,
                         mainThreadExecutor,
                         String.format(
                                 "Registering produced partitions for execution %s timed out after %d ms.",
                                 execution.getAttemptId(), partitionRegistrationTimeout.toMillis()));
             } else {
+                //如果传入的 logicalSlot 为 null，说明该任务的 Slot 分配被跳过了（这在某些特定的恢复场景或测试中会出现）
+                // 返回一个已经完成的空 Future
                 return FutureUtils.completedVoidFuture();
             }
         };
     }
 
-    private BiFunction<Object, Throwable, Void> deployOrHandleError(//
-            final ExecutionDeploymentHandle deploymentHandle) {
+    private BiFunction<Object, Throwable, Void> deployOrHandleError(final ExecutionDeploymentHandle deploymentHandle) {//
 
         return (ignored, throwable) -> {
             //
@@ -338,6 +362,11 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
     private void deployTaskSafe(final Execution execution) {
         try {
             //DefaultExecutionOperations#deploy
+            // Attempt #0 (Source: Socket Stream (1/1)) @ org.apache.flink.runtime.jobmaster.slotpool.SingleLogicalSlot@36aa5726 - [SCHEDULED]
+            // Attempt #0 (Flat Map -> Map (1/2)) @ org.apache.flink.runtime.jobmaster.slotpool.SingleLogicalSlot@13a9abd0 - [SCHEDULED]
+            // Attempt #0 (Flat Map -> Map (2/2)) @ org.apache.flink.runtime.jobmaster.slotpool.SingleLogicalSlot@439410da - [SCHEDULED]
+            // Attempt #0 (Keyed Aggregation -> Sink: Print to Std. Out (1/2)) @ org.apache.flink.runtime.jobmaster.slotpool.SingleLogicalSlot@3e15509 - [SCHEDULED]
+            // Attempt #0 (Keyed Aggregation -> Sink: Print to Std. Out (2/2)) @ org.apache.flink.runtime.jobmaster.slotpool.SingleLogicalSlot@63da5f75 - [SCHEDULED]
             executionOperations.deploy(execution);
         } catch (Throwable e) {
             handleTaskDeploymentFailure(execution, e);
@@ -403,7 +432,7 @@ public class DefaultExecutionDeployer implements ExecutionDeployer {
                 ExecutionOperations executionOperations,
                 ExecutionVertexVersioner executionVertexVersioner,
                 Duration partitionRegistrationTimeout,
-                BiConsumer<ExecutionVertexID, AllocationID> allocationReservationFunc,
+                BiConsumer<ExecutionVertexID, AllocationID> allocationReservationFunc,//DefaultScheduler#startReserveAllocation
                 ComponentMainThreadExecutor mainThreadExecutor) {
             return new DefaultExecutionDeployer(
                     log,

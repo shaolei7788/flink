@@ -165,9 +165,9 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
     @Override
     protected void onStart() {
         //注册获取新slot的监听器
-        // DefaultDeclarativeSlotPool#registerNewSlotsListener
+        // DefaultDeclarativeSlotPool#registerNewSlotsListener 给内部成员变量监听器赋值
         getDeclarativeSlotPool().registerNewSlotsListener(this::newSlotsAreAvailable);//
-        if (deferSlotAllocation) {
+        if (deferSlotAllocation) {//false
             getDeclarativeSlotPool()
                     .registerResourceRequestStableListener(
                             () -> {
@@ -179,9 +179,10 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
                                 }
                             });
         }
-
+        //调度checkIdleSlotTimeout方法 idleSlotTimeout.toMillis() = 50000
         componentMainThreadExecutor.schedule(
                 this::checkIdleSlotTimeout, idleSlotTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        //调度checkBatchSlotTimeout方法 batchSlotTimeout.toMillis() = 300000
         componentMainThreadExecutor.schedule(
                 this::checkBatchSlotTimeout, batchSlotTimeout.toMillis(), TimeUnit.MILLISECONDS);
     }
@@ -537,11 +538,13 @@ public class DeclarativeSlotPoolBridge extends DeclarativeSlotPoolService implem
         failPendingRequests(acquiredResources);
     }
 
+    //
     private void failPendingRequests(Collection<ResourceRequirement> acquiredResources) {
         // only fails streaming requests because batch jobs do not require all resources
         // requirements to be fullfilled at the same time
         Predicate<PendingRequest> predicate = request -> !request.isBatchRequest();
         if (pendingRequests.values().stream().anyMatch(predicate)) {
+            //资格不够
             log.warn(
                     "Could not acquire the minimum required resources, failing slot requests. Acquired: {}. Current slot pool status: {}",
                     acquiredResources,

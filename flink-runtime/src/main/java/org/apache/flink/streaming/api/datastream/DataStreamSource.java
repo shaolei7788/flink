@@ -63,9 +63,10 @@ public class DataStreamSource<T> extends SingleOutputStreamOperator<T> {
             boolean isParallel,
             String sourceName,
             Boundedness boundedness) {
+        //
         super(
                 environment,
-                createSourceTransformation(
+                createSourceTransformation(//
                         environment, outTypeInfo, operator, isParallel, sourceName, boundedness));
 
         this.isParallel = isParallel;
@@ -74,6 +75,7 @@ public class DataStreamSource<T> extends SingleOutputStreamOperator<T> {
         }
     }
 
+    //将 operator 包装成LegacySourceTransformation
     private static <T> LegacySourceTransformation<T> createSourceTransformation(
             StreamExecutionEnvironment environment,
             TypeInformation<T> outTypeInfo,
@@ -81,14 +83,14 @@ public class DataStreamSource<T> extends SingleOutputStreamOperator<T> {
             boolean isParallel,
             String sourceName,
             Boundedness boundedness) {
-        LegacySourceTransformation<T> transformation =
-                new LegacySourceTransformation<>(
+        LegacySourceTransformation<T> transformation = new LegacySourceTransformation<>(
                         sourceName,
-                        operator,
-                        outTypeInfo,
-                        environment.getParallelism(),
-                        boundedness,
+                        operator,//当前算子
+                        outTypeInfo,//输出类型 String
+                        environment.getParallelism(),//并行度
+                        boundedness,//CONTINUOUS_UNBOUNDED
                         false);
+        //设置为任务链的第一个
         transformation.setChainingStrategy(ChainingStrategy.HEAD);
         return transformation;
     }

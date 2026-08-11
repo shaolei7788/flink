@@ -123,9 +123,9 @@ public class DataStream<T> {
     public DataStream(StreamExecutionEnvironment environment, Transformation<T> transformation) {
         this.environment =
                 Preconditions.checkNotNull(environment, "Execution Environment must not be null.");
+        // LegacySourceTransformation{id=1, name='Socket Stream', outputType=String, parallelism=2}
         this.transformation =
-                Preconditions.checkNotNull(
-                        transformation, "Stream Transformation must not be null.");
+                Preconditions.checkNotNull(transformation, "Stream Transformation must not be null.");
     }
 
     /**
@@ -183,6 +183,7 @@ public class DataStream<T> {
      * @return The cleaned Function
      */
     protected <F> F clean(F f) {
+        //
         return getExecutionEnvironment().clean(f);
     }
 
@@ -273,7 +274,7 @@ public class DataStream<T> {
      */
     public <K> KeyedStream<T, K> keyBy(KeySelector<T, K> key) {
         Preconditions.checkNotNull(key);
-        return new KeyedStream<>(this, clean(key));
+        return new KeyedStream<>(this, clean(key));//
     }
 
     /**
@@ -420,12 +421,12 @@ public class DataStream<T> {
      * @return The transformed {@link DataStream}.
      */
     public <R> SingleOutputStreamOperator<R> map(MapFunction<T, R> mapper) {
-
+        //
         TypeInformation<R> outType =
                 TypeExtractor.getMapReturnTypes(
                         clean(mapper), getType(), Utils.getCallLocationName(), true);
 
-        return map(mapper, outType);
+        return map(mapper, outType);//
     }
 
     /**
@@ -441,7 +442,8 @@ public class DataStream<T> {
      */
     public <R> SingleOutputStreamOperator<R> map(
             MapFunction<T, R> mapper, TypeInformation<R> outputType) {
-        return transform("Map", outputType, new StreamMap<>(clean(mapper)));
+        // 用StreamMap包装MapFunction
+        return transform("Map", outputType, new StreamMap<>(clean(mapper)));//
     }
 
     /**
@@ -456,12 +458,18 @@ public class DataStream<T> {
      * @return The transformed {@link DataStream}.
      */
     public <R> SingleOutputStreamOperator<R> flatMap(FlatMapFunction<T, R> flatMapper) {
+        //由于 Java 的泛型擦除机制（Type Erasure），运行时直接看 flatMap 方法的返回值是拿不到任何有用信息的。
+        // 因此，Flink 必须定义 getFlatMapReturnTypes，通过反射去拆解 Collector<OUT> 接口的泛型参数，从而强行挖出 OUT 的真实类型
 
+        //Java 的泛型只存在于编译期，一旦代码编译成字节码（.class 文件）后，所有的泛型信息都会被擦除（抹去），还原成原始类型
+        //泛型被擦除后，会被替换为它的原始类型（Raw Type）：
+        //如果泛型没有设置边界（如 <T>），擦除后一律变成 Object。
+        //如果泛型设置了上限（如 <T extends Number>），擦除后会变成该上限类型 Number
         TypeInformation<R> outType =
                 TypeExtractor.getFlatMapReturnTypes(
                         clean(flatMapper), getType(), Utils.getCallLocationName(), true);
 
-        return flatMap(flatMapper, outType);
+        return flatMap(flatMapper, outType);//
     }
 
     /**
@@ -478,7 +486,8 @@ public class DataStream<T> {
      */
     public <R> SingleOutputStreamOperator<R> flatMap(
             FlatMapFunction<T, R> flatMapper, TypeInformation<R> outputType) {
-        return transform("Flat Map", outputType, new StreamFlatMap<>(clean(flatMapper)));
+        // 用 StreamFlatMap 包装FlatMapFunction
+        return transform("Flat Map", outputType, new StreamFlatMap<>(clean(flatMapper)));//
     }
 
     /**
@@ -789,13 +798,14 @@ public class DataStream<T> {
      * @return the data stream constructed
      * @see #transform(String, TypeInformation, OneInputStreamOperatorFactory)
      */
+    //
     @PublicEvolving
     public <R> SingleOutputStreamOperator<R> transform(
             String operatorName,
             TypeInformation<R> outTypeInfo,
-            OneInputStreamOperator<T, R> operator) {
-
-        return doTransform(operatorName, outTypeInfo, SimpleOperatorFactory.of(operator));
+            OneInputStreamOperator<T, R> operator) {// operator = StreamFlatMap
+        // SimpleOperatorFactory.of(operator) 核心作用是将一个已经实例化的算子（StreamOperator）包装成一个算子工厂
+        return doTransform(operatorName, outTypeInfo, SimpleOperatorFactory.of(operator));//
     }
 
     /**
@@ -820,28 +830,29 @@ public class DataStream<T> {
         return doTransform(operatorName, outTypeInfo, operatorFactory);
     }
 
+    //将 转换成 Transformation
+    // 并加入 env的 transformations 集合里  再将Transformation封装成 Operator 返回
     protected <R> SingleOutputStreamOperator<R> doTransform(
             String operatorName,
             TypeInformation<R> outTypeInfo,
             StreamOperatorFactory<R> operatorFactory) {
-
         // read the output type of the input Transform to coax out errors about MissingTypeInfo
+        //获取 上游 Transformation输出数据的类型信息
         transformation.getOutputType();
-
+        //
         OneInputTransformation<T, R> resultTransform =
                 new OneInputTransformation<>(
-                        this.transformation,
-                        operatorName,
-                        operatorFactory,
-                        outTypeInfo,
-                        environment.getParallelism(),
-                        false);
-
+                        this.transformation,     // 1. 上游的 Transformation（确立依赖关系，连线）
+                        operatorName,            // 2. 算子名称（如 "Flat Map"）
+                        operatorFactory,         // 3. 算子工厂（包裹着用户逻辑，如 FlatMapFunction）
+                        outTypeInfo,             // 4. 下游输出的类型信息
+                        environment.getParallelism(), // 5. 算子的并行度
+                        false);                  // 6. 是否支持非链化（Chaining）
+        // 将operator 添加到 transformations 集合里
+        getExecutionEnvironment().addOperator(resultTransform);//
+        // resultTransform 是 SingleOutputStreamOperator 的 transformation
         @SuppressWarnings({"unchecked", "rawtypes"})
-        SingleOutputStreamOperator<R> returnStream =
-                new SingleOutputStreamOperator(environment, resultTransform);
-
-        getExecutionEnvironment().addOperator(resultTransform);
+        SingleOutputStreamOperator<R> returnStream = new SingleOutputStreamOperator(environment, resultTransform);
 
         return returnStream;
     }

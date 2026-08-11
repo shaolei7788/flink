@@ -29,8 +29,7 @@ public class DefaultExecutionOperations implements ExecutionOperations {
 
     @Override
     public void deploy(Execution execution) throws JobException {
-        //
-        execution.deploy();
+        execution.deploy();//
     }
 
     @Override

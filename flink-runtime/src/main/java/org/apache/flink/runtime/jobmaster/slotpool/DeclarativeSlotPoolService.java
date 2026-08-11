@@ -59,7 +59,7 @@ public class DeclarativeSlotPoolService implements SlotPoolService {
 
     private final Duration rpcTimeout;
 
-    //
+    //DefaultDeclarativeSlotPool
     private final DeclarativeSlotPool declarativeSlotPool;
 
     private final Clock clock;
@@ -121,16 +121,15 @@ public class DeclarativeSlotPoolService implements SlotPoolService {
 
     @Override
     public final void start(JobMasterId jobMasterId, String address) throws Exception {
-        Preconditions.checkState(
-                state == State.CREATED, "The DeclarativeSlotPoolService can only be started once.");
+        //断言状态为CREATED
+        Preconditions.checkState(state == State.CREATED, "The DeclarativeSlotPoolService can only be started once.");
 
         this.jobMasterId = Preconditions.checkNotNull(jobMasterId);
         this.jobManagerAddress = Preconditions.checkNotNull(address);
 
         this.resourceRequirementServiceConnectionManager =
-                DefaultDeclareResourceRequirementServiceConnectionManager.create(
-                        componentMainThreadExecutor);
-        //
+                DefaultDeclareResourceRequirementServiceConnectionManager.create(componentMainThreadExecutor);
+        // DeclarativeSlotPoolBridge#onStart
         onStart();
 
         state = State.STARTED;

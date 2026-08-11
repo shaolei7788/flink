@@ -10,6 +10,21 @@ import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.util.Collector;
 
+// Function(代码逻辑) -> Transformation(逻辑结构) -> Operator(运行时实例)
+//      定义：用户业务逻辑的最小承载体。
+//      所处阶段：API 开发阶段。
+//      特点：通常表现为接口（Interface）或抽象类。例如 MapFunction、FlatMapFunction、FilterFunction。
+//      示例：你在代码里写的 new MapFunction<String, Integer>() { ... } 或 Lambda 表达式 str -> str.length() 就是一个 Function
+// Function 只管计算数据
+// Transformation
+//      定义：Flink 内部用来构建 “逻辑拓扑图（StreamGraph）” 的核心对象。
+//      所处阶段：Graph 编译阶段（对用户透明）。
+//      特点：它记录了数据流是怎么改变的（比如从哪个上游流入、经过什么转换、流向哪个下游）。
+//      示例：当你调用 dataStream.map(new MyMapFunction()) 时，Flink 底层会创建一个 OneInputTransformation 对象。它不负责执行，只负责记录依赖关系
+// Operator
+//      定义：Flink 运行时（Runtime） 真正负责管理状态（State）、生命周期、水位线（Watermark）和数据处理的实体。所处阶段：集群运行阶段。
+//      特点：它是 Function 的“包装壳”。Function 只管计算数据，而 Operator 管得更多（比如什么时候调用 Function、怎么备份状态、怎么处理 Checkpoint）。
+//      示例：StreamMap、StreamFilter
 
 //算子					function					operator	    transformation				transformations     id
 //socketTextStream  	SocketTextStreamFunction	StreamSource	LegacySourceTransformation	    x               1
@@ -47,7 +62,7 @@ public class WordCountStream {
 		//env.getCheckpointConfig().enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
 
 
-        DataStreamSource<String> lineDSS = env.socketTextStream("localhost", 9999);
+        DataStreamSource<String> source = env.socketTextStream("localhost", 9999);
 		//StreamGroupedReduceOperator#processElement
 		FlatMapFunction<String,String> flatMapFunction = new FlatMapFunction<String,String>() {
 			@Override
@@ -59,7 +74,7 @@ public class WordCountStream {
 			}
 		};
 		// 将Function 转换为 Operator 再转为 Transformation 添加到 List<Transformation<?>> transformations
-		SingleOutputStreamOperator<String> wordAndOne = lineDSS.flatMap(flatMapFunction);
+		SingleOutputStreamOperator<String> wordAndOne = source.flatMap(flatMapFunction);
 
 		MapFunction mapFunction = new MapFunction<String, Tuple2<String,Long>>() {
 			@Override

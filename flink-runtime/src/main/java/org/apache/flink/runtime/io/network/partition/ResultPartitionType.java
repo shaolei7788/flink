@@ -19,6 +19,7 @@
 package org.apache.flink.runtime.io.network.partition;
 
 /** Type of a result partition. */
+//ResultPartitionType 是 Flink 网络数据传输层（Network Stack）的关键枚举类。它决定了上游 Task 产生的数据如何缓存、何时分发，以及下游 Task 如何去消费这些数据。
 public enum ResultPartitionType {
 
     /**
@@ -32,6 +33,8 @@ public enum ResultPartitionType {
      * {@link #PIPELINED} partitions), but only released through the scheduler, when it determines
      * that the partition is no longer needed.
      */
+    //经典的批处理（Batch）传统数据交换模式
+            //先产出，后消费：上游 Task 必须完全运行结束，将所有数据完整写入磁盘/外部存储后，下游 Task 才可以启动并开始消费
     BLOCKING(true, false, false, ConsumingConstraint.BLOCKING, ReleaseBy.SCHEDULER),
 
     /**
@@ -45,6 +48,8 @@ public enum ResultPartitionType {
      * scenarios, like when the TaskManager exits or when the TaskManager loses connection to
      * JobManager / ResourceManager for too long.
      */
+    //持久化阻塞类型
+    //应用场景：用于 Flink 批处理中的中间数据集缓存（Intermediate Dataset Caching）。例如用户提交两个有关联的作业，作业 A 生成中间表并固化到集群，作业 B 随后启动直接读取该表，避免重复计算
     BLOCKING_PERSISTENT(true, false, true, ConsumingConstraint.BLOCKING, ReleaseBy.SCHEDULER),
 
     /**
@@ -57,6 +62,8 @@ public enum ResultPartitionType {
      * <p>This result partition type may keep an arbitrary amount of data in-flight, in contrast to
      * the {@link #PIPELINED_BOUNDED} variant.
      */
+    // 这是典型的流处理（Streaming）数据交换模式
+    //数据完全在内存中进行流式传输，上游 Task 一边生产数据，网络层就一边打包发送给下游 Task。它的生命周期是一次性消费的，当下游成功读取并消费完毕后，内存中的 Buffer 就会被自动释放
     PIPELINED(false, false, false, ConsumingConstraint.MUST_BE_PIPELINED, ReleaseBy.UPSTREAM),
 
     /**
@@ -70,6 +77,13 @@ public enum ResultPartitionType {
      * <p>For batch jobs, it will be best to keep this unlimited ({@link #PIPELINED}) since there
      * are no checkpoint barriers.
      */
+    //：单纯的 PIPELINED 在理论上是无限延伸的管道，但计算机内存是有限的。
+    // PIPELINED_BOUNDED 指的是一种在内存中分配了固定大小限制（Upper Bound）的流式传输管道
+    //PIPELINED_BOUNDED 最关键的职责就是触发和传递 Flink 的反压机制。由于网络内存大小被设置了硬性上限，它的工作流遵循以下逻辑：
+    // 当下游算子消费极慢（如写入外部数据库卡住）时，下游的 InputGate 缓冲区很快会被填满。
+    // 下游停止从网络层接收数据，导致上游 TaskManager 专门分配给这个 ResultPartition 的 Local Buffer Pool（有界内存池）也被瞬间填满。
+    // 此时，由于它是 BOUNDED（有界的），上游 Task 无法再申请到新的空闲 Buffer 来存放新生产的数据。
+    // 上游 Task 线程被强制阻塞挂起（RecordWriter 无法写入），从而实现了将下游的压力完美反向传递给上游，这就是 Flink 基于 Credit-based 流控反压机制的底层物质基础
     PIPELINED_BOUNDED(
             false, true, false, ConsumingConstraint.MUST_BE_PIPELINED, ReleaseBy.UPSTREAM),
 
@@ -82,6 +96,8 @@ public enum ResultPartitionType {
      * in that {@link #PIPELINED_APPROXIMATE} partition can be reconnected after down stream task
      * fails.
      */
+    //专门针对容错性要求不高、但追求极致低延迟故障恢复的特殊流场景
+            //应用场景：在线机器学习（Online Learning）、实时采样统计、或者对部分数据丢失不敏感的监控大屏
     PIPELINED_APPROXIMATE(
             false, true, false, ConsumingConstraint.CAN_BE_PIPELINED, ReleaseBy.UPSTREAM),
 
@@ -94,12 +110,16 @@ public enum ResultPartitionType {
      * <p>HYBRID_FULL partitions is re-consumable, so double calculation can be avoided during
      * failover.
      */
+    //允许上游一边生产，下游一边消费（类似 PIPELINED），
+    // 如果下游算子此时刚好有 Slot 资源并启动了，直接从内存拿数据走。如果下游此时没有资源启动，数据会自动写入磁盘暂存（类似 BLOCKING），等下游有资源启动后去读盘
     HYBRID_FULL(true, false, false, ConsumingConstraint.CAN_BE_PIPELINED, ReleaseBy.SCHEDULER),
 
     /**
      * HYBRID_SELECTIVE partitions are similar to {@link #HYBRID_FULL} partitions, but it is not
      * re-consumable.
      */
+    //在 HYBRID_FULL 的基础上做了极致的内存优化。
+    //上游产出的数据只有当下游 Task 已经运行并开始实时消费时，才会在内存保留拷贝。如果下游还没运行，数据直接选择性刷写落盘，最大化释放内存空间给计算算子
     HYBRID_SELECTIVE(
             false, false, false, ConsumingConstraint.CAN_BE_PIPELINED, ReleaseBy.SCHEDULER);
 
@@ -160,9 +180,10 @@ public enum ResultPartitionType {
     }
 
     /** return if this partition's upstream and downstream support scheduling in the same time. */
+    //返回 false 意味着这是一条 Blocking 边（批处理落盘）。上游启动了，下游也不能立刻启动，必须等上游全部运行完。所以此时不需要把下游加到 nextRegions 里。
+    //只有返回 true（Pipelined 边，流式管道），说明上游只要一启动，下游就必须同时启动来消费数据
     public boolean canBePipelinedConsumed() {
-        return consumingConstraint == ConsumingConstraint.CAN_BE_PIPELINED
-                || consumingConstraint == ConsumingConstraint.MUST_BE_PIPELINED;
+        return consumingConstraint == ConsumingConstraint.CAN_BE_PIPELINED || consumingConstraint == ConsumingConstraint.MUST_BE_PIPELINED;
     }
 
     public boolean isReleaseByScheduler() {

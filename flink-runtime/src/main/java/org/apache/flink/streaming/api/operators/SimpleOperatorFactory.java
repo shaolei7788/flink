@@ -43,8 +43,8 @@ public class SimpleOperatorFactory<OUT> extends AbstractStreamOperatorFactory<OU
         if (operator == null) {
             return null;
         } else if (operator instanceof StreamSource
-                && ((StreamSource) operator).getUserFunction()
-                        instanceof InputFormatSourceFunction) {
+                && ((StreamSource) operator).getUserFunction() instanceof InputFormatSourceFunction) {
+            //
             return new SimpleInputFormatOperatorFactory<OUT>((StreamSource) operator);
         } else if (operator instanceof UserFunctionProvider
                 && (((UserFunctionProvider<Function>) operator).getUserFunction()

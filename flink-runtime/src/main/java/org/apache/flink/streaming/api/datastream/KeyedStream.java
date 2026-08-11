@@ -721,8 +721,7 @@ public class KeyedStream<T, KEY> extends DataStream<T> {
      * @return The transformed DataStream.
      */
     public SingleOutputStreamOperator<T> reduce(ReduceFunction<T> reducer) {
-        ReduceTransformation<T, KEY> reduce =
-                new ReduceTransformation<>(
+        ReduceTransformation<T, KEY> reduce = new ReduceTransformation<>(
                         "Keyed Reduce",
                         environment.getParallelism(),
                         transformation,
@@ -733,7 +732,7 @@ public class KeyedStream<T, KEY> extends DataStream<T> {
         if (isEnableAsyncState) {
             reduce.enableAsyncState();
         }
-
+        //
         getExecutionEnvironment().addOperator(reduce);
 
         return new SingleOutputStreamOperator<>(getExecutionEnvironment(), reduce);
@@ -749,7 +748,11 @@ public class KeyedStream<T, KEY> extends DataStream<T> {
      * @return The transformed DataStream.
      */
     public SingleOutputStreamOperator<T> sum(int positionToSum) {
-        return aggregate(new SumAggregator<>(positionToSum, getType(), getExecutionConfig()));
+        SumAggregator<T> sumAggregator = new SumAggregator<>(
+                positionToSum,
+                getType(),
+                getExecutionConfig());
+        return aggregate(sumAggregator);//
     }
 
     /**
@@ -1002,7 +1005,7 @@ public class KeyedStream<T, KEY> extends DataStream<T> {
     }
 
     protected SingleOutputStreamOperator<T> aggregate(AggregationFunction<T> aggregate) {
-        return reduce(aggregate).name("Keyed Aggregation");
+        return reduce(aggregate).name("Keyed Aggregation");//
     }
 
     /**

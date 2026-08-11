@@ -54,7 +54,7 @@ public class StreamSource<OUT, SRC extends SourceFunction<OUT>>
     }
 
     public StreamSource(SRC sourceFunction) {
-        this(sourceFunction, true);
+        this(sourceFunction, true);//
     }
 
     @VisibleForTesting

@@ -89,6 +89,7 @@ public class DefaultSchedulerFactory implements SchedulerNGFactory {
         if (executionPlan instanceof JobGraph) {
             jobGraph = (JobGraph) executionPlan;
         } else if (executionPlan instanceof StreamGraph) {
+            // 【重点】 生成 JobGraph
             jobGraph = ((StreamGraph) executionPlan).getJobGraph(userCodeLoader);
         } else {
             throw new FlinkException(

@@ -97,6 +97,9 @@ public abstract class RegisteredRpcConnection<
     // ------------------------------------------------------------------------
 
     public void start() {
+        // this = JobMaster$ResourceManagerConnection
+        // this = TaskExecutorToResourceManagerConnection
+        // this = DefaultJobLeaderService$JobManagerLeaderListener$JobManagerRegisteredRpcConnection
         checkState(!closed, "The RPC connection is already closed");
         checkState(
                 !isConnected() && pendingRegistration == null,

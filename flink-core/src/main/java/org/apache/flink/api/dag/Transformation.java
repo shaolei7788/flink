@@ -575,6 +575,10 @@ public abstract class Transformation<T> {
      *
      * @return The output type of this {@code Transformation}
      */
+    //主要体现在以下三个方面：
+    // 决定序列化器（Serializer）的生成：Flink 会根据 getOutputType() 返回的 TypeInformation，为该算子的输出数据自动选择或生成最优质的序列化器（如 PojoSerializer、KryoSerializer、TupleSerializer 等）。
+    // 作为下游算子的输入类型检查依据：当一个下游算子（如 map2）连接到当前算子（如 map1）时，下游算子的 OneInputTransformation 需要知道上游的输出类型，以便进行编译期的类型安全检查（Type Safety）。
+    // 状态存储与 Schema 校验：如果当前算子涉及状态（State）操作（如 KeyedStream 后的聚合），该方法返回的类型信息也是构建状态后端（State Backend）Schema 的重要依据
     public TypeInformation<T> getOutputType() {
         if (outputType instanceof MissingTypeInfo) {
             MissingTypeInfo typeInfo = (MissingTypeInfo) this.outputType;

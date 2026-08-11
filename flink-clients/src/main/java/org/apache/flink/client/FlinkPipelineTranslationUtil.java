@@ -58,7 +58,7 @@ public final class FlinkPipelineTranslationUtil {
     /**
      * Transmogrifies the given {@link Pipeline} under the userClassloader to a {@link JobGraph}.
      */
-    public static JobGraph getJobGraphUnderUserClassLoader(
+    public static JobGraph getJobGraphUnderUserClassLoader(//
             final ClassLoader userClassloader,
             final Pipeline pipeline,
             final Configuration configuration,
@@ -66,8 +66,8 @@ public final class FlinkPipelineTranslationUtil {
         final ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
         try {
             Thread.currentThread().setContextClassLoader(userClassloader);
-            return FlinkPipelineTranslationUtil.getJobGraph(
-                    userClassloader, pipeline, configuration, defaultParallelism);
+            // 生成JobGraph
+            return FlinkPipelineTranslationUtil.getJobGraph(userClassloader, pipeline, configuration, defaultParallelism);//
         } finally {
             Thread.currentThread().setContextClassLoader(contextClassLoader);
         }

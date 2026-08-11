@@ -77,8 +77,7 @@ public class JobMasterConfiguration {
 
         final Duration rpcTimeout = configuration.get(RpcOptions.ASK_TIMEOUT_DURATION);
 
-        final Duration slotRequestTimeout =
-                configuration.get(JobManagerOptions.SLOT_REQUEST_TIMEOUT);
+        final Duration slotRequestTimeout = configuration.get(JobManagerOptions.SLOT_REQUEST_TIMEOUT);
 
         final String tmpDirectory = ConfigurationUtils.parseTempDirectories(configuration)[0];
 

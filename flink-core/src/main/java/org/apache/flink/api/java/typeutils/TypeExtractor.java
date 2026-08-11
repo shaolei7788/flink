@@ -170,7 +170,8 @@ public class TypeExtractor {
     // --------------------------------------------------------------------------------------------
     //  Function specific methods
     // --------------------------------------------------------------------------------------------
-
+    // 3. 提取指定函数类的输入/输出类型（Flink 算子底层最常用的逻辑）
+    // 传入自定义的 MapFunction 类、方法、以及已知的输入类型，推导输出类型
     @PublicEvolving
     public static <IN, OUT> TypeInformation<OUT> getMapReturnTypes(
             MapFunction<IN, OUT> mapInterface, TypeInformation<IN> inType) {
@@ -200,6 +201,7 @@ public class TypeExtractor {
         return getFlatMapReturnTypes(flatMapInterface, inType, null, false);
     }
 
+    //用来推导和提取 FlatMapFunction 的输出数据类型（Output Type），将其转化为 Flink 认识的 TypeInformation
     @PublicEvolving
     public static <IN, OUT> TypeInformation<OUT> getFlatMapReturnTypes(
             FlatMapFunction<IN, OUT> flatMapInterface,
@@ -810,6 +812,19 @@ public class TypeExtractor {
         }
     }
 
+    //通过 Java/Scala 的反射（Reflection）或泛型分析机制，将代码中的原生类（如 Class、Type、方法签名等）
+    // 自动翻译为 Flink 内部能够理解、优化和序列化的 TypeInformation（类型信息）对象
+    //Flink 的分布式架构必须在编译期/提交期就知道准确的数据类型，以便：
+    // 为每种类型匹配最高效的序列化器（Serializer）（如 POJO, Kryo, Avro）。
+    // 决定状态（State）的存储和序列化结构。
+    // 在生成执行计划时进行类型安全检查（Type Safety Check）。
+    // createTypeInfo 就是用来打破 Java 泛型擦除、强行“榨取”类型信息的工具
+    //如果是 String, Integer, Double 等原生类型，直接返回对应的 BasicTypeInfo
+    //它会按照以下优先级和策略去解析类型：识别基础与通用类型：如果是 String, Integer, Double 等原生类型，直接返回对应的 BasicTypeInfo。
+    // 递归提取复合对象 (POJO)：如果是自定义的 Java Bean，它会检查是否符合 Flink 的 POJO 规范（有空构造器、所有属性可访问/有 getter setter）。符合则返回 PojoTypeInfo，并将内部的所有 Field 再次递归调用 createTypeInfo 进行解析。
+    // 处理元组 (Tuple)：如果是 Flink 的 Tuple1 到 Tuple25，它会通过反射提取泛型参数，返回 TupleTypeInfo。
+    // 分析方法签名/Lambda 表达式：对于 Lambda 表达式（由于没有类文件，极难提取泛型），它会尝试通过捕获 Lambda 的闭包、解析输入输出参数来推导类型。
+    // 回退到通用序列化器 (Kryo)：如果一个类太复杂，不符合以上任何规则（例如没有空构造函数，或者包含循环引用），它会将其视作一个通用黑盒，返回 GenericTypeInfo，并指定使用 Kryo 序列化器 [1]（性能相对较差）
     @PublicEvolving
     public static <IN1, IN2, OUT> TypeInformation<OUT> createTypeInfo(
             Class<?> baseClass,
@@ -817,9 +832,9 @@ public class TypeExtractor {
             int returnParamPos,
             TypeInformation<IN1> in1Type,
             TypeInformation<IN2> in2Type) {
-        TypeInformation<OUT> ti =
-                new TypeExtractor()
-                        .privateCreateTypeInfo(baseClass, clazz, returnParamPos, in1Type, in2Type);
+        TypeExtractor typeExtractor = new TypeExtractor();
+        //
+        TypeInformation<OUT> ti = typeExtractor.privateCreateTypeInfo(baseClass, clazz, returnParamPos, in1Type, in2Type);
         if (ti == null) {
             throw new InvalidTypesException("Could not extract type information.");
         }
@@ -851,7 +866,7 @@ public class TypeExtractor {
         if (returnType instanceof TypeVariable<?>) {
             typeInfo =
                     (TypeInformation<OUT>)
-                            createTypeInfoFromInputs(
+                            createTypeInfoFromInputs(//
                                     (TypeVariable<?>) returnType, typeHierarchy, in1Type, in2Type);
 
             if (typeInfo != null) {

@@ -151,9 +151,13 @@ public class StreamingJobGraphGenerator {
                                         streamGraph.getExecutionConfig().getParallelism())),
                         new ExecutorThreadFactory("flink-operator-serialization-io"));
         try {
-            return new StreamingJobGraphGenerator(
-                            userClassLoader, streamGraph, jobID, serializationExecutor)
-                    .createJobGraph();
+            StreamingJobGraphGenerator jobGraphGenerator = new StreamingJobGraphGenerator(
+                    userClassLoader,
+                    streamGraph,
+                    jobID,
+                    serializationExecutor);
+            // 生成JobGraph
+            return jobGraphGenerator.createJobGraph();//
         } finally {
             serializationExecutor.shutdown();
         }

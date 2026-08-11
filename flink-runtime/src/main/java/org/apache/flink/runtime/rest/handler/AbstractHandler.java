@@ -192,8 +192,8 @@ public abstract class AbstractHandler<
             }
 
             log.trace("Starting request processing.");
-            CompletableFuture<Void> requestProcessingFuture =
-                    respondToRequest(ctx, httpRequest, handlerRequest, gateway);
+            //会生成JobGraph
+            CompletableFuture<Void> requestProcessingFuture = respondToRequest(ctx, httpRequest, handlerRequest, gateway);//
 
             final FileUploads finalUploadedFiles = uploadedFiles;
             requestProcessingFuture

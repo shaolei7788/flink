@@ -241,9 +241,7 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
 
     @Override
     protected void startSchedulingInternal() {
-        log.info(
-                "Starting scheduling with scheduling strategy [{}]",
-                schedulingStrategy.getClass().getName());
+        log.info("Starting scheduling with scheduling strategy [{}]", schedulingStrategy.getClass().getName());
         //将状态从创建改为运行
         transitionToRunning();
         //PipelinedRegionSchedulingStrategy#startScheduling
@@ -491,23 +489,21 @@ public class DefaultScheduler extends SchedulerBase implements SchedulerOperatio
         executionDeployer.allocateSlotsAndDeploy(executionsToDeploy, requiredVersionByVertex);
     }
 
-    private void startReserveAllocation(
-            ExecutionVertexID executionVertexId, AllocationID newAllocation) {
+    private void startReserveAllocation(ExecutionVertexID executionVertexId, AllocationID newAllocation) {
 
         // stop the previous allocation reservation if there is one
         stopReserveAllocation(executionVertexId);
 
         reservedAllocationByExecutionVertex.put(executionVertexId, newAllocation);
-        reservedAllocationRefCounters.compute(
-                newAllocation, (ignored, oldCount) -> oldCount == null ? 1 : oldCount + 1);
+        //计数器加1
+        reservedAllocationRefCounters.compute(newAllocation, (ignored, oldCount) -> oldCount == null ? 1 : oldCount + 1);
     }
 
     private void stopReserveAllocation(ExecutionVertexID executionVertexId) {
-        final AllocationID priorAllocation =
-                reservedAllocationByExecutionVertex.remove(executionVertexId);
+        final AllocationID priorAllocation = reservedAllocationByExecutionVertex.remove(executionVertexId);
         if (priorAllocation != null) {
-            reservedAllocationRefCounters.compute(
-                    priorAllocation, (ignored, oldCount) -> oldCount > 1 ? oldCount - 1 : null);
+            //计数器-1
+            reservedAllocationRefCounters.compute(priorAllocation, (ignored, oldCount) -> oldCount > 1 ? oldCount - 1 : null);
         }
     }
 

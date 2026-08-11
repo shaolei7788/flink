@@ -472,9 +472,8 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
             JobManagerJobMetricGroup jobManagerJobMetricGroup,
             JobStatusListener jobStatusListener)
             throws Exception {
-        //DefaultScheduler
-        final SchedulerNG scheduler =
-                slotPoolServiceSchedulerFactory.createScheduler(//
+        //DefaultScheduler  如果 executionPlan instanceof StreamGraph 会生成JobGraph
+        final SchedulerNG scheduler = slotPoolServiceSchedulerFactory.createScheduler(//
                         log,
                         executionPlan,
                         ioExecutor,
@@ -912,7 +911,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                                     if (throwable != null) {
                                         return new RegistrationResponse.Failure(throwable);
                                     }
-
+                                    //DeclarativeSlotPoolService#registerTaskManager
                                     slotPoolService.registerTaskManager(taskManagerId);
                                     registeredTaskManagers.put(
                                             taskManagerId,
@@ -1046,6 +1045,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
     @Override
     public void notifyNotEnoughResourcesAvailable(
             Collection<ResourceRequirement> acquiredResources) {
+        //通知没有足够的资源
         slotPoolService.notifyNotEnoughResourcesAvailable(acquiredResources);
     }
 
@@ -1228,7 +1228,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
 
         JobShuffleContext context = new JobShuffleContextImpl(executionPlan.getJobID(), this);
         shuffleMaster.registerJob(context);
-
+        //启动几个服务
         startJobMasterServices();//
 
         log.info(
@@ -1242,18 +1242,22 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
 
     private void startJobMasterServices() throws Exception {
         try {
-            //
+            // 创建跟TaskManager心跳的管理器
             this.taskManagerHeartbeatManager = createTaskManagerHeartbeatManager(heartbeatServices);
+            // 创建跟ResourceManager心跳的管理器
             this.resourceManagerHeartbeatManager = createResourceManagerHeartbeatManager(heartbeatServices);
 
             // start the slot pool make sure the slot pool now accepts messages for this leader
-            //
+            // 启动slotPoolService  DeclarativeSlotPoolService#start
             slotPoolService.start(getFencingToken(), getAddress());
 
             // job is ready to go, try to establish connection with resource manager
             //   - activate leader retrieval for the resource manager
             //   - on notification of the leader, the connection will be established and
             //     the slot pool will start requesting slots
+            //todo
+            // 启动获取resourceManager leader地址的服务
+            // 监听器获取到地址了就会跟resourceManager 连接连接 也会申请所需要的slot资源
             resourceManagerLeaderRetriever.start(new ResourceManagerLeaderListener());
         } catch (Exception e) {
             handleStartJobMasterServicesError(e);
@@ -1391,10 +1395,11 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         }
     }
 
+    //
     private void notifyOfNewResourceManagerLeader(
             final String newResourceManagerAddress, final ResourceManagerId resourceManagerId) {
         resourceManagerAddress = createResourceManagerAddress(newResourceManagerAddress, resourceManagerId);
-
+        //与ResourceManager 建立连接
         reconnectToResourceManager(//
                 new FlinkException(
                         String.format(
@@ -1415,9 +1420,10 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         }
     }
 
+    //与ResourceManager 建立连接
     private void reconnectToResourceManager(Exception cause) {
         closeResourceManagerConnection(cause);
-        tryConnectToResourceManager();
+        tryConnectToResourceManager();//
     }
 
     private void tryConnectToResourceManager() {
@@ -1426,7 +1432,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
         }
     }
 
-    private void connectToResourceManager() {
+    private void connectToResourceManager() {//
         assert (resourceManagerAddress != null);
         assert (resourceManagerConnection == null);
         assert (establishedResourceManagerConnection == null);
@@ -1443,7 +1449,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                         resourceManagerAddress.getAddress(),
                         resourceManagerAddress.getResourceManagerId(),
                         futureExecutor);
-
+        //JobMaster 向 resourceManager 声明所需要的资源  即所需slot数量
         resourceManagerConnection.start();
     }
 
@@ -1569,13 +1575,14 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
 
     private class ResourceManagerLeaderListener implements LeaderRetrievalListener {
 
+        // 被 StandaloneLeaderRetrievalService#start 里面调用
         @Override
         public void notifyLeaderAddress(final String leaderAddress, final UUID leaderSessionID) {
             runAsync(
                     MdcUtils.wrapRunnable(
                             MdcUtils.asContextData(executionPlan.getJobID()),
                             () ->
-                                    //
+                                    //todo 通知有新 ResourceManager leader 地址了
                                     notifyOfNewResourceManagerLeader(leaderAddress, ResourceManagerId.fromUuidOrNull(leaderSessionID))));
         }
 
@@ -1662,7 +1669,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
                         // filter out outdated connections
                         //noinspection ObjectEquality
                         if (this == resourceManagerConnection) {
-                            //建立与 ResourceManager
+                            //建立与 ResourceManager 的连接  并且 JobMaster 向 resourceManager 声明所需要的资源  即所需slot数量
                             establishResourceManagerConnection(success);//
                         }
                     });

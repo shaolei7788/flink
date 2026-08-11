@@ -164,7 +164,7 @@ public class JarHandlerUtils {
                 Configuration configuration,
                 boolean suppressOutput) {
             try {
-                return PackagedProgramUtils.createJobGraph(
+                return PackagedProgramUtils.createJobGraph(//
                         packagedProgram, configuration, parallelism, jobId, suppressOutput);
             } catch (final ProgramInvocationException e) {
                 throw new CompletionException(e);

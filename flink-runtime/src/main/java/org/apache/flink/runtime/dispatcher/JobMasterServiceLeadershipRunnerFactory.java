@@ -67,20 +67,19 @@ public enum JobMasterServiceLeadershipRunnerFactory implements JobManagerRunnerF
             throws Exception {
 
         checkArgument(!executionPlan.isEmpty(), "The given job is empty");
-
-        final JobMasterConfiguration jobMasterConfiguration =
-                JobMasterConfiguration.fromConfiguration(configuration);
-
+        //解析参数用JobMasterConfiguration封装
+        final JobMasterConfiguration jobMasterConfiguration = JobMasterConfiguration.fromConfiguration(configuration);
+        //
         final JobResultStore jobResultStore = highAvailabilityServices.getJobResultStore();
-
+        // 创建jobMaster leader 选举
         final LeaderElection jobManagerLeaderElection = highAvailabilityServices.getJobManagerLeaderElection(executionPlan.getJobID());
 
+        // 主要是创建DefaultSlotPoolServiceSchedulerFactory 对象 包装了DefaultSchedulerFactory 、DeclarativeSlotPoolBridgeServiceFactory
         final SlotPoolServiceSchedulerFactory slotPoolServiceSchedulerFactory =
-                DefaultSlotPoolServiceSchedulerFactory.fromConfiguration(
+                DefaultSlotPoolServiceSchedulerFactory.fromConfiguration(//
                         configuration, executionPlan.getJobType(), executionPlan.isDynamic());
 
-        if (jobMasterConfiguration.getConfiguration().get(JobManagerOptions.SCHEDULER_MODE)
-                == SchedulerExecutionMode.REACTIVE) {
+        if (jobMasterConfiguration.getConfiguration().get(JobManagerOptions.SCHEDULER_MODE) == SchedulerExecutionMode.REACTIVE) {//false
             Preconditions.checkState(
                     slotPoolServiceSchedulerFactory.getSchedulerType()
                             == JobManagerOptions.SchedulerType.Adaptive,
@@ -99,6 +98,7 @@ public enum JobMasterServiceLeadershipRunnerFactory implements JobManagerRunnerF
                         .asClassLoader();
 
         if (executionPlan instanceof StreamGraph) {
+            // true
             ((StreamGraph) executionPlan)
                     .deserializeUserDefinedInstances(
                             userCodeClassLoader, jobManagerServices.getFutureExecutor());

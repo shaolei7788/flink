@@ -85,7 +85,7 @@ public enum PackagedProgramUtils {
                 getPipelineFromProgram(
                         packagedProgram, configuration, defaultParallelism, suppressOutput);
         final JobGraph jobGraph =
-                FlinkPipelineTranslationUtil.getJobGraphUnderUserClassLoader(
+                FlinkPipelineTranslationUtil.getJobGraphUnderUserClassLoader(//
                         packagedProgram.getUserCodeClassLoader(),
                         pipeline,
                         configuration,
@@ -117,8 +117,7 @@ public enum PackagedProgramUtils {
             int defaultParallelism,
             boolean suppressOutput)
             throws ProgramInvocationException {
-        return createJobGraph(
-                packagedProgram, configuration, defaultParallelism, null, suppressOutput);
+        return createJobGraph(packagedProgram, configuration, defaultParallelism, null, suppressOutput);
     }
 
     public static Pipeline getPipelineFromProgram(

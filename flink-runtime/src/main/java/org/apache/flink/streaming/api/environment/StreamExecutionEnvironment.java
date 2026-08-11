@@ -1476,8 +1476,13 @@ public class StreamExecutionEnvironment implements AutoCloseable {
     @PublicEvolving
     public DataStreamSource<String> socketTextStream(
             String hostname, int port, String delimiter, long maxRetry) {
-        return addSource(
-                new SocketTextStreamFunction(hostname, port, delimiter, maxRetry), "Socket Stream");
+        //创建 SocketTextStreamFunction 对象  SocketTextStreamFunction implements SourceFunction
+        SocketTextStreamFunction socketTextStreamFunction = new SocketTextStreamFunction(
+                hostname,
+                port,
+                delimiter,
+                maxRetry);
+        return addSource(socketTextStreamFunction, "Socket Stream");//
     }
 
     /**
@@ -1511,7 +1516,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      */
     @PublicEvolving
     public DataStreamSource<String> socketTextStream(String hostname, int port, String delimiter) {
-        return socketTextStream(hostname, port, delimiter, 0);
+        return socketTextStream(hostname, port, delimiter, 0);//
     }
 
     /**
@@ -1526,7 +1531,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      */
     @PublicEvolving
     public DataStreamSource<String> socketTextStream(String hostname, int port) {
-        return socketTextStream(hostname, port, "\n");
+        return socketTextStream(hostname, port, "\n");//
     }
 
     /**
@@ -1685,7 +1690,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      */
     @Internal
     public <OUT> DataStreamSource<OUT> addSource(SourceFunction<OUT> function, String sourceName) {
-        return addSource(function, sourceName, null);
+        return addSource(function, sourceName, null);//
     }
 
     /**
@@ -1724,28 +1729,27 @@ public class StreamExecutionEnvironment implements AutoCloseable {
     @Internal
     public <OUT> DataStreamSource<OUT> addSource(
             SourceFunction<OUT> function, String sourceName, TypeInformation<OUT> typeInfo) {
-        return addSource(function, sourceName, typeInfo, Boundedness.CONTINUOUS_UNBOUNDED);
+        //无界
+        return addSource(function, sourceName, typeInfo, Boundedness.CONTINUOUS_UNBOUNDED);//
     }
 
     private <OUT> DataStreamSource<OUT> addSource(
-            final SourceFunction<OUT> function,
-            final String sourceName,
-            @Nullable final TypeInformation<OUT> typeInfo,
-            final Boundedness boundedness) {
+            final SourceFunction<OUT> function,//SocketTextStreamFunction
+            final String sourceName,//Socket Stream
+            @Nullable final TypeInformation<OUT> typeInfo,//null
+            final Boundedness boundedness) {//CONTINUOUS_UNBOUNDED
         checkNotNull(function);
         checkNotNull(sourceName);
         checkNotNull(boundedness);
 
-        TypeInformation<OUT> resolvedTypeInfo =
-                getTypeInfo(function, sourceName, SourceFunction.class, typeInfo);
-
+        TypeInformation<OUT> resolvedTypeInfo = getTypeInfo(function, sourceName, SourceFunction.class, typeInfo);//
+        // isParallel = false
         boolean isParallel = function instanceof ParallelSourceFunction;
 
         clean(function);
-
+        // 将 SourceFunction 包装成 StreamSource
         final StreamSource<OUT, ?> sourceOperator = new StreamSource<>(function);
-        return new DataStreamSource<>(
-                this, resolvedTypeInfo, sourceOperator, isParallel, sourceName, boundedness);
+        return new DataStreamSource<>(this, resolvedTypeInfo, sourceOperator, isParallel, sourceName, boundedness);
     }
 
     /**
@@ -1837,7 +1841,8 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      */
     public JobExecutionResult execute(String jobName) throws Exception {
         final List<Transformation<?>> originalTransformations = new ArrayList<>(transformations);
-        StreamGraph streamGraph = getStreamGraph();
+        // 生成StreamGraph
+        StreamGraph streamGraph = getStreamGraph();//
         if (jobName != null) {
             streamGraph.setJobName(jobName);
         }
@@ -1870,12 +1875,13 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      */
     @Internal
     public JobExecutionResult execute(StreamGraph streamGraph) throws Exception {
+        //todo 异步提交作业
         final JobClient jobClient = executeAsync(streamGraph);//
 
         try {
             final JobExecutionResult jobExecutionResult;
-
-            if (configuration.get(DeploymentOptions.ATTACHED)) {
+            if (configuration.get(DeploymentOptions.ATTACHED)) { //true
+                //分离模式
                 jobExecutionResult = jobClient.getJobExecutionResult().get();
             } else {
                 jobExecutionResult = new DetachedJobExecutionResult(jobClient.getJobID());
@@ -1989,9 +1995,8 @@ public class StreamExecutionEnvironment implements AutoCloseable {
     public JobClient executeAsync(StreamGraph streamGraph) throws Exception {
         checkNotNull(streamGraph, "StreamGraph cannot be null.");
         final PipelineExecutor executor = getPipelineExecutor();
-        //todo
-        CompletableFuture<JobClient> jobClientFuture =
-                executor.execute(streamGraph, configuration, userClassloader);//
+        //LocalExecutor#execute
+        CompletableFuture<JobClient> jobClientFuture = executor.execute(streamGraph, configuration, userClassloader);//
 
         try {
             JobClient jobClient = jobClientFuture.get();
@@ -2018,8 +2023,8 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      * @return The stream graph representing the transformations
      */
     @Internal
-    public StreamGraph getStreamGraph() {
-        return getStreamGraph(true);
+    public StreamGraph getStreamGraph() {//
+        return getStreamGraph(true);//
     }
 
     /**
@@ -2033,7 +2038,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      */
     @Internal
     public StreamGraph getStreamGraph(boolean clearTransformations) {
-        final StreamGraph streamGraph = getStreamGraph(transformations);
+        final StreamGraph streamGraph = getStreamGraph(transformations);//
         if (clearTransformations) {
             transformations.clear();
         }
@@ -2042,11 +2047,14 @@ public class StreamExecutionEnvironment implements AutoCloseable {
 
     private StreamGraph getStreamGraph(List<Transformation<?>> transformations) {
         synchronizeClusterDatasetStatus();
-        return getStreamGraphGenerator(transformations).generate();
+        //创建StreamGraphGenerator 对象
+        StreamGraphGenerator streamGraphGenerator = getStreamGraphGenerator(transformations);//
+        return streamGraphGenerator.generate();//
     }
 
     private void synchronizeClusterDatasetStatus() {
         if (cachedTransformations.isEmpty()) {
+            // 执行这里
             return;
         }
         Set<AbstractID> completedClusterDatasets =
@@ -2089,9 +2097,9 @@ public class StreamExecutionEnvironment implements AutoCloseable {
 
         // We copy the transformation so that newly added transformations cannot intervene with the
         // stream graph generation.
-        return new StreamGraphGenerator(
-                        new ArrayList<>(transformations), config, checkpointCfg, configuration)
-                .setSlotSharingGroupResource(slotSharingGroupResources);
+        StreamGraphGenerator streamGraphGenerator = new StreamGraphGenerator(new ArrayList<>(transformations), config, checkpointCfg, configuration);
+        // slotSharingGroupResources size = 0
+        return streamGraphGenerator.setSlotSharingGroupResource(slotSharingGroupResources);
     }
 
     /**
@@ -2109,6 +2117,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
      * Returns a "closure-cleaned" version of the given function. Cleans only if closure cleaning is
      * not disabled in the {@link org.apache.flink.api.common.ExecutionConfig}
      */
+    //利用反射技术，强行切断并清除用户自定义函数（如 FlatMapFunction）中对外部不可序列化对象的隐式引用，防止作业在提交到集群时抛出著名的 NotSerializableException 报错
     @Internal
     public <F> F clean(F f) {
         if (getConfig().isClosureCleanerEnabled()) {
@@ -2435,7 +2444,7 @@ public class StreamExecutionEnvironment implements AutoCloseable {
     private <OUT, T extends TypeInformation<OUT>> T getTypeInfo(
             Object source,
             String sourceName,
-            Class<?> baseSourceClass,
+            Class<?> baseSourceClass,//
             TypeInformation<OUT> typeInfo) {
         TypeInformation<OUT> resolvedTypeInfo = typeInfo;
         if (resolvedTypeInfo == null && source instanceof ResultTypeQueryable) {
@@ -2443,9 +2452,8 @@ public class StreamExecutionEnvironment implements AutoCloseable {
         }
         if (resolvedTypeInfo == null) {
             try {
-                resolvedTypeInfo =
-                        TypeExtractor.createTypeInfo(
-                                baseSourceClass, source.getClass(), 0, null, null);
+                //BasicTypeInfo String
+                resolvedTypeInfo = TypeExtractor.createTypeInfo(baseSourceClass, source.getClass(), 0, null, null);
             } catch (final InvalidTypesException e) {
                 resolvedTypeInfo = (TypeInformation<OUT>) new MissingTypeInfo(sourceName, e);
             }

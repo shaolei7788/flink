@@ -162,26 +162,25 @@ public final class DefaultSlotPoolServiceSchedulerFactory
 
     public static DefaultSlotPoolServiceSchedulerFactory fromConfiguration(
             Configuration configuration, JobType jobType, boolean isDynamicGraph) {
-
+        // 300s
         final Duration rpcTimeout = configuration.get(RpcOptions.ASK_TIMEOUT_DURATION);
+        // 50s
         final Duration slotIdleTimeout = configuration.get(JobManagerOptions.SLOT_IDLE_TIMEOUT);
+        // 300s
         final Duration batchSlotTimeout = configuration.get(JobManagerOptions.SLOT_REQUEST_TIMEOUT);
 
         final SlotPoolServiceFactory slotPoolServiceFactory;
         final SchedulerNGFactory schedulerNGFactory;
-
-        JobManagerOptions.SchedulerType schedulerType =
-                getSchedulerType(configuration, jobType, isDynamicGraph);
-
+        //调度类型 Default
+        JobManagerOptions.SchedulerType schedulerType = getSchedulerType(configuration, jobType, isDynamicGraph);
+        // 20s
         final Duration slotRequestMaxInterval = configuration.get(SLOT_REQUEST_MAX_INTERVAL);
-
+        //mode = None
         final TaskManagerLoadBalanceMode mode = configuration.get(TASK_MANAGER_LOAD_BALANCE_MODE);
-        boolean deferSlotAllocation =
-                mode == TaskManagerLoadBalanceMode.TASKS && jobType == JobType.STREAMING;
+        // deferSlotAllocation = false      jobType == JobType.STREAMING = true
+        boolean deferSlotAllocation = mode == TaskManagerLoadBalanceMode.TASKS && jobType == JobType.STREAMING;
 
-        if (configuration
-                .getOptional(JobManagerOptions.HYBRID_PARTITION_DATA_CONSUME_CONSTRAINT)
-                .isPresent()) {
+        if (configuration.getOptional(JobManagerOptions.HYBRID_PARTITION_DATA_CONSUME_CONSTRAINT).isPresent()) {//false
             Preconditions.checkState(
                     schedulerType == JobManagerOptions.SchedulerType.AdaptiveBatch,
                     "Only adaptive batch scheduler supports setting "
@@ -191,8 +190,7 @@ public final class DefaultSlotPoolServiceSchedulerFactory
         switch (schedulerType) {
             case Default:
                 schedulerNGFactory = new DefaultSchedulerFactory();
-                slotPoolServiceFactory =
-                        new DeclarativeSlotPoolBridgeServiceFactory(
+                slotPoolServiceFactory = new DeclarativeSlotPoolBridgeServiceFactory(//
                                 SystemClock.getInstance(),
                                 rpcTimeout,
                                 slotIdleTimeout,

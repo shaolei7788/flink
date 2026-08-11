@@ -1533,7 +1533,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
         //pekko://flink/user/rpc/resourcemanager_1
         resourceManagerAddress = createResourceManagerAddress(newLeaderAddress, newResourceManagerId);
         //
-        reconnectToResourceManager(
+        reconnectToResourceManager(//
                 new FlinkException(
                         String.format(
                                 "ResourceManager leader changed to new address %s",
@@ -2534,7 +2534,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
         public void notifyLeaderAddress(final String leaderAddress, final UUID leaderSessionID) {
             runAsync(
                     () ->
-                            //
+                            // 通知有新的ResourceManager leader地址
                             notifyOfNewResourceManagerLeader(
                                     leaderAddress,//pekko://flink/user/rpc/resourcemanager_1
                                     //leaderSessionID = e13f3204-9762-45e0-a0c3-bde53c8e90dd

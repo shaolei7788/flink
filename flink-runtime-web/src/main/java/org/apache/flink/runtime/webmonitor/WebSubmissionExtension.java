@@ -151,8 +151,7 @@ public class WebSubmissionExtension implements WebMonitorExtension {
                         configuration,
                         jarRunExecutor);
 
-        final JarPlanHandler postJarPlanHandler =
-                new JarPlanHandler(
+        final JarPlanHandler postJarPlanHandler = new JarPlanHandler(
                         leaderRetriever,
                         timeout,
                         responseHeaders,

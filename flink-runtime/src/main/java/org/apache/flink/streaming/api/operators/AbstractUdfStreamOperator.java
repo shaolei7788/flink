@@ -57,11 +57,12 @@ public abstract class AbstractUdfStreamOperator<OUT, F extends Function>
     protected final F userFunction;
 
     public AbstractUdfStreamOperator(F userFunction) {
-        this(null, userFunction);
+        this(null, userFunction);//
     }
 
     protected AbstractUdfStreamOperator(StreamOperatorParameters<OUT> parameters, F userFunction) {
         super(parameters);
+        // 给userFunction 赋值
         this.userFunction = requireNonNull(userFunction);
         checkUdfCheckpointingPreconditions();
     }

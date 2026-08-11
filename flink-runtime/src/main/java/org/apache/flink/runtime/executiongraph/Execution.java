@@ -444,23 +444,24 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 
         return FutureUtils.thenApplyAsyncIfNotDone(
                 registerProducedPartitions(vertex, location, attemptId),
+                //执行器
                 vertex.getExecutionGraphAccessor().getJobMasterMainThreadExecutor(),
                 producedPartitionsCache -> {
                     producedPartitions = producedPartitionsCache;
 
                     if (getState() == SCHEDULED) {
-                        startTrackingPartitions(
-                                location.getResourceID(), producedPartitionsCache.values());
+                        //
+                        startTrackingPartitions(location.getResourceID(), producedPartitionsCache.values());
                     } else {
                         LOG.info(
                                 "Discarding late registered partitions for {} task {}.",
                                 getState(),
                                 attemptId);
-                        for (ResultPartitionDeploymentDescriptor desc :
-                                producedPartitionsCache.values()) {
+                        for (ResultPartitionDeploymentDescriptor desc : producedPartitionsCache.values()) {
                             getVertex()
                                     .getExecutionGraphAccessor()
                                     .getShuffleMaster()
+                                    //NettyShuffleMaster#releasePartitionExternally
                                     .releasePartitionExternally(desc.getShuffleDescriptor());
                         }
                     }
@@ -643,6 +644,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
                     maybeOffloadedTaskRestoreCleanupRef = new AtomicReference<>();
             final CompletableFuture<TaskDeploymentDescriptor> taskDeploymentDescriptorFuture =
                     CompletableFuture.supplyAsync(
+                                    //
                                     initOffloadedTaskRestoreRef(
                                             // Passing a copy of the task restore from the
                                             // main thread to the I/O executor in order to
@@ -659,7 +661,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
             taskDeploymentDescriptorFuture
                     .thenComposeAsync(
                             deploymentDescriptor ->
-                                    //【重点】向TaskManager 提交作业
+                                    //【重点】 向TaskManager 提交作业
                                     // deploymentDescriptor = "TaskDeploymentDescriptor [execution id: b84e28a53deb8ecf529310c261c56211_cbc357ccb763df2852fee8c4fc7d55f2_0_0, produced partitions: [ResultPartitionDeploymentDescriptor [PartitionDescriptor: PartitionDescriptor [result id: 52fee8c49de88554cbc357cc58cf0e8a, partition id: 52fee8c49de88554cbc357cc58cf0e8a#0, partition type: PIPELINED_BOUNDED, subpartitions: 1, connection index: 1230969116, is broadcast: false, is all-to-all distribution: true], ShuffleDescriptor: org.apache.flink.runtime.shuffle.NettyShuffleDescriptor@65c557d]], input gates: []]"
                                     // rpcTimeout = 300s
                                     taskManagerGateway.submitTask(deploymentDescriptor, rpcTimeout),
@@ -685,6 +687,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
         // Running in async thread to avoid blocking the main thread on cleanup.
         CompletableFuture.runAsync(() -> cleanUpOffloadedTaskRestore(cleanupRef), executor)
                 .exceptionally(
+                        //出现异常
                         cleanupError -> {
                             LOG.warn(
                                     "Failed to cleanup offloaded task restore for "
@@ -698,7 +701,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
                                     cleanupError);
                             return null;
                         });
-
+        //
         finalizeDeploymentAndCleanUpInMainThread(ack, failure);
     }
 
@@ -1515,10 +1518,10 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
     private void startTrackingPartitions(
             final ResourceID taskExecutorId,
             final Collection<ResultPartitionDeploymentDescriptor> partitions) {
-        JobMasterPartitionTracker partitionTracker =
-                vertex.getExecutionGraphAccessor().getPartitionTracker();
+        JobMasterPartitionTracker partitionTracker = vertex.getExecutionGraphAccessor().getPartitionTracker();
         for (ResultPartitionDeploymentDescriptor partition : partitions) {
-            partitionTracker.startTrackingPartition(taskExecutorId, partition);
+            //JobMasterPartitionTrackerImpl#startTrackingPartition
+            partitionTracker.startTrackingPartition(taskExecutorId, partition);//
         }
     }
 
