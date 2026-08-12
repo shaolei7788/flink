@@ -79,7 +79,7 @@ public class LegacySinkTransformationTranslator<IN>
                         + parentTransformations.size());
         final Transformation<?> input = parentTransformations.get(0);
 
-        streamGraph.addSink(
+        streamGraph.addSink(//
                 transformationId,
                 slotSharingGroup,
                 transformation.getCoLocationGroupKey(),

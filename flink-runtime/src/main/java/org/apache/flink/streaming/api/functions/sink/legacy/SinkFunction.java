@@ -52,6 +52,7 @@ public interface SinkFunction<IN> extends Function, Serializable {
      *     operation to fail and may trigger recovery.
      */
     default void invoke(IN value, Context context) throws Exception {
+        //
         invoke(value);
     }
 

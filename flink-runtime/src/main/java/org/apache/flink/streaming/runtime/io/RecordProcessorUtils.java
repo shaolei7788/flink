@@ -42,8 +42,7 @@ public class RecordProcessorUtils {
      * @param input the {@link Input}
      * @return the record processor
      */
-    public static <T> ThrowingConsumer<StreamRecord<T>, Exception> getRecordProcessor(
-            Input<T> input) {
+    public static <T> ThrowingConsumer<StreamRecord<T>, Exception> getRecordProcessor(Input<T> input) {
         boolean canOmitSetKeyContext;
         if (input instanceof AbstractStreamOperator) {
             canOmitSetKeyContext = canOmitSetKeyContext((AbstractStreamOperator<?>) input, 0);
@@ -54,13 +53,16 @@ public class RecordProcessorUtils {
         }
 
         if (canOmitSetKeyContext) {
+            //
             return input::processElement;
         } else if (input instanceof AsyncKeyOrderedProcessing
                 && ((AsyncKeyOrderedProcessing) input).isAsyncKeyOrderedProcessingEnabled()) {
             return ((AsyncKeyOrderedProcessing) input).getRecordProcessor(1);
         } else {
+            //
             return record -> {
                 input.setKeyContextElement(record);
+                //StreamGroupedReduceOperator#processElement
                 input.processElement(record);
             };
         }

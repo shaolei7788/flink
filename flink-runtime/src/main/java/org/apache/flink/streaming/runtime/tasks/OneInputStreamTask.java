@@ -243,7 +243,16 @@ public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamO
 
         @Override
         public void emitRecord(StreamRecord<IN> record) throws Exception {
+            //记录数自增
             numRecordsIn.inc();
+            // 如果是socket operator = StreamSource
+            // 如果是FlatMap operator = StreamFlatMap
+            // 如果是Keyed Aggregation operator = StreamGroupedReduceOperator
+            // 如果是process  operator = KeyedProcessOperator
+            // 如果是window operator = WindowOperator
+            // 如果是sink operator = StreamSink
+            //System.out.println("StreamTaskNetworkOutput#emitRecord:" + operator.getClass().getName());
+            // 先调用上面算子的processElement方法  然后会调用用户的算子  operator的processElement
             recordProcessor.accept(record);
         }
 

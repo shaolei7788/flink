@@ -46,7 +46,7 @@ final class CopyingChainingOutput<T> extends ChainingOutput<T> {
             // we are not responsible for emitting to the main output.
             return;
         }
-
+        //
         pushToOperator(record);
     }
 
@@ -71,7 +71,9 @@ final class CopyingChainingOutput<T> extends ChainingOutput<T> {
 
             numRecordsOut.inc();
             numRecordsIn.inc();
+            //创建出一个深拷贝，再发往下游
             StreamRecord<T> copy = castRecord.copy(serializer.copy(castRecord.getValue()));
+            //
             recordProcessor.accept(copy);
         } catch (ClassCastException e) {
             if (outputTag != null) {

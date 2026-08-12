@@ -886,7 +886,7 @@ public class DataStream<T> {
             ((InputTypeConfigurable) sinkFunction).setInputType(getType(), getExecutionConfig());
         }
 
-        return DataStreamSink.forSinkFunction(this, clean(sinkFunction));
+        return DataStreamSink.forSinkFunction(this, clean(sinkFunction));//
     }
 
     /**

@@ -52,14 +52,14 @@ public abstract class SimpleTransformationTranslator<OUT, T extends Transformati
         return transformedIds;
     }
 
+    //将单个逻辑转换节点（Transformation）正式翻译并注册为 StreamGraph 中的逻辑物理节点（StreamNode），同时配置其核心流属性
     @Override
-    public final Collection<Integer> translateForStreaming(
-            final T transformation, final Context context) {
+    public final Collection<Integer> translateForStreaming(final T transformation, final Context context) {
         checkNotNull(transformation);
         checkNotNull(context);
-
-        final Collection<Integer> transformedIds =
-                translateForStreamingInternal(transformation, context);
+        //OneInputTransformationTranslator#translateForStreamingInternal
+        final Collection<Integer> transformedIds = translateForStreamingInternal(transformation, context);
+        //将各种全局公共属性注入到 StreamNode 中
         configure(transformation, context);
 
         return transformedIds;

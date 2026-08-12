@@ -52,7 +52,7 @@ public class PartitionTransformationTranslator<OUT>
     @Override
     protected Collection<Integer> translateForStreamingInternal(
             final PartitionTransformation<OUT> transformation, final Context context) {
-        return translateInternal(transformation, context, false);
+        return translateInternal(transformation, context, false);//
     }
 
     private Collection<Integer> translateInternal(
@@ -72,7 +72,7 @@ public class PartitionTransformationTranslator<OUT>
         final Transformation<?> input = parentTransformations.get(0);
 
         List<Integer> resultIds = new ArrayList<>();
-
+        //UNDEFINED
         StreamExchangeMode exchangeMode = transformation.getExchangeMode();
         // StreamExchangeMode#BATCH has no effect in streaming mode so we can safely reset it to
         // UNDEFINED and let Flink decide on the best exchange mode.

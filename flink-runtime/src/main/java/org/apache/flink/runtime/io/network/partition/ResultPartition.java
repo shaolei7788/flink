@@ -154,9 +154,18 @@ public abstract class ResultPartition implements ResultPartitionWriter {
         checkState(
                 this.bufferPool == null,
                 "Bug in result partition setup logic: Already registered buffer pool.");
-
+        //resultPartitionFactory = ResultPartitionFactory   对应SingleInputGateFactory#createBufferPoolFactory
+        // bufferPool = LocalBufferPool
         this.bufferPool = checkNotNull(bufferPoolFactory.get());
-        setupInternal();
+        //BufferWritingResultPartition#setupInternal
+        setupInternal();//
+        // 注册ResultPartition
+        // partitionManager 管理当前TaskManager上所有的ResultPartition，
+        // 负责这个Task之上的所有的数据输出
+        //这个Task输出的数据有可能要被分发到下游的多个Task,就会有多个分区
+        //ResultPartition  包含多个ResultSubPartition
+        //TaskManager > TaskExecutor > ResultPartitionManager(管理多个ResultPartition)
+        // 一个Task 对应一个ResultPartition，一个TaskManager 可能运行多个Task
         partitionManager.registerResultPartition(this);
     }
 

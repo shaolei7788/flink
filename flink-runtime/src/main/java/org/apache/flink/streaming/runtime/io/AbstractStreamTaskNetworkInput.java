@@ -146,21 +146,30 @@ public abstract class AbstractStreamTaskNetworkInput<
 
         while (true) {
             // get the stream element from the deserializer
+            //todo 当数据还没有接入的时候 currentRecordDeserializer 为 null,会从InputGate中拉取新的Buffer数据
             if (currentRecordDeserializer != null) {
                 RecordDeserializer.DeserializationResult result;
                 try {
+                    //获取数据进行record反序列化
+                    // currentRecordDeserializer = SpillingAdaptiveSpanningRecordDeserializer
+                    // deserializationDelegate = NonReusingDeserializationDelegate
                     result = currentRecordDeserializer.getNextRecord(deserializationDelegate);
                 } catch (IOException e) {
                     throw new IOException(
                             String.format("Can't get next record for channel %s", lastChannel), e);
                 }
+                // 如果buffer已经消费了，可以回收buffer
                 if (result.isBufferConsumed()) {
                     currentRecordDeserializer = null;
                 }
-
+                // result是完整的数据元素
                 if (result.isFullRecord()) {
-                    final boolean breakBatchEmitting =
-                            processElement(deserializationDelegate.getInstance(), output);
+                    // deserializationDelegate = NonReusingDeserializationDelegate
+                    StreamElement element = deserializationDelegate.getInstance();
+                    //todo 【重点】处理数据并发送给下一个operator
+                    //output = StreamTaskNetworkOutput
+                    //System.out.println("StreamTaskNetworkOutput#processElement:" + Thread.currentThread().getName());
+                    final boolean breakBatchEmitting = processElement(element, output);
                     if (canEmitBatchOfRecords.check() && !breakBatchEmitting) {
                         continue;
                     }
@@ -205,11 +214,12 @@ public abstract class AbstractStreamTaskNetworkInput<
     private boolean processElement(StreamElement streamElement, DataOutput<T> output)
             throws Exception {
         if (streamElement.isRecord()) {
+            //todo OneInputStreamTask$StreamTaskNetworkOutput#emitRecord 发送数据
             output.emitRecord(streamElement.asRecord());
             return false;
         } else if (streamElement.isWatermark()) {
-            statusWatermarkValve.inputWatermark(
-                    streamElement.asWatermark(), flattenedChannelIndices.get(lastChannel), output);
+            //todo 发送Watermark
+            statusWatermarkValve.inputWatermark(streamElement.asWatermark(), flattenedChannelIndices.get(lastChannel), output);
             return false;
         } else if (streamElement.isLatencyMarker()) {
             output.emitLatencyMarker(streamElement.asLatencyMarker());

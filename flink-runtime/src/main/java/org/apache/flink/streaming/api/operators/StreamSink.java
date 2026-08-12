@@ -37,7 +37,7 @@ public class StreamSink<IN> extends AbstractUdfStreamOperator<Object, SinkFuncti
     private long currentWatermark = Long.MIN_VALUE;
 
     public StreamSink(SinkFunction<IN> sinkFunction) {
-        super(sinkFunction);
+        super(sinkFunction);//
     }
 
     @Override

@@ -113,6 +113,7 @@ public class InputGateWithMetrics extends IndexedInputGate {
 
     @Override
     public void setup() throws IOException {
+        // SingleInputGate#setup
         inputGate.setup();
     }
 

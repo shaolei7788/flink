@@ -167,8 +167,7 @@ public class StreamGraphGenerator {
 
     static {
         @SuppressWarnings("rawtypes")
-        Map<Class<? extends Transformation>, TransformationTranslator<?, ? extends Transformation>>
-                tmp = new HashMap<>();
+        Map<Class<? extends Transformation>, TransformationTranslator<?, ? extends Transformation>> tmp = new HashMap<>();
         tmp.put(OneInputTransformation.class, new OneInputTransformationTranslator<>());
         tmp.put(TwoInputTransformation.class, new TwoInputTransformationTranslator<>());
         tmp.put(MultipleInputTransformation.class, new MultiInputTransformationTranslator<>());
@@ -467,34 +466,30 @@ public class StreamGraphGenerator {
 
         LOG.debug("Transforming " + transform);
         // 如果transformation的最大并行度没有设置，全局的最大并行度已设置，将全局最大并行度设置给transformation
-        if (transform.getMaxParallelism() <= 0) {
+        if (transform.getMaxParallelism() <= 0) {// 默认 -1
 
             // if the max parallelism hasn't been set, then first use the job wide max parallelism
             // from the ExecutionConfig.
-            //从配置文件获取最大并行度
+            //从配置文件获取最大并行度 -1
             int globalMaxParallelismFromConfig = executionConfig.getMaxParallelism();
             if (globalMaxParallelismFromConfig > 0) {
                 //设置最大并行度
                 transform.setMaxParallelism(globalMaxParallelismFromConfig);
             }
         }
-
+        // transform.getSlotSharingGroup() = empty
         transform
                 .getSlotSharingGroup()
                 .ifPresent(
                         slotSharingGroup -> {
-                            final ResourceSpec resourceSpec =
-                                    SlotSharingGroupUtils.extractResourceSpec(slotSharingGroup);
+                            final ResourceSpec resourceSpec = SlotSharingGroupUtils.extractResourceSpec(slotSharingGroup);
                             if (!resourceSpec.equals(ResourceSpec.UNKNOWN)) {
                                 slotSharingGroupResources.compute(
                                         slotSharingGroup.getName(),
                                         (name, profile) -> {
                                             if (profile == null) {
-                                                return ResourceProfile.fromResourceSpec(
-                                                        resourceSpec, MemorySize.ZERO);
-                                            } else if (!ResourceProfile.fromResourceSpec(
-                                                            resourceSpec, MemorySize.ZERO)
-                                                    .equals(profile)) {
+                                                return ResourceProfile.fromResourceSpec(resourceSpec, MemorySize.ZERO);
+                                            } else if (!ResourceProfile.fromResourceSpec(resourceSpec, MemorySize.ZERO).equals(profile)) {
                                                 throw new IllegalArgumentException(
                                                         "The slot sharing group "
                                                                 + slotSharingGroup.getName()
@@ -619,19 +614,20 @@ public class StreamGraphGenerator {
                                 .collect(Collectors.toList()));
 
         final TransformationTranslator.Context context =
-                new ContextImpl(
-                        this, streamGraph, slotSharingGroup, configuration, transformations);
+                new ContextImpl(this, streamGraph, slotSharingGroup, configuration, transformations);
         if(shouldExecuteInBatchMode){
+            //批模式
             return translator.translateForBatch(transform, context);
         }
         //流式
         // LegacySourceTransformationTranslator#translateForStreaming
+        // OneInputTransformationTranslator#translateForStreaming     将算子包装并生成 StreamNode
         // OneInputTransformationTranslator#translateForStreaming
-        // OneInputTransformationTranslator#translateForStreaming
-        // PartitionTransformationTranslator#translateForStreaming
+        // PartitionTransformationTranslator#translateForStreaming    负责编织 StreamEdge 等
         // ReduceTransformationTranslator#translateForStreaming
         // LegacySinkTransformationTranslator#translateForStreaming
         //以上几个Translator都 extend SimpleTransformationTranslator
+        //SimpleTransformationTranslator#translateForStreaming
         return translator.translateForStreaming(transform, context);
     }
 

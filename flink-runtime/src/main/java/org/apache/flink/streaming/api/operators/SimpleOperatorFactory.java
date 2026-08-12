@@ -35,26 +35,25 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 @Internal
 public class SimpleOperatorFactory<OUT> extends AbstractStreamOperatorFactory<OUT> {
 
+    // 真正承载用户计算逻辑的流算子实例（如 StreamMap, StreamFilter）
     private final StreamOperator<OUT> operator;
 
     /** Create a SimpleOperatorFactory from existed StreamOperator. */
+    // 将一个算子包装成工厂
     @SuppressWarnings("unchecked")
     public static <OUT> SimpleOperatorFactory<OUT> of(StreamOperator<OUT> operator) {
         if (operator == null) {
             return null;
         } else if (operator instanceof StreamSource
                 && ((StreamSource) operator).getUserFunction() instanceof InputFormatSourceFunction) {
-            //
             return new SimpleInputFormatOperatorFactory<OUT>((StreamSource) operator);
         } else if (operator instanceof UserFunctionProvider
-                && (((UserFunctionProvider<Function>) operator).getUserFunction()
-                        instanceof OutputFormatSinkFunction)) {
+                && (((UserFunctionProvider<Function>) operator).getUserFunction() instanceof OutputFormatSinkFunction)) {
             return new SimpleOutputFormatOperatorFactory<>(
-                    (((OutputFormatSinkFunction<?>)
-                                    ((UserFunctionProvider<Function>) operator).getUserFunction())
-                            .getFormat()),
+                    (((OutputFormatSinkFunction<?>) ((UserFunctionProvider<Function>) operator).getUserFunction()).getFormat()),
                     operator);
         } else if (operator instanceof AbstractUdfStreamOperator) {
+            // wordcount 都走这里
             return new SimpleUdfStreamOperatorFactory<OUT>((AbstractUdfStreamOperator) operator);
         } else {
             return new SimpleOperatorFactory<>(operator);
@@ -71,13 +70,10 @@ public class SimpleOperatorFactory<OUT> extends AbstractStreamOperatorFactory<OU
 
     @SuppressWarnings("unchecked")
     @Override
-    public <T extends StreamOperator<OUT>> T createStreamOperator(
-            StreamOperatorParameters<OUT> parameters) {
+    public <T extends StreamOperator<OUT>> T createStreamOperator(StreamOperatorParameters<OUT> parameters) {
         if (operator instanceof AbstractStreamOperator) {
-            ((AbstractStreamOperator) operator)
-                    .setProcessingTimeService(parameters.getProcessingTimeService());
-            ((AbstractStreamOperator) operator)
-                    .setup(
+            ((AbstractStreamOperator) operator).setProcessingTimeService(parameters.getProcessingTimeService());
+            ((AbstractStreamOperator) operator).setup(
                             parameters.getContainingTask(),
                             parameters.getStreamConfig(),
                             parameters.getOutput());
@@ -95,8 +91,11 @@ public class SimpleOperatorFactory<OUT> extends AbstractStreamOperatorFactory<OU
         return operator instanceof StreamSource;
     }
 
+    //判断当前工厂所包裹的底层流算子（StreamOperator）是否实现了 OutputTypeConfigurable 接口
     @Override
     public boolean isOutputTypeConfigurable() {
+        // operator = StreamSource
+        // operator = StreamFlatMap
         return operator instanceof OutputTypeConfigurable;
     }
 
@@ -106,6 +105,7 @@ public class SimpleOperatorFactory<OUT> extends AbstractStreamOperatorFactory<OU
         ((OutputTypeConfigurable<OUT>) operator).setOutputType(type, executionConfig);
     }
 
+    //判断当前工厂所包裹的底层流算子（StreamOperator）是否实现了 InputTypeConfigurable 接口
     @Override
     public boolean isInputTypeConfigurable() {
         return operator instanceof InputTypeConfigurable;

@@ -82,8 +82,10 @@ public abstract class RecordWriter<T extends IOReadableWritable> implements Avai
 
     RecordWriter(ResultPartitionWriter writer, long timeout, String taskName) {
         this.targetPartition = writer;
+        // 跟最大并行度一致
         this.numberOfSubpartitions = writer.getNumberOfSubpartitions();
-
+        //System.out.println("RecordWriter:" + Thread.currentThread().getName() + " -> " + numberOfChannels);
+        //将对应的数据结构序列化生成二进制数据写入内存块
         this.serializer = new DataOutputSerializer(128);
 
         checkArgument(timeout >= ExecutionOptions.DISABLED_NETWORK_BUFFER_TIMEOUT);
@@ -96,18 +98,27 @@ public abstract class RecordWriter<T extends IOReadableWritable> implements Avai
                     taskName == null
                             ? DEFAULT_OUTPUT_FLUSH_THREAD_NAME
                             : DEFAULT_OUTPUT_FLUSH_THREAD_NAME + " for " + taskName;
-
+            //创建OutputFlusher线程 timeout 默认100
             outputFlusher = new OutputFlusher(threadName, timeout);
+            //【重点】 启动线程
             outputFlusher.start();
         }
     }
 
     public void emit(T record, int targetSubpartition) throws IOException {
+        //检查错误
         checkErroneous();
-
-        targetPartition.emitRecord(serializeRecord(serializer, record), targetSubpartition);
-
+        //todo 对数据进行序列化并转换成ByteBuffer
+        //serializer = DataOutputSerializer
+        //record = SerializationDelegate
+        // byteBuffer = HeapByteBuffer
+        ByteBuffer byteBuffer = serializeRecord(serializer, record);//
+        targetPartition.emitRecord(byteBuffer, targetSubpartition);
+        // PipelinedResultPartition#emitRecord  PipelinedResultPartition extends BufferWritingResultPartition
         if (flushAlways) {
+            //flushAlways 一般是 false 所以这里一般不运行
+            //会通过 OutputFlusher 线程刷新数据  【重点】
+            //PipelinedResultPartition#flush
             targetPartition.flush(targetSubpartition);
         }
     }
@@ -146,18 +157,22 @@ public abstract class RecordWriter<T extends IOReadableWritable> implements Avai
     public static ByteBuffer serializeRecord(
             DataOutputSerializer serializer, IOReadableWritable record) throws IOException {
         // the initial capacity should be no less than 4 bytes
+        //将position设置为4
         serializer.setPositionUnsafe(4);
-
+        //todo 从4位置开始写入数据，先将数据序列化成二进制再写到serializer
         // write data
         record.write(serializer);
 
         // write length
+        //在0位置 写入数据大小到serializer
         serializer.writeIntUnsafe(serializer.length() - 4, 0);
-
+        //返回 HeapByteBuffer
         return serializer.wrapAsByteBuffer();
     }
 
     public void flushAll() {
+        //todo 分区刷新所有数据
+        // PipelinedResultPartition#flushAll
         targetPartition.flushAll();
     }
 
@@ -277,6 +292,7 @@ public abstract class RecordWriter<T extends IOReadableWritable> implements Avai
             try {
                 while (running) {
                     try {
+                        // timeout = 100ms
                         Thread.sleep(timeout);
                     } catch (InterruptedException e) {
                         // propagate this if we are still running, because it should not happen
@@ -288,6 +304,7 @@ public abstract class RecordWriter<T extends IOReadableWritable> implements Avai
 
                     // any errors here should let the thread come to a halt and be
                     // recognized by the writer
+                    //刷新所有记录
                     flushAll();
                 }
             } catch (Throwable t) {

@@ -213,37 +213,55 @@ public class StreamingJobGraphGenerator {
     }
 
     private JobGraph createJobGraph() {
+        //作用：在图转换开始前，对全局配置和算子进行兼容性与安全性合规检查。
+        // 细节：利用用户类加载器（userClassloader）检查图中所有的用户自定义函数（UDF）、序列化器（Serializer）和状态后端（State Backend）是否能正常加载。
+        // 如果存在冲突配置（例如同时开启了不支持的混合模式），在此处直接抛出异常，提前熔断任务
         preValidate(streamGraph, userClassloader);
-
+        //遍历所有的 StreamNode，计算算子链合并，将数个逻辑节点揉成物理顶点 JobVertex，并初步在内存中建立它们之间的依赖树
         setChaining();
 
-        if (jobGraph.isDynamic()) {
+        if (jobGraph.isDynamic()) {// false
             setVertexParallelismsForDynamicGraphIfNecessary();
         }
 
         // Note that we set all the non-chainable outputs configuration here because the
         // "setVertexParallelismsForDynamicGraphIfNecessary" may affect the parallelism of job
         // vertices and partition-reuse
-        final Map<Integer, Map<StreamEdge, NonChainedOutput>> opIntermediateOutputs =
-                new HashMap<>();
+        //作用：为那些无法链化的边缘算子，配置其向外吐出数据的物理输出通道（配置序列化格式、数据缓冲区等）。细节：由于前一步的动态并发度（Parallelism）调整可能会改变顶点和分区的复用策略（Partition-reuse），
+        //所以 Flink 2.2 刻意将这一步推迟到动态图判定之后执行。它建立一个映射表，将每个算子和它断链后的物理输出（NonChainedOutput）死死绑定，确保数据能正确流向物理边缘
+        final Map<Integer, Map<StreamEdge, NonChainedOutput>> opIntermediateOutputs = new HashMap<>();
         setAllOperatorNonChainedOutputsConfigs(opIntermediateOutputs, jobVertexBuildContext);
         setAllVertexNonChainedOutputsConfigs(opIntermediateOutputs);
-
+        //构建物理连接边
+        //将断链边界的逻辑边（StreamEdge）正式实例化为物理世界里的 JobEdge（作业边） 和 IntermediateDataSet（中间数据集）。
+        //细节：它会把诸如 keyBy 的 Hash 分区器、rebalance 的轮询分区器等物理传输路由规则，真正写入 JobEdge 的配置项中，以此指导 TaskManager 运行时底层 Netty 组件的网络数据分发
         setPhysicalEdges(jobVertexBuildContext);
-
+        //并发多尝试（Speculative Execution）标记 标记当前图中的算子是否支持推测执行
+        //在 Batch 模式下，如果某个 Task 运行过慢（长尾作业），
+        //Flink 支持启动一个一模一样的并发 Task 去抢跑。该方法负责检查哪些 JobVertex 满足推测执行的条件（例如不能包含某些不安全的状态或非幂等 Source），并为其打上特殊的“通行证”标记
         markSupportingConcurrentExecutionAttempts(jobVertexBuildContext);
-
+        //批处理混合洗牌（Hybrid Shuffle）安全校验
+        //作用：校验 Hybrid Shuffle（混合落盘模式） 的运行合法性。细节：Hybrid Shuffle 是 Flink 批处理兼顾吞吐与低延迟的黑科技（数据既可以留在内存直推，也可以落盘）。
+        // 此步骤严格检查在 BATCH 模式下，生成的 JobVertex 结构和数据边是否能绝对安全、完美地支持 Hybrid Shuffle 的内存段隔离机制
         validateHybridShuffleExecuteInBatchMode(jobVertexBuildContext);
-
+        //槽位共享与共宿分配
+        //决定哪些 JobVertex 可以挤在同一个 TaskManager 的物理 Slot 线程中。它会遍历所有的顶点，
+        // 读取用户的 .slotSharingGroup(...) 配置，并为具有关联性（如 CoGroup 或特异性 State）的算子构建 CoLocationGroup（共宿组），确保它们部署在同一台机器上以消减网络开销
         setSlotSharingAndCoLocation(jobVertexBuildContext);
-
+        //托管内存分配比例计算
+        //作用：精准计算每个物理顶点对 托管内存（Managed Memory） 的瓜分占比。
+        //细节：Flink 2.2 对堆外托管内存有着极其严苛的管理。如果一个物理链里同时包含 RocksDB 状态后端、批处理排序（Batch Operator）以及 Python UDF 算子，
+        // 该方法会精确算出每一类组件在该顶点总托管内存中应当占有的 Fraction（权重比例值），防止运行时 OOM
         setManagedMemoryFraction(jobVertexBuildContext);
-
+        //拓扑序号前缀注入（为了日志与监控可读性）
         addVertexIndexPrefixInVertexName(jobVertexBuildContext, new AtomicInteger(0));
-
+        //作用：为每个 JobVertex 注入详细的物理拓扑描述（JSON 或文本结构）。
+        //细节：把这个物理顶点里到底“打包/融合”了哪些具体的逻辑算子名、UID 以及配置详情写进 Description。后续在 Web UI 页面点击该算子节点时，弹出的“详细物理信息面板”正是由此处提供的数据支撑
         setVertexDescription(jobVertexBuildContext);
 
         // Wait for the serialization of operator coordinators and stream config.
+        //为了防止主线程卡顿，它启动了一个专门的线程池 serializationExecutor 异步去执行这一步。将我们在 createSourceChainInfo 中提取出的那些极其沉重、面向分布式大脑的 OperatorCoordinator.Provider（算子协调器） 序列化为字节数组。
+        //将所有物理顶点的全量 StreamConfig（包含算子链内部信息）全部持久化、序列化完毕并安全回填到 JobGraph 实例中
         serializeOperatorCoordinatorsAndStreamConfig(serializationExecutor, jobVertexBuildContext);
 
         return jobGraph;
@@ -562,15 +580,21 @@ public class StreamingJobGraphGenerator {
         }
     }
 
+    //扫描整个拓扑图，找出所有能够作为“链化源头”（Chain Head）的入口节点，并为它们建立第一批初始的算子链信息
     private Map<Integer, OperatorChainInfo> buildChainedInputsAndGetHeadInputs() {
         final Map<Integer, OperatorChainInfo> chainEntryPoints = new HashMap<>();
 
         for (Integer sourceNodeId : streamGraph.getSourceIDs()) {
+            //获取StreamNode
             final StreamNode sourceNode = streamGraph.getStreamNode(sourceNodeId);
-            if (isChainableSource(sourceNode, streamGraph)) {
-                createSourceChainInfo(sourceNode, chainEntryPoints, jobVertexBuildContext);
+            //判断是否满足与其下游算子进行 Chaining 合并的物理条件
+            if (isChainableSource(sourceNode, streamGraph)) {//
+                //可以链化的 Source
+                //这个方法会提前分配并开辟一个共同的 OperatorChainInfo（链化容器），把这个 Source 作为这个链的 Head（头部节点） 塞进去
+                createSourceChainInfo(sourceNode, chainEntryPoints, jobVertexBuildContext);//
             } else {
-                chainEntryPoints.put(sourceNodeId, new OperatorChainInfo(sourceNodeId));
+                //无法链化的 Source 生成一个独立的 OperatorChainInfo，但它的上下游链条里，只包含它自己这一个孤零零的节点
+                chainEntryPoints.put(sourceNodeId, new OperatorChainInfo(sourceNodeId));//
             }
         }
 
@@ -585,8 +609,7 @@ public class StreamingJobGraphGenerator {
     private void setChaining() {
         // we separate out the sources that run as inputs to another operator (chained inputs)
         // from the sources that needs to run as the main (head) operator.
-        final Map<Integer, OperatorChainInfo> chainEntryPoints =
-                buildChainedInputsAndGetHeadInputs();
+        final Map<Integer, OperatorChainInfo> chainEntryPoints = buildChainedInputsAndGetHeadInputs();
         final Collection<OperatorChainInfo> initialEntryPoints =
                 chainEntryPoints.entrySet().stream()
                         .sorted(Comparator.comparing(Map.Entry::getKey))
@@ -595,6 +618,7 @@ public class StreamingJobGraphGenerator {
 
         // iterate over a copy of the values, because this map gets concurrently modified
         for (OperatorChainInfo info : initialEntryPoints) {
+            //
             createChain(
                     info.getStartNodeId(),
                     1, // operators start at position 1 because 0 is for chained source inputs
@@ -607,7 +631,7 @@ public class StreamingJobGraphGenerator {
         }
     }
 
-    public static List<StreamEdge> createChain(
+    public static List<StreamEdge> createChain(//
             final Integer currentNodeId,
             final int chainIndex,
             final OperatorChainInfo chainInfo,
@@ -623,13 +647,14 @@ public class StreamingJobGraphGenerator {
 
             // Adaptive graph generator needs to subscribe the visited stream node id to
             // generate hashes for it.
-            if (visitedStreamNodeConsumer != null) {
+            if (visitedStreamNodeConsumer != null) {//false
                 visitedStreamNodeConsumer.accept(currentNodeId);
             }
-
+            //整个算子链最终暴露在外面的、用来连接其他物理顶点的物理出边总集
             List<StreamEdge> transitiveOutEdges = new ArrayList<StreamEdge>();
-
+            //可以和当前算子链化合并的下游边
             List<StreamEdge> chainableOutputs = new ArrayList<StreamEdge>();
+            //无法跟当前算子链化的下游边（比如因为遇到了 keyBy 网络分区或用户手动禁用了链化）
             List<StreamEdge> nonChainableOutputs = new ArrayList<StreamEdge>();
 
             StreamNode currentNode = streamGraph.getStreamNode(currentNodeId);
@@ -637,18 +662,21 @@ public class StreamingJobGraphGenerator {
             boolean isNoOutputUntilEndOfInput =
                     currentNode.isOutputOnlyAfterEndOfStream()
                             || currentNodeAttribute.isNoOutputUntilEndOfInput();
-            if (isNoOutputUntilEndOfInput) {
+            if (isNoOutputUntilEndOfInput) {//false
                 currentNodeAttribute.setNoOutputUntilEndOfInput(true);
             }
 
             for (StreamEdge outEdge : currentNode.getOutEdges()) {
                 if (isChainable(outEdge, streamGraph)) {
+                    // 属于当前链的内部延续
                     chainableOutputs.add(outEdge);
                 } else {
+                    // 链在此处被强行斩断
                     nonChainableOutputs.add(outEdge);
                 }
             }
 
+            //顺着 chainableOutputs 递归（壮大当前阵营）：
             for (StreamEdge chainable : chainableOutputs) {
                 StreamNode targetNode = streamGraph.getStreamNode(chainable.getTargetId());
                 Attribute targetNodeAttribute = targetNode.getAttribute();
@@ -674,13 +702,14 @@ public class StreamingJobGraphGenerator {
                 }
             }
 
+            //顺着 nonChainableOutputs 递归（开启新的独立阵营）
             for (StreamEdge nonChainable : nonChainableOutputs) {
                 transitiveOutEdges.add(nonChainable);
                 // Used to control whether a new chain can be created, this value is true in the
                 // full graph generation algorithm and false in the progressive generation
                 // algorithm. In the future, this variable can be a boolean type function to adapt
                 // to more adaptive scenarios.
-                if (canCreateNewChain) {
+                if (canCreateNewChain) {//true
                     createChain(
                             nonChainable.getTargetId(),
                             1, // operators start at position 1 because 0 is for chained source
@@ -737,6 +766,8 @@ public class StreamingJobGraphGenerator {
 
             StreamConfig config;
             if (currentNodeId.equals(startNodeId)) {
+                //证明这整条链的所有算子都已经被遍历并处理完毕了  实例化出核心的物理顶点
+                //它会把当前算子链的所有对外交界出边（transitiveOutEdges），全部转换为连接其他物理顶点的 JobEdge（物理边） 和 IntermediateDataSet（中间数据集）
                 JobVertex jobVertex = jobVertexBuildContext.getJobVertex(startNodeId);
                 if (jobVertex == null) {
                     jobVertex =
@@ -937,30 +968,27 @@ public class StreamingJobGraphGenerator {
         Integer sourceNodeId = sourceNode.getId();
         StreamEdge sourceOutEdge = sourceNode.getOutEdges().get(0);
 
+        //
         final OperatorChainInfo chainInfo =
-                chainEntryPoints.computeIfAbsent(
-                        sourceOutEdge.getTargetId(),
-                        (k) -> new OperatorChainInfo(sourceOutEdge.getTargetId()));
+                //sourceOutEdge.getTargetId() = 下游算子的 ID
+                chainEntryPoints.computeIfAbsent(sourceOutEdge.getTargetId(), (k) -> new OperatorChainInfo(sourceOutEdge.getTargetId()));
+        //
         final OperatorID opId = new OperatorID(jobVertexBuildContext.getHash(sourceNodeId));
         final OperatorInfo operatorInfo = chainInfo.createAndGetOperatorInfo(sourceNodeId, opId);
-        final StreamConfig.SourceInputConfig inputConfig =
-                new StreamConfig.SourceInputConfig(sourceOutEdge);
+        final StreamConfig.SourceInputConfig inputConfig = new StreamConfig.SourceInputConfig(sourceOutEdge);
         final StreamConfig operatorConfig = new StreamConfig(new Configuration());
         setOperatorConfig(sourceNodeId, operatorConfig, chainInfo, jobVertexBuildContext);
         setOperatorChainedOutputsConfig(
                 operatorConfig, Collections.emptyList(), jobVertexBuildContext);
         // we cache the non-chainable outputs here, and set the non-chained config later
         operatorInfo.addNonChainableOutputs(Collections.emptyList());
-
+        //明确 Source 在这个物理算子链（OperatorChain）中的执行顺序
         operatorConfig.setChainIndex(0); // sources are always first
         operatorConfig.setOperatorID(opId);
         operatorConfig.setOperatorName(sourceNode.getOperatorName());
 
-        final SourceOperatorFactory<?> sourceOpFact =
-                (SourceOperatorFactory<?>)
-                        Preconditions.checkNotNull(sourceNode.getOperatorFactory());
-        final OperatorCoordinator.Provider coord =
-                sourceOpFact.getCoordinatorProvider(sourceNode.getOperatorName(), opId);
+        final SourceOperatorFactory<?> sourceOperatorFactory = (SourceOperatorFactory<?>) Preconditions.checkNotNull(sourceNode.getOperatorFactory());
+        final OperatorCoordinator.Provider coord = sourceOperatorFactory.getCoordinatorProvider(sourceNode.getOperatorName(), opId);
 
         chainInfo.addChainedSource(sourceNode, new ChainedSourceInfo(operatorConfig, inputConfig));
         chainInfo.addCoordinatorProvider(coord);
@@ -1709,43 +1737,61 @@ public class StreamingJobGraphGenerator {
     }
 
     public static boolean isChainable(StreamEdge edge, StreamGraph streamGraph) {
-        return isChainable(edge, streamGraph, false);
+        return isChainable(edge, streamGraph, false);//
     }
 
     public static boolean isChainable(
             StreamEdge edge, StreamGraph streamGraph, boolean allowChainWithDefaultParallelism) {
         StreamNode downStreamVertex = streamGraph.getTargetVertex(edge);
 
-        return downStreamVertex.getInEdges().size() == 1
-                && isChainableInput(edge, streamGraph, allowChainWithDefaultParallelism);
+        return downStreamVertex.getInEdges().size() == 1 && isChainableInput(edge, streamGraph, allowChainWithDefaultParallelism);
     }
 
     public static boolean isChainableSource(StreamNode streamNode, StreamGraph streamGraph) {
+        //在 Flink 中，新版的 Source API 在底层生成流图时，其算子工厂的类型必定是 SourceOperatorFactory（例如基于 KafkaSource、FileSource 构建的源）。
+        // 如果使用的是老版的 SourceFunction（比如旧的 FlinkKafkaConsumer），这里直接返回 false，判定为不可链化
         if (streamNode.getOperatorFactory() == null
                 || !(streamNode.getOperatorFactory() instanceof SourceOperatorFactory)
+                //Source 的下游输出边必须“有且仅有一条”
                 || streamNode.getOutEdges().size() != 1) {
+            //source.map(...)
+            //source.filter(...)
+            // source 进行两个操作 导致 outEdges.size() > 1 那么这个 Source 必须独立存在，不能和任意一个下游链化
             return false;
         }
         final StreamEdge sourceOutEdge = streamNode.getOutEdges().get(0);
         final StreamNode target = streamGraph.getStreamNode(sourceOutEdge.getTargetId());
-        final ChainingStrategy targetChainingStrategy =
-                Preconditions.checkNotNull(target.getOperatorFactory()).getChainingStrategy();
+        //根据Operator工厂获取链式策略
+        final ChainingStrategy targetChainingStrategy = Preconditions.checkNotNull(target.getOperatorFactory()).getChainingStrategy();
         return targetChainingStrategy == ChainingStrategy.HEAD_WITH_SOURCES
-                && isChainableInput(sourceOutEdge, streamGraph, false);
+                && isChainableInput(sourceOutEdge, streamGraph, false);//
     }
 
+    //它必须要确认上下游算子处于同一个资源组、具备完全相同的并行度、使用直通（Forward）的传输方式、且下游不是多路 Union 的缝合怪
     private static boolean isChainableInput(
             StreamEdge edge, StreamGraph streamGraph, boolean allowChainWithDefaultParallelism) {
+        //edge的上游
         StreamNode upStreamVertex = streamGraph.getSourceVertex(edge);
+        //edge的下游
         StreamNode downStreamVertex = streamGraph.getTargetVertex(edge);
 
-        if (!(streamGraph.isChainingEnabled()
+        if (!(
+                // 检查作业是否开启了算子链化 默认true
+                streamGraph.isChainingEnabled()
+                //校验上下游算子是否属于同一个槽位共享组
                 && upStreamVertex.isSameSlotSharingGroup(downStreamVertex)
+                //深入对比上下游算子本身的并行度、执行模式和链化策略
                 && areOperatorsChainable(
                         upStreamVertex,
                         downStreamVertex,
                         streamGraph,
                         allowChainWithDefaultParallelism)
+                //传输模式与分区检查 检查数据的物理分发策略和交换模式（ExchangeMode）
+                //分区器（Partitioner）：只有 ForwardPartitioner（直通） 或者是特定单并发下的 RebalancePartitioner 才能链化。
+                // 如果是 KeyBy（Hash 分区）、Broadcast（广播），意味着数据需要重新打散走网络连接，直接拒绝
+
+                //自适应批优化（streamGraph.isDynamic()）：
+                // 在 Flink 2.2 中，如果开启了自适应动态图，数据交换模式（ExchangeMode）如果是阻塞式落盘（BATCH 阻塞）则不能链化，必须是流水线直推（PIPELINED）才行
                 && arePartitionerAndExchangeModeChainable(
                         edge.getPartitioner(), edge.getExchangeMode(), streamGraph.isDynamic()))) {
 
@@ -1756,6 +1802,10 @@ public class StreamingJobGraphGenerator {
         // through the network/byte-channel stack.
         // we check that by testing that each "type" (which means input position) is used only once
         for (StreamEdge inEdge : downStreamVertex.getInEdges()) {
+            //遍历下游算子所有的输入边
+            //如果发现了另外一条边（inEdge != edge），
+            // 而且它的输入位置编号和当前检查的边一模一样（inEdge.getTypeNumber() == edge.getTypeNumber()），这就铁证了这是一个 Union 操作
+            //Flink 官方在注释中写得很直白：“因为 Union 目前只能通过网络/字节通道栈（network/byte-channel stack）来工作”
             if (inEdge != edge && inEdge.getTypeNumber() == edge.getTypeNumber()) {
                 return false;
             }
@@ -1802,7 +1852,7 @@ public class StreamingJobGraphGenerator {
         // we use switch/case here to make sure this is exhaustive if ever values are added to the
         // ChainingStrategy enum
         boolean isChainable;
-
+        //上游算子链式策略
         switch (upStreamOperator.getChainingStrategy()) {
             case NEVER:
                 isChainable = false;
@@ -1816,7 +1866,7 @@ public class StreamingJobGraphGenerator {
                 throw new RuntimeException(
                         "Unknown chaining strategy: " + upStreamOperator.getChainingStrategy());
         }
-
+        //下游算子链式策略
         switch (downStreamOperator.getChainingStrategy()) {
             case NEVER:
             case HEAD:

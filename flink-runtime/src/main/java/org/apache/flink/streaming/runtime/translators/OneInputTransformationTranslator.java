@@ -58,17 +58,16 @@ public final class OneInputTransformationTranslator<IN, OUT>
     @Override
     public Collection<Integer> translateForStreamingInternal(
             final OneInputTransformation<IN, OUT> transformation, final Context context) {
-        Collection<Integer> ids =
-                translateInternal(
-                        transformation,
-                        transformation.getOperatorFactory(),
-                        transformation.getInputType(),
-                        transformation.getStateKeySelector(),
+        Collection<Integer> ids = translateInternal(//
+                        transformation,//算子
+                        transformation.getOperatorFactory(),//算子工厂
+                        transformation.getInputType(),//输入类型
+                        transformation.getStateKeySelector(),//KeyedState 状态后端管理的 KeySelector
                         transformation.getStateKeyType(),
                         context);
 
-        if (transformation.isOutputOnlyAfterEndOfStream()
-                || transformation.getAttribute().isNoOutputUntilEndOfInput()) {
+        if (transformation.isOutputOnlyAfterEndOfStream() || transformation.getAttribute().isNoOutputUntilEndOfInput()) {
+            //将它与上游之间的 StreamEdge 的数据交换模式（ExchangeMode）从流式的 PIPELINED（流水线直推）改写为 BATCH（阻塞式落盘）
             maybeApplyBatchExecutionSettings(transformation, context);
         }
 

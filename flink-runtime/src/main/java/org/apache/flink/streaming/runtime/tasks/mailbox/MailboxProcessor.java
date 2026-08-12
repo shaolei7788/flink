@@ -225,7 +225,7 @@ public class MailboxProcessor implements Closeable {
         assert localMailbox.getState() == TaskMailbox.State.OPEN : "Mailbox must be opened!";
         //创建MailboxController，可以控制Mailbox的循环，临时暂停和恢复mailboxDefaultAction(默认动作)
         final MailboxController mailboxController = new MailboxController(this);
-        System.out.println(Thread.currentThread().getName() + " 处理runMailboxLoop");
+        //System.out.println(Thread.currentThread().getName() + " 处理runMailboxLoop");
         //如果它返回 true，主线程就继续处理邮件或读取数据；如果返回 false，主线程就会立刻退出死循环，从而启动 Task 的关闭流程
         // 【第一道关卡】只要Task 没死没被 Cancel，大循环就能一直转
         while (isNextLoopPossible()) {

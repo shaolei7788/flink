@@ -306,13 +306,16 @@ public class SingleInputGate extends IndexedInputGate {
         checkState(
                 this.bufferPool == null,
                 "Bug in input gate setup logic: Already registered buffer pool.");
-
+        //todo resultPartitionFactory = ResultPartitionFactory   对应SingleInputGateFactory#createBufferPoolFactory
+        // bufferPool = LocalBufferPool
+        // 2. 创建 LocalBufferPool（浮动 Buffer 池）
         BufferPool bufferPool = bufferPoolFactory.get();
+        //设置bufferPool
         setBufferPool(bufferPool);
         if (tieredStorageConsumerClient != null) {
             tieredStorageConsumerClient.setup(bufferPool);
         }
-
+        //为所有的InputChannel分配专用buffer
         setupChannels();
     }
 

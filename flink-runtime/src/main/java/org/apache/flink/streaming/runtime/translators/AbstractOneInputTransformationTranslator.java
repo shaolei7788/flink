@@ -57,11 +57,11 @@ abstract class AbstractOneInputTransformationTranslator<IN, OUT, OP extends Tran
         checkNotNull(context);
 
         final StreamGraph streamGraph = context.getStreamGraph();
-        final String slotSharingGroup = context.getSlotSharingGroup();
+        final String slotSharingGroup = context.getSlotSharingGroup();//default
         final int transformationId = transformation.getId();
         final ExecutionConfig executionConfig = streamGraph.getExecutionConfig();
 
-        streamGraph.addOperator(
+        streamGraph.addOperator(//
                 transformationId,
                 slotSharingGroup,
                 transformation.getCoLocationGroupKey(),
@@ -80,8 +80,9 @@ abstract class AbstractOneInputTransformationTranslator<IN, OUT, OP extends Tran
                 transformation.getParallelism() != ExecutionConfig.PARALLELISM_DEFAULT
                         ? transformation.getParallelism()
                         : executionConfig.getParallelism();
-        streamGraph.setParallelism(
-                transformationId, parallelism, transformation.isParallelismConfigured());
+        //设置并行度
+        streamGraph.setParallelism(transformationId, parallelism, transformation.isParallelismConfigured());
+        //设置最大并行度
         streamGraph.setMaxParallelism(transformationId, transformation.getMaxParallelism());
 
         final List<Transformation<?>> parentTransformations = transformation.getInputs();

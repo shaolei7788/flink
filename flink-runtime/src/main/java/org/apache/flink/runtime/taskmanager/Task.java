@@ -559,6 +559,7 @@ public class Task
 
     /** Starts the task's thread. */
     public void startTaskThread() {
+        // 启动线程 会调用自己的run()
         executingThread.start();
     }
 
@@ -566,7 +567,7 @@ public class Task
     @Override
     public void run() {
         try (MdcCloseable ignored = MdcUtils.withContext(MdcUtils.asContextData(jobId))) {
-            doRun();
+            doRun();//
         } finally {
             terminationFuture.complete(executionState);
         }
@@ -577,8 +578,10 @@ public class Task
         //  Initial State transition
         // ----------------------------
         while (true) {
+            //获取执行状态
             ExecutionState current = this.executionState;
             if (current == ExecutionState.CREATED) {
+                //改变执行状态
                 if (transitionState(ExecutionState.CREATED, ExecutionState.DEPLOYING)) {
                     // success, we can start our work
                     break;
@@ -662,7 +665,7 @@ public class Task
             // ----------------------------------------------------------------
 
             LOG.debug("Registering task at network: {}.", this);
-
+            //初始化当前 Task 的所有数据输出通道（ResultPartition）和数据输入通道（InputGate），使该 Task 具备发送和接收网络数据的能力
             setupPartitionsAndGates(partitionWriters, inputGates);
 
             for (ResultPartitionWriter partitionWriter : partitionWriters) {
@@ -697,7 +700,9 @@ public class Task
 
             TaskKvStateRegistry kvStateRegistry =
                     kvStateService.createKvStateTaskRegistry(jobId, getJobVertexId());
-
+            //todo 构建一个环境对象
+            //在作业执行阶段由Task实例持有，提供状态后端、分布式缓存等运行时资源 每个Task实例持有独立的RuntimeEnvironment
+            //StreamExecutionEnvironment在作业开发阶段使用，负责构建执行拓扑图（StreamGraph）
             Environment env =
                     new RuntimeEnvironment(
                             jobId,
@@ -742,9 +747,14 @@ public class Task
             FlinkSecurityManager.monitorUserSystemExitForCurrentThread();
             try {
                 // now load and instantiate the task's invokable code
-                invokable =
-                        loadAndInstantiateInvokable(
-                                userCodeClassLoader.asClassLoader(), nameOfInvokableClass, env);
+                /*TODO 加载和实例化task的可执行代码*/
+                // 每一个StreamNode 在添加的时候都会有一个jobVertexClass属性
+                // 如果是一个operator chain,就是head operator 对应的InvokableClassName,见StreamingJobGraphGenerator.create()
+                // 通过反射创建 AbstractInvokable invokableClass 对应StreamGraph 里的代码 ，如下
+                // invokableClass = operatorFactory.isStreamSource() ? SourceStreamTask.class : OneInputStreamTask.class;
+                //流模式: SourceStreamTask, OneInputStreamTask
+                //批模式: DataSourceTask, BatchTask, DataSinkTask
+                invokable = loadAndInstantiateInvokable(userCodeClassLoader.asClassLoader(), nameOfInvokableClass, env);
             } finally {
                 FlinkSecurityManager.unmonitorUserSystemExitForCurrentThread();
             }
@@ -758,7 +768,7 @@ public class Task
             this.invokable = invokable;
 
             restoreAndInvoke(invokable, postFailureCleanUpRegistry);
-
+            //正常运行中的作业不会执行到这里
             // make sure, we enter the catch block if the task leaves the invoke() method due
             // to the fact that it has been canceled
             if (isCanceledOrFailed()) {
@@ -772,12 +782,14 @@ public class Task
             // finish the produced partitions. if this fails, we consider the execution failed.
             for (ResultPartitionWriter partitionWriter : partitionWriters) {
                 if (partitionWriter != null) {
+                    // 完成所有输出分区
                     partitionWriter.finish();
                 }
             }
 
             // try to mark the task as finished
             // if that fails, the task was canceled/failed in the meantime
+            // 转换到 FINISHED 状态
             if (!transitionState(ExecutionState.RUNNING, ExecutionState.FINISHED)) {
                 throw new CancelTaskException();
             }
@@ -932,10 +944,11 @@ public class Task
         try {
             // switch to the INITIALIZING state, if that fails, we have been canceled/failed in the
             // meantime
+            //更改状态为 INITIALIZING
             if (!transitionState(ExecutionState.DEPLOYING, ExecutionState.INITIALIZING)) {
                 throw new CancelTaskException();
             }
-
+            //通知TaskManager 任务状态更改
             taskManagerActions.updateTaskExecutionState(
                     new TaskExecutionState(executionId, ExecutionState.INITIALIZING));
 
@@ -943,7 +956,7 @@ public class Task
             executingThread.setContextClassLoader(userCodeClassLoader.asClassLoader());
 
             runWithSystemExitMonitoring(finalInvokable::restore);
-
+            //更改状态为 RUNNING
             if (!transitionState(ExecutionState.INITIALIZING, ExecutionState.RUNNING)) {
                 throw new CancelTaskException();
             }
@@ -951,7 +964,15 @@ public class Task
             // notify everyone that we switched to running
             taskManagerActions.updateTaskExecutionState(
                     new TaskExecutionState(executionId, ExecutionState.RUNNING));
+            // 流模式 invokable可能是 SourceStreamTask ，执行父类 StreamTask#invoke
+            // 流模式 invokable可能是 OneInputStreamTask ，执行父类 StreamTask#invoke
 
+            // 批模式 invokable可能是 DataSourceTask ，执行 DataSourceTask#invoke
+            // 批模式 invokable可能是 BatchTask ，执行 BatchTask#invoke
+            // 批模式 invokable可能是 DataSinkTask ，执行 DataSinkTask#invoke
+            // 批模式 invokable可能是 Flat Map -> Map (1/2)#0 ，StreamTask#invoke
+            // 批模式 invokable可能是 KeyedAggregation -> Sink:pint -> Map (1/2)#0 ，OneInputStreamTask#invoke
+            //System.out.println(finalInvokable.getClass().getName() + " =======");
             runWithSystemExitMonitoring(finalInvokable::invoke);
         } catch (Throwable throwable) {
             cleanUpRegistry.registerCloseable(
@@ -977,16 +998,21 @@ public class Task
     }
 
     @VisibleForTesting
-    public static void setupPartitionsAndGates(
-            ResultPartitionWriter[] producedPartitions, InputGate[] inputGates) throws IOException {
+    public static void setupPartitionsAndGates(ResultPartitionWriter[] producedPartitions, InputGate[] inputGates) throws IOException {
 
         for (ResultPartitionWriter partition : producedPartitions) {
+            //为输出通道创建本地缓冲池（向 NetworkBufferPool 申请 MemorySegment 用于缓存输出数据）并将其注册到 ResultPartitionManager 中以便下游拉取
+            //partition = PipelinedResultPartition
+            //ResultPartition#setup
             partition.setup();
         }
 
         // InputGates must be initialized after the partitions, since during InputGate#setup
         // we are requesting partitions
         for (InputGate gate : inputGates) {
+            //为接收数据创建本地缓冲池，并触发 InputChannel 向上游建立连接。根据上游位置不同，会建立本地转接通道或通过 Netty 建立远程网络连接并发送数据拉取请求
+            //为InputGate中的InputChannel分配BufferPool
+            //InputGateWithMetrics#setup
             gate.setup();
         }
     }

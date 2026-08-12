@@ -59,6 +59,7 @@ public class StreamGroupedReduceOperator<IN>
         IN currentValue = values.value();
 
         if (currentValue != null) {
+            //
             IN reduced = userFunction.reduce(currentValue, value);
             values.update(reduced);
             output.collect(element.replace(reduced));

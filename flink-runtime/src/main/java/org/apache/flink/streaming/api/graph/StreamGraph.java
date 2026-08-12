@@ -546,7 +546,7 @@ public class StreamGraph implements Pipeline, ExecutionPlan {
             TypeInformation<IN> inTypeInfo,
             TypeInformation<OUT> outTypeInfo,
             String operatorName) {
-        addOperator(
+        addOperator(//
                 vertexID,
                 slotSharingGroup,
                 coLocationGroup,
@@ -565,7 +565,7 @@ public class StreamGraph implements Pipeline, ExecutionPlan {
             TypeInformation<IN> inTypeInfo,
             TypeInformation<OUT> outTypeInfo,
             String operatorName) {
-        addOperator(
+        addOperator(//
                 vertexID,
                 slotSharingGroup,
                 coLocationGroup,
@@ -580,7 +580,7 @@ public class StreamGraph implements Pipeline, ExecutionPlan {
         sinks.add(vertexID);
     }
 
-    public <IN, OUT> void addOperator(
+    public <IN, OUT> void addOperator(//
             Integer vertexID,
             @Nullable String slotSharingGroup,
             @Nullable String coLocationGroup,
@@ -592,7 +592,7 @@ public class StreamGraph implements Pipeline, ExecutionPlan {
                 operatorFactory.isStreamSource()
                         ? SourceStreamTask.class
                         : OneInputStreamTask.class;
-        addOperator(
+        addOperator(//
                 vertexID,
                 slotSharingGroup,
                 coLocationGroup,
@@ -612,21 +612,27 @@ public class StreamGraph implements Pipeline, ExecutionPlan {
             TypeInformation<OUT> outTypeInfo,
             String operatorName,
             Class<? extends TaskInvokable> invokableClass) {
-
-        addNode(
+        //创建StreamNode
+        addNode(//
                 vertexID,
                 slotSharingGroup,
                 coLocationGroup,
                 invokableClass,
                 operatorFactory,
                 operatorName);
-        setSerializers(vertexID, createSerializer(inTypeInfo), null, createSerializer(outTypeInfo));
-
+        //输入序列化器
+        TypeSerializer<IN> inTypeSerializer = createSerializer(inTypeInfo);//StringSerializer
+        //输出序列化器
+        TypeSerializer<OUT> outTypeSerializer = createSerializer(outTypeInfo);//StringSerializer
+        //设置序列化器
+        setSerializers(vertexID, inTypeSerializer, null, outTypeSerializer);//
+        //SimpleUdfStreamOperatorFactory SimpleOperatorFactory#isOutputTypeConfigurable
         if (operatorFactory.isOutputTypeConfigurable() && outTypeInfo != null) {
+            // 将最终确定的输出数据类型信息（TypeInformation）反向注入到算子（StreamOperator）或 UDF 函数中
             // sets the output type which must be know at StreamGraph creation time
             operatorFactory.setOutputType(outTypeInfo, executionConfig);
         }
-
+        //SimpleOperatorFactory#isInputTypeConfigurable
         if (operatorFactory.isInputTypeConfigurable()) {
             operatorFactory.setInputType(inTypeInfo, executionConfig);
         }
@@ -716,9 +722,7 @@ public class StreamGraph implements Pipeline, ExecutionPlan {
         if (streamNodes.containsKey(vertexID)) {
             throw new RuntimeException("Duplicate vertexID " + vertexID);
         }
-
-        StreamNode vertex =
-                new StreamNode(
+        StreamNode vertex = new StreamNode(//
                         vertexID,
                         slotSharingGroup,
                         coLocationGroup,

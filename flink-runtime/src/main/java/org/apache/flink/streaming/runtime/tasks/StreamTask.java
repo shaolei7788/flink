@@ -651,8 +651,11 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
      * @throws Exception on any problems in the action.
      */
     protected void processInput(MailboxDefaultAction.Controller controller) throws Exception {
-        //StreamOneInputProcessor#processInput
+        //StreamOneInputProcessor#processInput  读取输入的数据
         DataInputStatus status = inputProcessor.processInput();
+        //MORE_AVAILABLE：表示在输入数据中还有更多的数据可以消费，当任务正常运行时，会一直处于MORE_AVAILABLE状态
+        //NOTHING_AVAILABLE：表示当前没有数据可以消费，但是未来会有数据待处理，此时线程模型中的处理线程会被挂起并等待数据接入
+        //END_OF_INPUT：表示数据已经达到最后的状态，之后不再有数据输入，也预示这整个Task结束
         switch (status) {
             case MORE_AVAILABLE:
                 if (taskIsAvailable()) {
@@ -685,6 +688,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         PeriodTimer timer;
         CompletableFuture<?> resumeFuture;
         if (!recordWriter.isAvailable()) {
+            //输出不可用
             timer = new GaugePeriodTimer(ioMetrics.getSoftBackPressuredTimePerSecond());
             resumeFuture = recordWriter.getAvailableFuture();
         } else if (!inputProcessor.isAvailable()) {//

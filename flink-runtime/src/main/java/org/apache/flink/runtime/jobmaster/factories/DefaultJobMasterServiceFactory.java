@@ -97,7 +97,7 @@ public class DefaultJobMasterServiceFactory implements JobMasterServiceFactory {
         return CompletableFuture.supplyAsync(
                 FunctionUtils.uncheckedSupplier(
                         //
-                        () -> internalCreateJobMasterService(leaderSessionId, onCompletionActions)),
+                        () -> internalCreateJobMasterService(leaderSessionId, onCompletionActions)),//
                 executor);
     }
 
@@ -124,7 +124,7 @@ public class DefaultJobMasterServiceFactory implements JobMasterServiceFactory {
                                         executionPlan.getJobID(), shuffleMaster, lookup),
                         new DefaultExecutionDeploymentTracker(),
                         DefaultExecutionDeploymentReconciler::new,
-                        BlocklistUtils.loadBlocklistHandlerFactory(jobMasterConfiguration.getConfiguration()),
+                        BlocklistUtils.loadBlocklistHandlerFactory(jobMasterConfiguration.getConfiguration()),//
                         failureEnrichers,
                         initializationTimestamp);
         // 会调度作业的执行

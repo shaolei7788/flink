@@ -677,8 +677,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
 
             final ExecutionAttemptID executionAttemptID = tdd.getExecutionAttemptId();
 
-            final JobTable.Connection jobManagerConnection =
-                    jobTable.getConnection(jobId)
+            final JobTable.Connection jobManagerConnection = jobTable.getConnection(jobId)
                             .orElseThrow(
                                     () -> {
                                         final String message =
@@ -891,6 +890,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
             }
 
             if (taskAdded) {
+                //开始任务线程
                 task.startTaskThread();
 
                 setupResultPartitionBookkeeping(

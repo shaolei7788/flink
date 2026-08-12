@@ -47,28 +47,27 @@ public class DataStreamSink<T> {
     private final PhysicalTransformation<T> transformation;
 
     protected DataStreamSink(PhysicalTransformation<T> transformation) {
-        this.transformation = checkNotNull(transformation);
+        this.transformation = checkNotNull(transformation);//
     }
 
     static <T> DataStreamSink<T> forSinkFunction(
             DataStream<T> inputStream, SinkFunction<T> sinkFunction) {
-        StreamSink<T> sinkOperator = new StreamSink<>(sinkFunction);
+        StreamSink<T> sinkOperator = new StreamSink<>(sinkFunction);//
         final StreamExecutionEnvironment executionEnvironment =
                 inputStream.getExecutionEnvironment();
-        LegacySinkTransformation<T> transformation =
-                new LegacySinkTransformation<>(
+        LegacySinkTransformation<T> transformation = new LegacySinkTransformation<>(
                         inputStream.getTransformation(),
                         "Unnamed",
                         sinkOperator,
                         executionEnvironment.getParallelism(),
                         false);
-        if (sinkFunction instanceof LineageVertexProvider) {
+        if (sinkFunction instanceof LineageVertexProvider) {//false
             transformation.setLineageVertex(
                     ((LineageVertexProvider) sinkFunction).getLineageVertex());
         }
 
         executionEnvironment.addOperator(transformation);
-        return new DataStreamSink<>(transformation);
+        return new DataStreamSink<>(transformation);//
     }
 
     @Internal

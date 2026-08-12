@@ -86,11 +86,12 @@ public class RecordWriterOutput<OUT>
         // with multiplexed records and watermarks
         this.recordWriter =
                 (RecordWriter<SerializationDelegate<StreamElement>>) (RecordWriter<?>) recordWriter;
-
+        // TypeSerializer 用于对指定数据类型进行序列化和反序列化
         TypeSerializer<StreamElement> outRecordSerializer =
                 new StreamElementSerializer<>(outSerializer);
 
         if (outSerializer != null) {
+            //todo 创建序列化代理对象
             serializationDelegate = new SerializationDelegate<>(outRecordSerializer);
         }
 
@@ -117,7 +118,7 @@ public class RecordWriterOutput<OUT>
             // we are not responsible for emitting to the main output.
             return false;
         }
-
+        //todo 推送记录
         pushToRecordWriter(record);
         return true;
     }
@@ -134,10 +135,15 @@ public class RecordWriterOutput<OUT>
         return true;
     }
 
+    //todo 推送记录   RecordWriterOutput将数据推给 ChannelSelectorRecordWriter，
+    // ChannelSelectorRecordWriter再将数据存在PipelinedSubpartition里的buffers里，
+    // 供下游InputGate消费BufferConsumer对象
     private <X> void pushToRecordWriter(StreamRecord<X> record) {
+        //
         serializationDelegate.setInstance(record);
-
         try {
+            // 处理数据 recordWriter = ChannelSelectorRecordWriter
+            // 处理事件 recordWriter = BroadcastRecordWriter
             recordWriter.emit(serializationDelegate);
         } catch (IOException e) {
             throw new UncheckedIOException(e.getMessage(), e);
@@ -156,6 +162,7 @@ public class RecordWriterOutput<OUT>
             serializationDelegate.setInstance(mark);
 
             try {
+                //todo recordWriter = ChannelSelectorRecordWriter#broadcastEmit 广播水位
                 recordWriter.broadcastEmit(serializationDelegate);
             } catch (IOException e) {
                 throw new UncheckedIOException(e.getMessage(), e);

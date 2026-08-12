@@ -113,8 +113,8 @@ public class SourceStreamTask<
                 FatalExitExceptionHandler.INSTANCE,
                 StreamTaskActionExecutor.synchronizedExecutor(lock));
         this.lock = Preconditions.checkNotNull(lock);
+        //初始化一个线程，用于source拉取数据
         this.sourceThread = new LegacySourceFunctionThread();
-
         getEnvironment().getMetricGroup().getIOMetricGroup().setEnableBusyTime(false);
     }
 
@@ -181,6 +181,7 @@ public class SourceStreamTask<
 
     @Override
     protected void advanceToEndOfEventTime() throws Exception {
+        //todo 生成watermark
         operatorChain.getMainOperatorOutput().emitWatermark(Watermark.MAX_WATERMARK);
     }
 
@@ -198,10 +199,11 @@ public class SourceStreamTask<
         // blocking instead for
         // compatibility reasons with the current source interface (source functions run as a loop,
         // not in steps).
+        //getName() = Source: Socket Stream (1/1)#0
         sourceThread.setTaskDescription(getName());
-
+        //启动 LegacySourceFunctionThread 线程，拉取数据
         sourceThread.start();
-
+        //当拉取任务完成了会触发 whenComplete
         sourceThread
                 .getCompletionFuture()
                 .whenComplete(
@@ -343,9 +345,12 @@ public class SourceStreamTask<
                     LOG.debug(
                             "Legacy source {} skip execution since the task is finished on restore",
                             getTaskNameWithSubtaskAndId());
+                    //LegacySourceFunctionThread线程是在 SourceStreamTask#processInput被启动
+                    //StreamSource#run
                     mainOperator.run(lock, operatorChain);
                 }
                 completeProcessing();
+                //拉取任务完成了将RESULT置为空
                 completionFuture.complete(null);
             } catch (Throwable t) {
                 // Note, t can be also an InterruptedException

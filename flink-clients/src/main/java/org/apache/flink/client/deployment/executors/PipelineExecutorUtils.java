@@ -91,18 +91,24 @@ public class PipelineExecutorUtils {
 
         configuration
                 .getOptional(PipelineOptionsInternal.PIPELINE_FIXED_JOB_ID)
+                // 设置JobId
                 .ifPresent(strJobID -> streamGraph.setJobId(JobID.fromHexString(strJobID)));
 
         if (configuration.get(DeploymentOptions.ATTACHED)
                 && configuration.get(DeploymentOptions.SHUTDOWN_IF_ATTACHED)) {
-            streamGraph.setInitialClientHeartbeatTimeout(
-                    configuration.get(ClientOptions.CLIENT_HEARTBEAT_TIMEOUT).toMillis());
+            //默认模式
+            //命令示例：./bin/flink run my-job.jar（不加 -d）行为表现：
+            // 当你敲下提交命令后，你的终端（Terminal）窗口会被阻塞（Block）。客户端进程（JVM）会一直保持存活并挂在前台，实时拉取并打印集群的作业状态、日志或进度
+            streamGraph.setInitialClientHeartbeatTimeout(configuration.get(ClientOptions.CLIENT_HEARTBEAT_TIMEOUT).toMillis());
         }
+        //DETACHED 模式
+        //命令示例：./bin/flink run -d my-job.jar（使用 -d 或 -detached 参数）
+        // 行为表现：客户端进程只需把编译好的 JobGraph（或 2.2 的 ExecutionPlan）通过网络成功推送到 JobManager 的 REST 端口，并在控制台打印出生成的 JobID 之后，本地客户端进程就会立刻退出。
+        // 生命周期：作业完全脱离客户端的肉眼控制，在集群后台（Background）安静地独立运行。后续你需要通过 Web UI 或者 flink list 命令去查看它
 
         streamGraph.addJars(executionConfigAccessor.getJars());
         streamGraph.setClasspath(executionConfigAccessor.getClasspaths());
-        streamGraph.setSavepointRestoreSettings(
-                executionConfigAccessor.getSavepointRestoreSettings());
+        streamGraph.setSavepointRestoreSettings(executionConfigAccessor.getSavepointRestoreSettings());
 
         return streamGraph;
     }

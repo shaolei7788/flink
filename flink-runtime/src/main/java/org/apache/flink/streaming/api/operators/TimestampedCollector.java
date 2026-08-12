@@ -50,6 +50,7 @@ public final class TimestampedCollector<T> implements Output<T> {
 
     @Override
     public void collect(T record) {
+        //CopyingChainingOutput#collect
         output.collect(reuse.replace(record));
     }
 
