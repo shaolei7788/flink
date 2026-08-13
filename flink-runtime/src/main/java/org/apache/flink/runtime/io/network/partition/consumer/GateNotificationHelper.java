@@ -24,6 +24,7 @@ import java.util.concurrent.CompletableFuture;
  *
  * <p>Should be created and closed outside of the lock.
  */
+//负责在 SingleInputGate 中有新数据可用（Data Available）时，安全、高效地触发通知机制，以唤醒等待消费数据的 StreamTask 线程
 class GateNotificationHelper implements AutoCloseable {
     private final InputGate inputGate;
     private final Object availabilityMonitor;
@@ -42,6 +43,7 @@ class GateNotificationHelper implements AutoCloseable {
             toNotifyPriority.complete(null);
         }
         if (toNotify != null) {
+            //【重点】将唤醒下游 StreamTask processInput 方法里 resumeFuture 执行
             toNotify.complete(null);
         }
     }
@@ -55,7 +57,6 @@ class GateNotificationHelper implements AutoCloseable {
      * Must be called under lock to ensure integrity of availabilityHelper and allow notification.
      */
     public void notifyDataAvailable() {
-        //LocalInputChannel#notifyAll
         availabilityMonitor.notifyAll();
         toNotify = inputGate.availabilityHelper.getUnavailableToResetAvailable();
     }

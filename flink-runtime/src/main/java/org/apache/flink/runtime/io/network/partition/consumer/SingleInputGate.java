@@ -814,7 +814,7 @@ public class SingleInputGate extends IndexedInputGate {
 
     @Override
     public Optional<BufferOrEvent> pollNext() throws IOException, InterruptedException {
-        return getNextBufferOrEvent(false);
+        return getNextBufferOrEvent(false);//
     }
 
     private Optional<BufferOrEvent> getNextBufferOrEvent(boolean blocking)
@@ -826,7 +826,7 @@ public class SingleInputGate extends IndexedInputGate {
         if (closeFuture.isDone()) {
             throw new CancelTaskException("Input gate is already closed.");
         }
-        Optional<InputWithData<InputChannel, Buffer>> next = waitAndGetNextData(blocking);
+        Optional<InputWithData<InputChannel, Buffer>> next = waitAndGetNextData(blocking);//
         if (!next.isPresent()) {
             throughputCalculator.pauseMeasurement();
             return Optional.empty();
@@ -849,7 +849,7 @@ public class SingleInputGate extends IndexedInputGate {
             throws IOException, InterruptedException {
         while (true) {
             synchronized (inputChannelsWithData) {
-                Optional<InputChannel> inputChannelOpt = getChannel(blocking);
+                Optional<InputChannel> inputChannelOpt = getChannel(blocking);//
                 if (!inputChannelOpt.isPresent()) {
                     return Optional.empty();
                 }
@@ -1210,7 +1210,7 @@ public class SingleInputGate extends IndexedInputGate {
     }
 
     private void queueChannel(InputChannel channel, @Nullable Integer prioritySequenceNumber, boolean forcePriority) {
-        try (GateNotificationHelper notification = new GateNotificationHelper(this, inputChannelsWithData)) {
+        try (GateNotificationHelper notification = new GateNotificationHelper(this, inputChannelsWithData)) {//
             synchronized (inputChannelsWithData) {
                 //因为多个网络 Netty 线程可能会并发往不同的 InputChannel 灌数据 所以必须锁住这个全局的就绪队列 synchronized (inputChannelsWithData)
                 //检查当前进来的这批数据，是不是带有非对齐检查点特权（Unaligned Checkpoint Barrier）**的高优先级事件。如果是，priority 就会变成功为 true
@@ -1242,6 +1242,7 @@ public class SingleInputGate extends IndexedInputGate {
                 }
             }
         }
+        //todo Java 自动隐式调用 notification.close()
     }
 
     private boolean isOutdated(int sequenceNumber, int lastSequenceNumber) {
@@ -1289,7 +1290,7 @@ public class SingleInputGate extends IndexedInputGate {
                 throw new IllegalStateException("Released");
             }
 
-            if (blocking) {
+            if (blocking) {//false
                 inputChannelsWithData.wait();
             } else {
                 availabilityHelper.resetUnavailable();

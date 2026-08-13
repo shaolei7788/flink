@@ -127,7 +127,7 @@ public abstract class InputGate
      *     not completed futures should become completed once there are more records available.
      */
     @Override
-    public CompletableFuture<?> getAvailableFuture() {
+    public CompletableFuture<?> getAvailableFuture() {//
         //
         return availabilityHelper.getAvailableFuture();
     }

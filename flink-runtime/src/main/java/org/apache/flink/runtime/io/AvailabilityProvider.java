@@ -150,6 +150,7 @@ public interface AvailabilityProvider {
          */
         @Override
         public CompletableFuture<?> getAvailableFuture() {
+            //
             return availableFuture;
         }
 

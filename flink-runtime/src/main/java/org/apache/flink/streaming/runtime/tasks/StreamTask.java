@@ -694,8 +694,9 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         } else if (!inputProcessor.isAvailable()) {//
             // 暂时无数据可读会走到这里
             timer = new GaugePeriodTimer(ioMetrics.getIdleTimeMsPerSecond());//todo
-            // StreamTaskNetworkInput#getAvailableFuture
-            // 最终获取的是AvailabilityHelper#getAvailableFuture 也就是CompletableFuture对象
+            //StreamOneInputProcessor#getAvailableFuture
+            //最终获取的是SingleInputGate 父类 InputGate 里 的属性 AvailabilityHelper availabilityHelper
+            // AvailabilityHelper#getAvailableFuture 也就是CompletableFuture对象
             resumeFuture = inputProcessor.getAvailableFuture();//
         } else if (changelogWriterAvailabilityProvider != null
                 && !changelogWriterAvailabilityProvider.isAvailable()) {
@@ -709,7 +710,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         //这行代码是 Flink 在处理“数据流断流/空闲”或“下游背压导致无法写入”时，用来控制主线程休眠与唤醒、同时精准统计指标（Metrics）的核心点
         //当未来有数据可读（或下游通道可用）时，触发这个恢复器，把刚才暂停的默认行为（处理数据）重新拉起来。
         assertNoException(
-                // 当有数据可读取 会调用AvailabilityHelper#getUnavailableToResetAvailable
+                //【重点】 当有数据可读取 resumeFuture 会被GateNotificationHelper#close 方法唤醒
                 // 就会执行 ResumeWrapper#run()
                 resumeFuture.thenRun(
                         // suspendDefaultAction  暂停默认行为

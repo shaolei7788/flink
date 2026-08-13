@@ -149,9 +149,9 @@ public class CheckpointedInputGate implements PullingAsyncDataInput<BufferOrEven
 
     @Override
     public Optional<BufferOrEvent> pollNext() throws IOException, InterruptedException {
-        Optional<BufferOrEvent> next = inputGate.pollNext();
+        Optional<BufferOrEvent> next = inputGate.pollNext();//
 
-        if (!next.isPresent()) {
+        if (!next.isPresent()) {//false
             return handleEmptyBuffer();
         }
 
@@ -171,6 +171,7 @@ public class CheckpointedInputGate implements PullingAsyncDataInput<BufferOrEven
              * However the current is on average accurate and it might be just good enough (at least
              * for the time being).
              */
+            //this = CheckpointBarrierTracker  CheckpointBarrierHandler#addProcessedBytes
             barrierHandler.addProcessedBytes(bufferOrEvent.getBuffer().getSize());
         }
         return next;

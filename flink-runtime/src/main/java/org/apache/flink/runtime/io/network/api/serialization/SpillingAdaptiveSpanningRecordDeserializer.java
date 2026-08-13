@@ -74,7 +74,7 @@ public class SpillingAdaptiveSpanningRecordDeserializer<T extends IOReadableWrit
         // check if some spanning record deserialization is pending
         if (spanningWrapper.getNumGatheredBytes() > 0) {
             spanningWrapper.addNextChunkFromMemorySegment(segment, offset, numBytes);
-        } else {
+        } else {//NonSpanningWrapper#initializeFromMemorySegment
             nonSpanningWrapper.initializeFromMemorySegment(segment, offset, numBytes + offset);
         }
     }
@@ -101,8 +101,8 @@ public class SpillingAdaptiveSpanningRecordDeserializer<T extends IOReadableWrit
     }
 
     private DeserializationResult readNextRecord(T target) throws IOException {
-        if (nonSpanningWrapper.hasCompleteLength()) {
-            return readNonSpanningRecord(target);
+        if (nonSpanningWrapper.hasCompleteLength()) {//
+            return readNonSpanningRecord(target);//
 
         } else if (nonSpanningWrapper.hasRemaining()) {
             nonSpanningWrapper.transferTo(spanningWrapper.lengthBuffer);

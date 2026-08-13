@@ -148,6 +148,7 @@ public abstract class AbstractStreamTaskNetworkInput<
             // get the stream element from the deserializer
             //todo 当数据还没有接入的时候 currentRecordDeserializer 为 null,会从InputGate中拉取新的Buffer数据
             if (currentRecordDeserializer != null) {
+                //说明当前通道的二进制数据块（Buffer）已经被加载
                 RecordDeserializer.DeserializationResult result;
                 try {
                     //获取数据进行record反序列化
@@ -158,12 +159,12 @@ public abstract class AbstractStreamTaskNetworkInput<
                     throw new IOException(
                             String.format("Can't get next record for channel %s", lastChannel), e);
                 }
-                // 如果buffer已经消费了，可以回收buffer
                 if (result.isBufferConsumed()) {
+                    //如果返回的 result 标记当前 Buffer 的字节已经被读完 这样在下一次循环时，代码就会自动滑落到下方的“拉取新数据”分支
                     currentRecordDeserializer = null;
                 }
-                // result是完整的数据元素
                 if (result.isFullRecord()) {
+                    //只有当确认一条完整的记录被成功反序列化出来时才执行
                     // deserializationDelegate = NonReusingDeserializationDelegate
                     StreamElement element = deserializationDelegate.getInstance();
                     //todo 【重点】处理数据并发送给下一个operator
@@ -171,22 +172,24 @@ public abstract class AbstractStreamTaskNetworkInput<
                     //System.out.println("StreamTaskNetworkOutput#processElement:" + Thread.currentThread().getName());
                     final boolean breakBatchEmitting = processElement(element, output);
                     if (canEmitBatchOfRecords.check() && !breakBatchEmitting) {
+                        //如果当前时间片或执行额度没用完 canEmitBatchOfRecords.check() 为真 且下游算子没有要求中断（!breakBatchEmitting）
                         continue;
                     }
                     return DataInputStatus.MORE_AVAILABLE;
                 }
             }
-
-            Optional<BufferOrEvent> bufferOrEvent = checkpointedInputGate.pollNext();
+            //CheckpointedInputGate#pollNext
+            Optional<BufferOrEvent> bufferOrEvent = checkpointedInputGate.pollNext();//
             if (bufferOrEvent.isPresent()) {
+                //捞到了有效资源
                 // return to the mailbox after receiving a checkpoint barrier to avoid processing of
                 // data after the barrier before checkpoint is performed for unaligned checkpoint
                 // mode
                 if (bufferOrEvent.get().isBuffer()) {
                     //处理数据缓冲块 上游发送过来的真实业务数据
-                    processBuffer(bufferOrEvent.get());
+                    processBuffer(bufferOrEvent.get());//
                 } else {
-                    //处理特殊事件/控制信令
+                    //处理特殊事件/控制信令  如 Checkpoint Barrier、Watermark、EndOfPartitionEvent
                     DataInputStatus status = processEvent(bufferOrEvent.get(), output);
                     if (status == DataInputStatus.MORE_AVAILABLE && canEmitBatchOfRecords.check()) {
                         continue;
@@ -198,6 +201,7 @@ public abstract class AbstractStreamTaskNetworkInput<
                     checkState(
                             checkpointedInputGate.getAvailableFuture().isDone(),
                             "Finished BarrierHandler should be available");
+                    //宣告当前 Task 负责的所有上游并发通道的数据已经全部消费完毕，任务即将进入
                     return DataInputStatus.END_OF_INPUT;
                 }
                 return DataInputStatus.NOTHING_AVAILABLE;
@@ -297,15 +301,18 @@ public abstract class AbstractStreamTaskNetworkInput<
         return DataInputStatus.MORE_AVAILABLE;
     }
 
+    //Flink 的一个输入网关（InputGate）通常包含多个输入通道（InputChannel），每个通道对应上游的一个并发子任务（Subtask）
     protected void processBuffer(BufferOrEvent bufferOrEvent) throws IOException {
         lastChannel = bufferOrEvent.getChannelInfo();
         checkState(lastChannel != null);
+        InputChannelInfo channelInfo = bufferOrEvent.getChannelInfo();
         // currentRecordDeserializer = SpillingAdaptiveSpanningRecordDeserializer
-        currentRecordDeserializer = getActiveSerializer(bufferOrEvent.getChannelInfo());
+        currentRecordDeserializer = getActiveSerializer(channelInfo);
         checkState(
                 currentRecordDeserializer != null,
                 "currentRecordDeserializer has already been released");
-
+        //反序列化器内部的指针会重置并指向这个新的 Buffer 内存块
+        //SpillingAdaptiveSpanningRecordDeserializer#setNextBuffer
         currentRecordDeserializer.setNextBuffer(bufferOrEvent.getBuffer());
     }
 
