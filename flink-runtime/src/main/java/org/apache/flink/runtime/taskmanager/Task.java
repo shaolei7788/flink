@@ -1004,7 +1004,9 @@ public class Task
             //为输出通道创建本地缓冲池（向 NetworkBufferPool 申请 MemorySegment 用于缓存输出数据）并将其注册到 ResultPartitionManager 中以便下游拉取
             //partition = PipelinedResultPartition
             //ResultPartition#setup
+            //System.out.println(Thread.currentThread().getName() +" 输出缓冲区开始");
             partition.setup();
+            //System.out.println(Thread.currentThread().getName() +" 输出缓冲区结束");
         }
 
         // InputGates must be initialized after the partitions, since during InputGate#setup
@@ -1013,7 +1015,9 @@ public class Task
             //为接收数据创建本地缓冲池，并触发 InputChannel 向上游建立连接。根据上游位置不同，会建立本地转接通道或通过 Netty 建立远程网络连接并发送数据拉取请求
             //为InputGate中的InputChannel分配BufferPool
             //InputGateWithMetrics#setup
+            //System.out.println(Thread.currentThread().getName() +" 输入缓冲区开始");
             gate.setup();
+            //System.out.println(Thread.currentThread().getName() +" 输入缓冲区结束");
         }
     }
 

@@ -58,6 +58,7 @@ public class CountingOutput<OUT> implements WatermarkGaugeExposingOutput<StreamR
     @Override
     public void collect(StreamRecord<OUT> record) {
         numRecordsOut.inc();
+        //RecordWriterOutput#collect
         output.collect(record);
     }
 

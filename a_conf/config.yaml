@@ -90,8 +90,8 @@ taskmanager:
     managed:
       size: 512m
     network:
-      min: 128m
-      max: 128m
+      min: 64m
+      max: 64m
     process:
       size: 4096m
 

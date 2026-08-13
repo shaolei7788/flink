@@ -123,8 +123,7 @@ public class ResultPartitionManager implements ResultPartitionProvider {
 
             LOG.debug("Requesting subpartitions {} of {}.", subpartitionIndexSet, partition);
 
-            subpartitionView =
-                    partition.createSubpartitionView(subpartitionIndexSet, availabilityListener);
+            subpartitionView = partition.createSubpartitionView(subpartitionIndexSet, availabilityListener);//
         }
 
         return subpartitionView;

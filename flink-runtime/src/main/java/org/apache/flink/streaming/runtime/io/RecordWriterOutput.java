@@ -101,6 +101,7 @@ public class RecordWriterOutput<OUT>
     @Override
     public void collect(StreamRecord<OUT> record) {
         if (collectAndCheckIfChained(record)) {
+            //计数器自增
             numRecordsOut.inc();
         }
     }
@@ -139,7 +140,7 @@ public class RecordWriterOutput<OUT>
     // ChannelSelectorRecordWriter再将数据存在PipelinedSubpartition里的buffers里，
     // 供下游InputGate消费BufferConsumer对象
     private <X> void pushToRecordWriter(StreamRecord<X> record) {
-        //
+        //SerializationDelegate#setInstance 赋值操作
         serializationDelegate.setInstance(record);
         try {
             // 处理数据 recordWriter = ChannelSelectorRecordWriter

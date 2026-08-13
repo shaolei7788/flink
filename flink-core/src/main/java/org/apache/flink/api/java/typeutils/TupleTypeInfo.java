@@ -100,12 +100,12 @@ public final class TupleTypeInfo<T extends Tuple> extends TupleTypeInfoBase<T> {
         if (getTypeClass() == Tuple0.class) {
             return (TupleSerializer<T>) Tuple0Serializer.INSTANCE;
         }
-
+        //TypeSerializer[2]  ([0] = StringSerializer, [1]=LongSerializer)
         TypeSerializer<?>[] fieldSerializers = new TypeSerializer<?>[getArity()];
         for (int i = 0; i < types.length; i++) {
             fieldSerializers[i] = types[i].createSerializer(serializerConfig);
         }
-
+        //class org.apache.flink.api.java.tuple.Tuple2
         Class<T> tupleClass = getTypeClass();
 
         return new TupleSerializer<T>(tupleClass, fieldSerializers);

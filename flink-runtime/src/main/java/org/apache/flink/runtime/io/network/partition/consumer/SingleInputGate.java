@@ -352,8 +352,8 @@ public class SingleInputGate extends IndexedInputGate {
                                     numInputChannels, numberOfInputChannels));
                 }
 
-                convertRecoveredInputChannels();
-                internalRequestPartitions();
+                convertRecoveredInputChannels();//
+                internalRequestPartitions();//
             }
 
             requestedPartitionsFlag = true;
@@ -377,8 +377,7 @@ public class SingleInputGate extends IndexedInputGate {
                 InputChannel inputChannel = inputChannelsForCurrentPartition.get(inputChannelInfo);
                 if (inputChannel instanceof RecoveredInputChannel) {
                     try {
-                        InputChannel realInputChannel =
-                                ((RecoveredInputChannel) inputChannel).toInputChannel();
+                        InputChannel realInputChannel = ((RecoveredInputChannel) inputChannel).toInputChannel();//
                         inputChannel.releaseAllResources();
                         inputChannelsForCurrentPartition.remove(inputChannelInfo);
                         inputChannelsForCurrentPartition.put(
@@ -396,7 +395,7 @@ public class SingleInputGate extends IndexedInputGate {
     private void internalRequestPartitions() {
         for (InputChannel inputChannel : inputChannels()) {
             try {
-                inputChannel.requestSubpartitions();
+                inputChannel.requestSubpartitions();//
             } catch (Throwable t) {
                 inputChannel.setError(t);
                 return;
@@ -1210,17 +1209,17 @@ public class SingleInputGate extends IndexedInputGate {
                 }));
     }
 
-    private void queueChannel(
-            InputChannel channel, @Nullable Integer prioritySequenceNumber, boolean forcePriority) {
+    private void queueChannel(InputChannel channel, @Nullable Integer prioritySequenceNumber, boolean forcePriority) {
         try (GateNotificationHelper notification = new GateNotificationHelper(this, inputChannelsWithData)) {
             synchronized (inputChannelsWithData) {
+                //因为多个网络 Netty 线程可能会并发往不同的 InputChannel 灌数据 所以必须锁住这个全局的就绪队列 synchronized (inputChannelsWithData)
+                //检查当前进来的这批数据，是不是带有非对齐检查点特权（Unaligned Checkpoint Barrier）**的高优先级事件。如果是，priority 就会变成功为 true
                 boolean priority = prioritySequenceNumber != null || forcePriority;
 
                 if (!forcePriority
                         && priority
-                        && isOutdated(
-                                prioritySequenceNumber,
-                                lastPrioritySequenceNumber[channel.getChannelIndex()])) {
+                        //探测出当前传进来的 prioritySequenceNumber 已经比本地记录的还要旧（过期了），说明这是个迟到的通知。Flink 会果断通过 return 将其抛弃
+                        && isOutdated(prioritySequenceNumber, lastPrioritySequenceNumber[channel.getChannelIndex()])) {
                     // priority event at the given offset already polled (notification is not atomic
                     // in respect to
                     // buffer enqueuing), so just ignore the notification
@@ -1230,12 +1229,15 @@ public class SingleInputGate extends IndexedInputGate {
                 if (!queueChannelUnsafe(channel, priority)) {
                     return;
                 }
-
+                // priority = false
                 if (priority && inputChannelsWithData.getNumPriorityElements() == 1) {
+                    //如果插队成功，且当前整个就绪队列里有且仅有这唯一的一个高优先级元素（getNumPriorityElements() == 1），说明这是个刚发生的紧急事件，立刻点亮优先级通知灯
                     notification.notifyPriority();
                 }
                 if (inputChannelsWithData.size() == 1) {
                     //todo 通知数据可用
+                    //算子的主计算线程因为管道没数据而处于休眠（阻塞在 InputGate.getNext() 上）。
+                    // 此时点亮数据可用灯，准备去唤醒它！如果 size 已经大于 1 了，说明算子线程本就是醒着的，不需要重复通知
                     notification.notifyDataAvailable();
                 }
             }
@@ -1264,16 +1266,16 @@ public class SingleInputGate extends IndexedInputGate {
             return false;
         }
 
-        final boolean alreadyEnqueued =
-                enqueuedInputChannelsWithData.get(channel.getChannelIndex());
+        final boolean alreadyEnqueued = enqueuedInputChannelsWithData.get(channel.getChannelIndex());
         if (alreadyEnqueued
                 && (!priority || inputChannelsWithData.containsPriorityElement(channel))) {
             // already notified / prioritized (double notification), ignore
             return false;
         }
-
+        //
         inputChannelsWithData.add(channel, priority, alreadyEnqueued);
         if (!alreadyEnqueued) {
+            //
             enqueuedInputChannelsWithData.set(channel.getChannelIndex());
         }
         return true;

@@ -78,10 +78,9 @@ public class ReduceTransformationTranslator<IN, KEY>
                                                 context.getStreamGraph()
                                                         .getExecutionConfig()
                                                         .getSerializerConfig()))
-                        : new StreamGroupedReduceOperator<>(
-                                transformation.getReducer(),
-                                transformation
-                                        .getInputType()
+                        : new StreamGroupedReduceOperator<>(//
+                                transformation.getReducer(),//SumAggregator
+                                transformation.getInputType()
                                         .createSerializer(
                                                 context.getStreamGraph()
                                                         .getExecutionConfig()

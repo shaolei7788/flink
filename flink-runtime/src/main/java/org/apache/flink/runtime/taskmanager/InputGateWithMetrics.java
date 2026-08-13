@@ -124,7 +124,7 @@ public class InputGateWithMetrics extends IndexedInputGate {
 
     @Override
     public void requestPartitions() throws IOException {
-        inputGate.requestPartitions();
+        inputGate.requestPartitions();//
     }
 
     @Override

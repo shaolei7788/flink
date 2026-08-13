@@ -62,7 +62,7 @@ public class LocalRecoveredInputChannel extends RecoveredInputChannel {
 
     @Override
     protected InputChannel toInputChannelInternal() {
-        return new LocalInputChannel(
+        return new LocalInputChannel(//
                 inputGate,
                 getChannelIndex(),
                 partitionId,

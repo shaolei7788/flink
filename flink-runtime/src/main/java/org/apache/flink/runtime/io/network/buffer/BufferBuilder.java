@@ -39,7 +39,7 @@ public class BufferBuilder implements AutoCloseable {
     private final MemorySegment memorySegment;
     private int maxCapacity;
 
-    private final SettablePositionMarker positionMarker = new SettablePositionMarker();
+    private final SettablePositionMarker positionMarker = new SettablePositionMarker();//
 
     private boolean bufferConsumerCreated = false;
 
@@ -67,14 +67,22 @@ public class BufferBuilder implements AutoCloseable {
      * @return created matching instance of {@link BufferConsumer} to this {@link BufferBuilder}.
      */
     public BufferConsumer createBufferConsumerFromBeginning() {
-        return createBufferConsumer(0);
+        return createBufferConsumer(0);//
     }
 
     private BufferConsumer createBufferConsumer(int currentReaderPosition) {
-        checkState(
-                !bufferConsumerCreated, "Two BufferConsumer shouldn't exist for one BufferBuilder");
+        //一个 BufferBuilder 在其生命周期内，有且仅能调用一次这个方法
+        //因为一个内存片段（MemorySegment）在网络发送端被切分时，一条写通道（Builder）只能对应一条读通道（Consumer）。
+        // 如果允许为一个写缓冲区创建多个消费者代理，多个 Netty 线程并发去读，底层的读写指针和位置标记就会彻底乱套
+        checkState(!bufferConsumerCreated, "Two BufferConsumer shouldn't exist for one BufferBuilder");
         bufferConsumerCreated = true;
-        return new BufferConsumer(buffer.retainBuffer(), positionMarker, currentReaderPosition);
+        //NetworkBuffer#retainBuffer  它不会去复制内存中的实际数据（那是极度高昂的 CPU 开销），它仅仅是把当前底层的物理 Buffer 的引用计数（Reference Count）加 1
+        //positionMarker 状态共享指针
+        //当上游往 Builder 里写了 10 个字节，Builder 会动态更新这个 positionMarker。
+        // 下游的 Consumer 通过这个共享标记，能实时、动态地感知到上游写到了哪里。Netty 线程不需要等待上游把一整块 Buffer 全部写满，
+        // 只要看到 positionMarker 往前挪了，就能立刻把刚写进去的几个字节热乎地发出去（这也是 Flink 能够做到超低端到端延迟的终极黑科技 —— Flush 机制 的底功）
+        //currentReaderPosition 指定这个消费者开始读取的初始位置。通常情况下是 0（从头开始读）
+        return new BufferConsumer(buffer.retainBuffer(), positionMarker, currentReaderPosition);//
     }
 
     /** Gets the data type of the internal buffer. */
@@ -89,7 +97,10 @@ public class BufferBuilder implements AutoCloseable {
 
     /** Same as {@link #append(ByteBuffer)} but additionally {@link #commit()} the appending. */
     public int appendAndCommit(ByteBuffer source) {
+        //将传入的 ByteBuffer source 里的二进制数据，拷贝到当前 BufferBuilder 所持有的堆外内存片段（MemorySegment）中
+        //返回这次实际上成功写进去了多少个字节
         int writtenBytes = append(source);
+        //它负责把当前写线程刚刚推高的最新写指针位置，同步、固化 到我们之前长篇分析过的共享指针标记（positionMarker）中
         commit();
         return writtenBytes;
     }
@@ -100,15 +111,17 @@ public class BufferBuilder implements AutoCloseable {
      *
      * @return number of copied bytes
      */
+    //将数据写入memorySegment
     public int append(ByteBuffer source) {
         checkState(!isFinished());
 
-        int needed = source.remaining();
+        int needed = source.remaining();//
         int available = getMaxCapacity() - positionMarker.getCached();
         int toCopy = Math.min(needed, available);
 
         memorySegment.put(positionMarker.getCached(), source, toCopy);
-        positionMarker.move(toCopy);
+        //移动 数字字节大小
+        positionMarker.move(toCopy);//
         return toCopy;
     }
 
@@ -204,11 +217,15 @@ public class BufferBuilder implements AutoCloseable {
      * <p>Remember to commit the {@link SettablePositionMarker} to make the changes visible.
      */
     static class SettablePositionMarker implements PositionMarker {
+
+        //是线程间共享的、具有多线程可见性的“最新真实提交水位线”  主要面向写线程
         private volatile int position = 0;
 
         /**
          * Locally cached value of volatile {@code position} to avoid unnecessary volatile accesses.
          */
+        //cachedPosition 是消费者（读线程）为了压榨 CPU 性能、避免频繁进行多线程同步而设计的一份“本地私有快照缓存”
+        //完全面向读线程
         private int cachedPosition = 0;
 
         @Override

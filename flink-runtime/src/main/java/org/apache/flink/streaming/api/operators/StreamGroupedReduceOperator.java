@@ -55,17 +55,20 @@ public class StreamGroupedReduceOperator<IN>
 
     @Override
     public void processElement(StreamRecord<IN> element) throws Exception {
-        IN value = element.getValue();
-        IN currentValue = values.value();
+        IN value = element.getValue();//(a,1) 新数据
+        IN currentValue = values.value();//null 当前结果
 
         if (currentValue != null) {
+            //SumAggregator#reduce
+            IN reduced = userFunction.reduce(currentValue, value);//当前结果跟新数据结合的最终结果
             //
-            IN reduced = userFunction.reduce(currentValue, value);
             values.update(reduced);
             output.collect(element.replace(reduced));
         } else {
             values.update(value);
-            output.collect(element.replace(value));
+            StreamRecord<IN> streamRecord = element.replace(value);
+            //CopyingChainingOutput#collect
+            output.collect(streamRecord);
         }
     }
 }

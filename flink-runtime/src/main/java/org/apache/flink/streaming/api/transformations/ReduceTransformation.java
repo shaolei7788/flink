@@ -86,7 +86,7 @@ public final class ReduceTransformation<IN, K> extends PhysicalTransformation<IN
 
     /** Returns the {@code TypeInformation} for the elements of the input. */
     public TypeInformation<IN> getInputType() {
-        return input.getOutputType();
+        return input.getOutputType();//PartitionTransformation{id=4, name='Partition', outputType=Java Tuple2<String, Long>, parallelism=2}
     }
 
     @Override

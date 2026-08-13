@@ -60,6 +60,14 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  * the buffers for the network data transfer. When new local buffer pools are created, the
  * NetworkBufferPool dynamically redistributes the buffers between the pools.
  */
+//在Task实例之间进行共享
+
+//在TaskManager节点启动时，会在创建和初始化ShuffleEnviorment的过程中创建NetworkBufferPool，
+// NetworkBufferPool创建时会通过ByteBuffer从堆外申请一定数量的Segement（默认64M，每块segement32kb，一共2048块segement），
+// 所有Task实例中的ResultPartition和InputGate所需要的Buffer都从NetworkBufferPool申请
+
+//NetworkBufferPool与整个TaskManager绑定，用于提供TaskManager所需的Buffer
+// LocalBufferPool为ResultPartition和InputGate提供Buffer LocalBufferPool设计的主要目的：缓存Segement、避免反复申请、释放Segement的开销
 public class NetworkBufferPool
         implements BufferPoolFactory, MemorySegmentProvider, AvailabilityProvider {
 
@@ -97,10 +105,12 @@ public class NetworkBufferPool
     public NetworkBufferPool(int numberOfSegmentsToAllocate, int segmentSize) {
         this(numberOfSegmentsToAllocate, segmentSize, Duration.ofMillis(Integer.MAX_VALUE));
     }
-
+    //一个TaskManager只会创建一个NetworkBufferPool
     /** Allocates all {@link MemorySegment} instances managed by this pool. */
     public NetworkBufferPool(
-            int numberOfSegmentsToAllocate, int segmentSize, Duration requestSegmentsTimeout) {
+            int numberOfSegmentsToAllocate,//2048
+            int segmentSize,//32k
+            Duration requestSegmentsTimeout) {//30s
         this.totalNumberOfMemorySegments = numberOfSegmentsToAllocate;
         this.memorySegmentSize = segmentSize;
 
@@ -123,9 +133,9 @@ public class NetworkBufferPool
         }
 
         try {
+            //
             for (int i = 0; i < numberOfSegmentsToAllocate; i++) {
-                availableMemorySegments.add(
-                        MemorySegmentFactory.allocateUnpooledOffHeapMemory(segmentSize, null));
+                availableMemorySegments.add(MemorySegmentFactory.allocateUnpooledOffHeapMemory(segmentSize, null));
             }
         } catch (OutOfMemoryError err) {
             int allocated = availableMemorySegments.size();
@@ -170,7 +180,7 @@ public class NetworkBufferPool
     @Nullable
     public MemorySegment requestPooledMemorySegment() {
         synchronized (availableMemorySegments) {
-            return internalRequestMemorySegment();
+            return internalRequestMemorySegment();//
         }
     }
 
@@ -464,7 +474,7 @@ public class NetworkBufferPool
             int maxBuffersPerChannel,
             int maxOverdraftBuffersPerGate)
             throws IOException {
-        return internalCreateBufferPool(
+        return internalCreateBufferPool(//
                 numRequiredBuffers,
                 maxUsedBuffers,
                 numSubpartitions,
@@ -503,8 +513,7 @@ public class NetworkBufferPool
 
             // We are good to go, create a new buffer pool and redistribute
             // non-fixed size buffers.
-            LocalBufferPool localBufferPool =
-                    new LocalBufferPool(
+            LocalBufferPool localBufferPool = new LocalBufferPool(//
                             this,
                             numRequiredBuffers,
                             maxUsedBuffers,

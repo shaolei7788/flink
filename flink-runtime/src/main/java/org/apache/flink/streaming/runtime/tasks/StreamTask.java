@@ -839,7 +839,9 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
             // we need to make sure that any triggers scheduled in open() cannot be
             // executed before all operators are opened
             CompletableFuture<Void> allGatesRecoveredFuture =
-                    actionExecutor.call(() -> restoreStateAndGates(initializationMetrics));
+                    actionExecutor.call(
+                            //todo 等会
+                            () -> restoreStateAndGates(initializationMetrics));//
 
             // Run mailbox until all gates will be recovered.
             mailboxProcessor.runMailboxLoop();
@@ -915,7 +917,8 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
                     .thenRun(
                             () ->
                                     mainMailboxExecutor.execute(
-                                            inputGate::requestPartitions,
+                                            //InputGateWithMetrics#requestPartitions
+                                            inputGate::requestPartitions,//
                                             "Input gate request partitions"));
         }
 

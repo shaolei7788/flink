@@ -49,14 +49,16 @@ public final class ChannelSelectorRecordWriter<T extends IOReadableWritable>
         this.channelSelector = checkNotNull(channelSelector);
         this.channelSelector.setup(numberOfSubpartitions);
     }
-
+    //record = SerializationDelegate
     @Override
     public void emit(T record) throws IOException {
         //todo 用来决定record到底被分发到那一个分区
         //Legacy Source Thread - Source: Socket Stream (1/1)#0 -> org.apache.flink.streaming.runtime.partitioner.RebalancePartitioner 轮询方式
         //Flat Map -> Map (2/2)#0 -> org.apache.flink.streaming.runtime.partitioner.KeyGroupStreamPartitioner HASH方式
         //System.out.println(Thread.currentThread().getName() + " -> " + channelSelector.getClass().getName());
-        emit(record, channelSelector.selectChannel(record));
+        //RebalancePartitioner#selectChannel  轮询方式
+        int channelNum = channelSelector.selectChannel(record);
+        emit(record, channelNum);
     }
 
     @Override

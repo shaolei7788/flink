@@ -42,19 +42,21 @@ import static org.apache.flink.util.Preconditions.checkState;
 public class BufferConsumer implements Closeable {
     private final Buffer buffer;
 
+    //writerPosition 标记了这块内存中“可读数据的绝对终点（天花板）”
     private final CachedPositionMarker writerPosition;
 
+    //记录了当前网络线程（Netty）“已经读到了哪里”
     private int currentReaderPosition;
 
     /** Constructs {@link BufferConsumer} instance with static content of a certain size. */
     public BufferConsumer(Buffer buffer, int size) {
-        this(buffer, () -> -size, 0);
+        this(buffer, () -> -size, 0);//
         checkState(
                 isFinished(),
                 "BufferConsumer with static size must be finished after construction!");
     }
 
-    public BufferConsumer(
+    public BufferConsumer(//
             Buffer buffer,
             BufferBuilder.PositionMarker currentWriterPosition,
             int currentReaderPosition) {
@@ -134,6 +136,7 @@ public class BufferConsumer implements Closeable {
     }
 
     public boolean isBuffer() {
+        //NetworkBuffer#isBuffer
         return buffer.isBuffer();
     }
 

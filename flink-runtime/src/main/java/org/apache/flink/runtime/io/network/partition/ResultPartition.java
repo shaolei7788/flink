@@ -329,8 +329,7 @@ public abstract class ResultPartition implements ResultPartitionWriter {
             ResultSubpartitionIndexSet indexSet, BufferAvailabilityListener availabilityListener)
             throws IOException {
         if (indexSet.size() == 1) {
-            return createSubpartitionView(
-                    indexSet.values().iterator().next(), availabilityListener);
+            return createSubpartitionView(indexSet.values().iterator().next(), availabilityListener);//
         } else {
             UnionResultSubpartitionView unionView =
                     new UnionResultSubpartitionView(availabilityListener, indexSet.size());

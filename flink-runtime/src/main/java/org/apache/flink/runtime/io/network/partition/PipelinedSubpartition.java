@@ -67,6 +67,7 @@ import static org.apache.flink.util.Preconditions.checkState;
  * PipelinedSubpartitionView#notifyDataAvailable() notification} for any {@link BufferConsumer}
  * present in the queue.
  */
+//它负责缓存一个上游 Task 发往某一个特定下游 Task 的所有网络数据块
 public class PipelinedSubpartition extends ResultSubpartition implements ChannelStateHolder {
 
     private static final Logger LOG = LoggerFactory.getLogger(PipelinedSubpartition.class);
@@ -76,40 +77,60 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
     // ------------------------------------------------------------------------
 
     /** Number of exclusive credits per input channel at the downstream tasks. */
+    //下游 Task 针对这个特定的 Channel，在它那端分配的专属保底 Credit（独占缓冲区数）
+    //通过 Netty 发送数据前，必须知道下游还有多少“空闲低保卡槽”。这个属性就是一个常驻的参考底标，用来参与基于 Credit 的动态流控算法
     private final int receiverExclusiveBuffersPerChannel;
 
     /** All buffers of this subpartition. Access to the buffers is synchronized on this object. */
-    final PrioritizedDeque<BufferConsumerWithPartialRecordLength> buffers =
-            new PrioritizedDeque<>();
+    //PrioritizedDeque（带优先级的双端队列）。为什么要带优先级？因为在分布式快照时，特殊的控制事件（如 CheckpointBarrier）必须享有“插队”特权。
+    //当 Barrier 到达时，它会被赋予最高优先级，直接插入到队列的最前面（Overtaking），从而超越普通数据缓冲区，实现超低延迟的快照传递
+    final PrioritizedDeque<BufferConsumerWithPartialRecordLength> buffers = new PrioritizedDeque<>();
 
     /** The number of non-event buffers currently in this subpartition. */
     @GuardedBy("buffers")
+    //这个值就是大名鼎鼎的 Backlog（积压值）。当上游向发送队列塞入一个数据块时，该值加 1。Flink 底层的 Netty 线程在顺着网线向下游发送数据时，
+    // 会把这个 Backlog 值顺便捎带发给下游。下游一看到这个值变大，就知道上游产生了积压，从而触发下游去申请流动缓冲区（Floating Buffers）来接盘
     private int buffersInBacklog;
 
     /** The read view to consume this subpartition. */
+    //PipelinedSubpartition 负责接收上游写的动作（add()）；
+    // 而底层的 Netty 传输线程不会直接去操作这个子通道，而是创建并持有一个 readView。Netty 顺着这个视图去异步地、单向地读取队列并吐向网络，实现了写线程与网络读线程的解耦
     PipelinedSubpartitionView readView;
 
     /** Flag indicating whether the subpartition has been finished. */
+    //上游算子已经宣布数据全部产出完毕（比如遇到了有界流的 EndOfPartitionEvent），此后不再接收新数据
     private boolean isFinished;
 
+    //底层作用：标记当前通道是否收到了 flush()（强制刷写） 的请求。
+    // 物理意义：流处理强求低延迟。如果数据量很小，没达到 bufferSize，但系统触发了定时 Flush，这个标记会变为 true，
+    // 通知 Netty 线程：“别等了，虽然没写满，赶紧把当前的半块数据也发走！
     @GuardedBy("buffers")
     private boolean flushRequested;
 
     /** Flag indicating whether the subpartition has been released. */
+    //该通道已经彻底被销毁释放，内部所有的 BufferConsumer 对应的内存引用计数全部扣减并归还给内存池（防止内存泄漏）
     volatile boolean isReleased;
 
     /** The total number of buffers (both data and event buffers). */
+    //该通道自启动以来，累计处理过的总 Buffer 数量
     private long totalNumberOfBuffers;
 
     /** The total number of bytes (both data and event buffers). */
+    //该通道自启动以来，累计处理过的总 总字节数
     private long totalNumberOfBytes;
 
     /** Writes in-flight data. */
+    //底层作用：负责把传输中（In-Flight）的数据写入状态后端的物理编织器。物理意义：在非对齐检查点（Unaligned Checkpoint）机制下，当 Barrier 到达时，Flink 不需要等待队列里的数据全部发完。
+    //channelStateWriter 会直接把当前 buffers 队列里还没来得及发走、积压在管道里的那些纯数据块，一股脑全部当成“通道状态（Channel State）”直接持久化存储到 HDFS/S3
     private ChannelStateWriter channelStateWriter;
-
+    //当前通道的动态自适应缓冲区尺寸
     private int bufferSize;
 
     /** The channelState Future of unaligned checkpoint. */
+    //底层作用：异步保存管道中数据的未来对象和其对应的 Checkpoint ID。物理意义：
+    // Flink 2.2 极大优化了快照的异步化吞吐。为了不卡住计算线程，当需要截取当前管道里的数据作为状态时，Flink 会生成一个 channelStateFuture。
+    // 当底层的持久化线程真正把这批 Buffer 写完并安全落盘后，该 Future 才会 complete。
+    // 这组参数精准控制了当前正在进行的快照版本（checkpointId），防止分布式环境下的版本错乱
     @GuardedBy("buffers")
     private CompletableFuture<List<Buffer>> channelStateFuture;
 
@@ -125,8 +146,13 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
      * resumption.
      */
     @GuardedBy("buffers")
+    //标记当前通道是否被强行阻塞
     boolean isBlocked = false;
-
+    //当前通道发出的物理数据块的自增序列号
+    //每成功向下游 Netty 发送一个 Buffer，这个 sequenceNumber 就会加 1。
+    // 下游的 TaskManager 在接收数据时，会严格校验序列号是否连续（如 0, 1, 2, 3...）。
+    // 如果因为网络抖动、Netty 重连导致序列号断层（比如收到 3 之后直接收到了 5），
+    // Flink 会立刻判定网络数据损坏，触发全量 Failover 报错，以此确保分布式环境下数据传输的绝对不丢、不重、不乱序
     int sequenceNumber = 0;
 
     // ------------------------------------------------------------------------
@@ -152,8 +178,8 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
     }
 
     @Override
-    public int add(BufferConsumer bufferConsumer, int partialRecordLength) {
-        return add(bufferConsumer, partialRecordLength, false);
+    public int add(BufferConsumer bufferConsumer, int partialRecordLength) {//
+        return add(bufferConsumer, partialRecordLength, false);//
     }
 
     public boolean isSupportChannelStateRecover() {
@@ -171,21 +197,27 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
 
     private int add(BufferConsumer bufferConsumer, int partialRecordLength, boolean finish) {
         checkNotNull(bufferConsumer);
-
         final boolean notifyDataAvailable;
         int prioritySequenceNumber = DEFAULT_PRIORITY_SEQUENCE_NUMBER;
         int newBufferSize;
+        //因为 Netty 线程会异步地从这个队列里读数据，而计算线程在疯狂地往里写数据，所以核心动作必须包裹在 synchronized (buffers) 锁内部执行
         synchronized (buffers) {
+            //安全兜底。如果这个通道由于作业正在关闭、取消（isReleased）或者已经接收到了有界流的结束信号（isFinished），
+            // 那么新进来的数据块会被就地当场直接销毁（调用 close() 扣减引用计数，归还给内存池），防止产生内存泄漏
             if (isFinished || isReleased) {
                 bufferConsumer.close();
                 return ADD_BUFFER_ERROR_CODE;
             }
 
             // Add the bufferConsumer and update the stats
+            //调用 addBuffer 把 bufferConsumer 塞进刚才提到的 PrioritizedDeque 物理队列
             if (addBuffer(bufferConsumer, partialRecordLength)) {
                 prioritySequenceNumber = sequenceNumber;
             }
+            //读取这个 bufferConsumer 的大小，瞬间累加到前面提到的 totalNumberOfBuffers 和 totalNumberOfBytes 计数器中，为 Web UI 和 Metrics 提供最实时的发送吞吐量监控
             updateStatistics(bufferConsumer);
+            //如果当前塞进来的是普通的业务数据块（而不是控制事件），它会让前面剖析的 buffersInBacklog（积压值）自增 1。
+            // 这个不断上涨的数字将作为信使，通过网络告诉下游：“我这里堆积了更多的数据，你快多准备点 Buffer 来接盘！”
             increaseBuffersInBacklog(bufferConsumer);
             notifyDataAvailable = finish || shouldNotifyDataAvailable();
 
@@ -194,7 +226,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
         }
 
         notifyPriorityEvent(prioritySequenceNumber);
-        if (notifyDataAvailable) {
+        if (notifyDataAvailable) {//false
             notifyDataAvailable();
         }
 
@@ -204,12 +236,12 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
     @GuardedBy("buffers")
     private boolean addBuffer(BufferConsumer bufferConsumer, int partialRecordLength) {
         assert Thread.holdsLock(buffers);
-        if (bufferConsumer.getDataType().hasPriority()) {
+        if (bufferConsumer.getDataType().hasPriority()) {//false
             return processPriorityBuffer(bufferConsumer, partialRecordLength);
-        } else if (Buffer.DataType.TIMEOUTABLE_ALIGNED_CHECKPOINT_BARRIER
-                == bufferConsumer.getDataType()) {
+        } else if (Buffer.DataType.TIMEOUTABLE_ALIGNED_CHECKPOINT_BARRIER == bufferConsumer.getDataType()) {
             processTimeoutableCheckpointBarrier(bufferConsumer);
         }
+        //
         buffers.add(new BufferConsumerWithPartialRecordLength(bufferConsumer, partialRecordLength));
         return false;
     }
@@ -566,8 +598,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
     }
 
     @Override
-    public PipelinedSubpartitionView createReadView(
-            BufferAvailabilityListener availabilityListener) {
+    public PipelinedSubpartitionView createReadView(BufferAvailabilityListener availabilityListener) {
         synchronized (buffers) {
             checkState(!isReleased);
             checkState(
@@ -583,7 +614,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
                     getSubPartitionIndex(),
                     parent.getPartitionId());
 
-            readView = new PipelinedSubpartitionView(this, availabilityListener);
+            readView = new PipelinedSubpartitionView(this, availabilityListener);//
         }
 
         return readView;
@@ -673,17 +704,22 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
     public void flush() {
         final boolean notifyDataAvailable;
         synchronized (buffers) {
+            //buffers.isEmpty()：当前队列为空
+            // 如果当前的 flushRequested 已经是 true 了，说明之前已经有别的线程（或者上游）请求过 Flush 了，Netty 线程已经被唤醒或者正在赶来的路上。此时不需要重复点灯，直接退出
             if (buffers.isEmpty() || flushRequested) {
                 return;
             }
             // if there is more than 1 buffer, we already notified the reader
             // (at the latest when adding the second buffer)
-            boolean isDataAvailableInUnfinishedBuffer =
-                    buffers.size() == 1 && buffers.peek().getBufferConsumer().isDataAvailable();
+            //队列里有且仅有唯一的一块 Buffer，而且它还没写满，属于正在写入的“未完成块”
+            // 返回true 代表写入了新数据
+            boolean isDataAvailableInUnfinishedBuffer = buffers.size() == 1 && buffers.peek().getBufferConsumer().isDataAvailable();
+            //决定要不要唤醒网络线程
+            // !isBlocked 当前通道绝对不能处于被对齐快照（Exactly-Once Barrier）锁死阻塞的状态 如果通道被 Block 住了，再有新数据也必须原地待命，绝对不通知
             notifyDataAvailable = !isBlocked && isDataAvailableInUnfinishedBuffer;
             flushRequested = buffers.size() > 1 || isDataAvailableInUnfinishedBuffer;
         }
-        if (notifyDataAvailable) {
+        if (notifyDataAvailable) { // true
             notifyDataAvailable();
         }
     }
@@ -728,6 +764,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
 
         if (buffer != null && buffer.isBuffer()) {
             buffersInBacklog++;
+            System.out.println(Thread.currentThread().getName() + ": buffersInBacklog: " + buffersInBacklog);
         }
     }
 
@@ -757,9 +794,11 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
                 && getNumberOfFinishedBuffers() == 1;
     }
 
+    //通知有数据了
     private void notifyDataAvailable() {
         final PipelinedSubpartitionView readView = this.readView;
         if (readView != null) {
+            //PipelinedSubpartitionView#notifyDataAvailable
             readView.notifyDataAvailable();
         }
     }

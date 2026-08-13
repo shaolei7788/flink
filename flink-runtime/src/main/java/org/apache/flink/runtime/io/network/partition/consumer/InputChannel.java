@@ -171,6 +171,7 @@ public abstract class InputChannel {
      * will always be notified about the exception.
      */
     protected void notifyChannelNonEmpty() {
+        //SingleInputGate#notifyChannelNonEmpty  通知下游的inputGate 有数据了
         inputGate.notifyChannelNonEmpty(this);
     }
 

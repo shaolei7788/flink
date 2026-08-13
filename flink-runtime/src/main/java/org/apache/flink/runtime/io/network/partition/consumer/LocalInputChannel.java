@@ -141,8 +141,7 @@ public class LocalInputChannel extends InputChannel implements BufferAvailabilit
 
                 try {
                     ResultSubpartitionView subpartitionView =
-                            partitionManager.createSubpartitionView(
-                                    partitionId, consumedSubpartitionIndexSet, this);
+                            partitionManager.createSubpartitionView(partitionId, consumedSubpartitionIndexSet, this);//
 
                     if (subpartitionView == null) {
                         throw new IOException("Error requesting subpartition.");
@@ -328,7 +327,7 @@ public class LocalInputChannel extends InputChannel implements BufferAvailabilit
 
     @Override
     public void notifyDataAvailable(ResultSubpartitionView view) {
-        notifyChannelNonEmpty();
+        notifyChannelNonEmpty();//
     }
 
     private ResultSubpartitionView checkAndWaitForSubpartitionView() {

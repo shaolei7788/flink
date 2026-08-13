@@ -172,9 +172,9 @@ public class NettyShuffleServiceFactory
                             .map(File::getAbsolutePath)
                             .collect(Collectors.joining("\n\t")));
         }
-
+        //创建NetworkBufferPool 对象 会初始化segment
         NetworkBufferPool networkBufferPool =
-                new NetworkBufferPool(
+                new NetworkBufferPool(//
                         config.numNetworkBuffers(),
                         config.networkBufferSize(),
                         config.getRequestSegmentsTimeout());

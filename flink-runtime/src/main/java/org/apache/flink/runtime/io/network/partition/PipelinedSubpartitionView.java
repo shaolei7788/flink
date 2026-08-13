@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /** View over a pipelined in-memory only subpartition. */
+//用于消费ResultSubPartition中产生的Buffer数据，然后推送到网络中
 public class PipelinedSubpartitionView implements ResultSubpartitionView {
 
     /** The subpartition this view belongs to. */
@@ -37,8 +38,7 @@ public class PipelinedSubpartitionView implements ResultSubpartitionView {
     /** Flag indicating whether this view has been released. */
     final AtomicBoolean isReleased;
 
-    public PipelinedSubpartitionView(
-            PipelinedSubpartition parent, BufferAvailabilityListener listener) {
+    public PipelinedSubpartitionView(PipelinedSubpartition parent, BufferAvailabilityListener listener) {
         this.parent = checkNotNull(parent);
         this.availabilityListener = checkNotNull(listener);
         this.isReleased = new AtomicBoolean();
@@ -47,11 +47,14 @@ public class PipelinedSubpartitionView implements ResultSubpartitionView {
     @Nullable
     @Override
     public BufferAndBacklog getNextBuffer() {
+        //PipelinedSubpartition#pollBuffer  获取数据
         return parent.pollBuffer();
     }
 
     @Override
     public void notifyDataAvailable() {
+        //本地：LocalInputChannel#notifyDataAvailable
+        //远程：CreditBasedSequenceNumberingViewReader#notifyDataAvailable
         availabilityListener.notifyDataAvailable(this);
     }
 

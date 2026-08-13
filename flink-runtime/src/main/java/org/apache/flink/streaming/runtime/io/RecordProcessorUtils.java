@@ -45,15 +45,14 @@ public class RecordProcessorUtils {
     public static <T> ThrowingConsumer<StreamRecord<T>, Exception> getRecordProcessor(Input<T> input) {
         boolean canOmitSetKeyContext;
         if (input instanceof AbstractStreamOperator) {
-            canOmitSetKeyContext = canOmitSetKeyContext((AbstractStreamOperator<?>) input, 0);
+            canOmitSetKeyContext = canOmitSetKeyContext((AbstractStreamOperator<?>) input, 0);//
         } else {
-            canOmitSetKeyContext =
-                    input instanceof KeyContextHandler
-                            && !((KeyContextHandler) input).hasKeyContext();
+            canOmitSetKeyContext = input instanceof KeyContextHandler && !((KeyContextHandler) input).hasKeyContext();
         }
 
         if (canOmitSetKeyContext) {
-            //
+            //非 KeyedStream 算子：普通不带 keyBy 的算子（如普通的 .map()、.filter()），算子内部没有 Key 的概念，状态也是普通的算子状态（Operator State），天然不需要设置 Key 切换。
+            // 虽然带 Key 状态，但上下游天然安全：比如 Flink 检测到当前的输入端（Input）是某个特定算子且上游算子刚处理过同样的 Key 并没有经过网络 Shuffle，此时当前节点可以免检放行
             return input::processElement;
         } else if (input instanceof AsyncKeyOrderedProcessing
                 && ((AsyncKeyOrderedProcessing) input).isAsyncKeyOrderedProcessingEnabled()) {
@@ -136,8 +135,13 @@ public class RecordProcessorUtils {
         // "SetKeyContextElement" is overridden by the (user-implemented) subclass. If it is
         // overridden, we cannot omit it due to the subclass may maintain different key selectors on
         // its own.
-        return !hasKeyContext(streamOperator, input)
-                && !methodSetKeyContextIsOverridden(streamOperator, input);
+        return
+                //检查当前输入端（input）对应的算子到底有没有跟 KeyedState（键控状态）扯上关系
+                //比如在一个普通的 DataStream 上直接做的 .map() 或 .filter()），它在内部压根没有开启任何 KeySelector，也没有使用任何类似 ValueState 的东西
+                //hasKeyContext 会返回 false
+                !hasKeyContext(streamOperator, input) &&
+                        //去判定当前的 streamOperator 子类有没有强行重写（Override）父类的 setKeyContextElement 方法
+                        !methodSetKeyContextIsOverridden(streamOperator, input);
     }
 
     private static boolean hasKeyContext(AbstractStreamOperator<?> operator, int input) {

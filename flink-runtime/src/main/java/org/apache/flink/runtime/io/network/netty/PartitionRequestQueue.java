@@ -81,6 +81,7 @@ class PartitionRequestQueue extends ChannelInboundHandlerAdapter {
         super.channelRegistered(ctx);
     }
 
+    //todo 通知当前的读取器可以读取Buffer数据了
     void notifyReaderNonEmpty(final NetworkSequenceViewReader reader) {
         // The notification might come from the same thread. For the initial writes this
         // might happen before the reader has set its reference to the view, because
@@ -91,7 +92,11 @@ class PartitionRequestQueue extends ChannelInboundHandlerAdapter {
         // TODO This could potentially have a bad performance impact as in the
         // worst case (network consumes faster than the producer) each buffer
         // will trigger a separate event loop task being scheduled.
-        ctx.executor().execute(() -> ctx.pipeline().fireUserEventTriggered(reader));
+        ctx.executor().execute(
+                //todo 将NetworkSequenceViewReader 当成UserEvent形式传入ChannelPipeline
+                // 实现在PartitionRequestQueue中激活当前的NetworkSequenceViewReader
+                // 然后会调用 userEventTriggered  【Netty框架实现的】
+                () -> ctx.pipeline().fireUserEventTriggered(reader));
     }
 
     /**

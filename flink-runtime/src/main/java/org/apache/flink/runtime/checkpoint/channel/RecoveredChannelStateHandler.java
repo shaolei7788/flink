@@ -260,7 +260,7 @@ class ResultSubpartitionRecoveredStateHandler
         for (ResultPartitionWriter writer : writers) {
             if (writer instanceof CheckpointedResultPartition) {
                 ((CheckpointedResultPartition) writer)
-                        .finishReadRecoveredState(notifyAndBlockOnCompletion);
+                        .finishReadRecoveredState(notifyAndBlockOnCompletion);//
             }
         }
     }

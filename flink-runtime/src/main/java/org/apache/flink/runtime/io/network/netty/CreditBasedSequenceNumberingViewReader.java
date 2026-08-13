@@ -292,6 +292,7 @@ class CreditBasedSequenceNumberingViewReader
 
     @Override
     public void notifyDataAvailable(ResultSubpartitionView view) {
+        //PartitionRequestQueue#notifyReaderNonEmpty
         requestQueue.notifyReaderNonEmpty(this);
     }
 

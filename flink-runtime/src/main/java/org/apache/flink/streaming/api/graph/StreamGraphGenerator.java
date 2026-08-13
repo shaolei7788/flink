@@ -716,8 +716,7 @@ public class StreamGraphGenerator {
         @Override
         public Collection<Integer> getStreamNodeIds(final Transformation<?> transformation) {
             checkNotNull(transformation);
-            final Collection<Integer> ids =
-                    streamGraphGenerator.alreadyTransformed.get(transformation);
+            final Collection<Integer> ids = streamGraphGenerator.alreadyTransformed.get(transformation);
             checkState(
                     ids != null,
                     "Parent transformation \"" + transformation + "\" has not been transformed.");

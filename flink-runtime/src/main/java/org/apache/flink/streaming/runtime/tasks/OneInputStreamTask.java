@@ -238,7 +238,7 @@ public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamO
             this.operator = checkNotNull(operator);
             this.watermarkGauge = checkNotNull(watermarkGauge);
             this.numRecordsIn = checkNotNull(numRecordsIn);
-            this.recordProcessor = RecordProcessorUtils.getRecordProcessor(operator);
+            this.recordProcessor = RecordProcessorUtils.getRecordProcessor(operator);//
         }
 
         @Override

@@ -104,7 +104,7 @@ public abstract class RecordWriter<T extends IOReadableWritable> implements Avai
             outputFlusher.start();
         }
     }
-
+    //record = SerializationDelegate
     public void emit(T record, int targetSubpartition) throws IOException {
         //检查错误
         checkErroneous();
@@ -113,9 +113,11 @@ public abstract class RecordWriter<T extends IOReadableWritable> implements Avai
         //record = SerializationDelegate
         // byteBuffer = HeapByteBuffer
         ByteBuffer byteBuffer = serializeRecord(serializer, record);//
+        //[PIPELINED_BOUNDED, 2 subpartitions, 3 pending consumptions]
+        // targetPartition=PipelinedResultPartition  BufferWritingResultPartition#emitRecord
         targetPartition.emitRecord(byteBuffer, targetSubpartition);
         // PipelinedResultPartition#emitRecord  PipelinedResultPartition extends BufferWritingResultPartition
-        if (flushAlways) {
+        if (flushAlways) {// false
             //flushAlways 一般是 false 所以这里一般不运行
             //会通过 OutputFlusher 线程刷新数据  【重点】
             //PipelinedResultPartition#flush
@@ -166,7 +168,7 @@ public abstract class RecordWriter<T extends IOReadableWritable> implements Avai
         // write length
         //在0位置 写入数据大小到serializer
         serializer.writeIntUnsafe(serializer.length() - 4, 0);
-        //返回 HeapByteBuffer
+        //返回 HeapByteBuffer  DataOutputSerializer#wrapAsByteBuffer
         return serializer.wrapAsByteBuffer();
     }
 

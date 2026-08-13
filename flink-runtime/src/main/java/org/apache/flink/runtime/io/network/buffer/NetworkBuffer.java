@@ -131,6 +131,7 @@ public class NetworkBuffer extends AbstractReferenceCountedByteBuf implements Bu
 
     @Override
     public boolean isBuffer() {
+        //Buffer#isBuffer
         return dataType.isBuffer();
     }
 

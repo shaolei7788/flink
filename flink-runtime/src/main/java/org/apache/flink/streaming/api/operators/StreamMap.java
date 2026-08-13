@@ -34,6 +34,9 @@ public class StreamMap<IN, OUT> extends AbstractUdfStreamOperator<OUT, MapFuncti
 
     @Override
     public void processElement(StreamRecord<IN> element) throws Exception {
-        output.collect(element.replace(userFunction.map(element.getValue())));
+        OUT outValue = userFunction.map(element.getValue());//(a,1)
+        StreamRecord<OUT> streamRecord = element.replace(outValue);
+        //CountingOutput#collect
+        output.collect(streamRecord);
     }
 }

@@ -418,9 +418,9 @@ public class MailboxProcessor implements Closeable {
             // MailboxMetricsController#scheduleLatencyMeasurement 会每隔1s 发送一个邮件
             //mail =  Measure mailbox latency metric 用于监控 Task 线程的健康度与响应速度（例如 Web UI 或 Prometheus 上的 mailboxLatency 指标
 //            System.out.println("processMailsWhenDefaultActionUnavailable:  " +  mail);
-            if("resume default action".equals(mail.toString())){
-                System.out.println("恢复默认读取动作:" + mail);
-            }
+//            if("resume default action".equals(mail.toString())){
+//                System.out.println("恢复默认读取动作:" + mail);
+//            }
             //运行邮件。 DefaultActionSuspension#resumeInternal
             runMail(mail);
 
@@ -439,7 +439,7 @@ public class MailboxProcessor implements Closeable {
                 maybePauseIdleTimer();
             }
             Mail mail = maybeMail.get();
-            System.out.println("processMailsNonBlocking : " + mail);
+            //System.out.println("processMailsNonBlocking : " + mail);
             //运行邮件
             runMail(mail);
             if (singleStep) {

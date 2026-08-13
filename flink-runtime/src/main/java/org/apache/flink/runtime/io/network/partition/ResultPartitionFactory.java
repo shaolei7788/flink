@@ -362,8 +362,8 @@ public class ResultPartitionFactory {
                             enableTieredStorage,
                             tieredStorageExclusiveBuffers,
                             type);
-
-            return bufferPoolFactory.createBufferPool(
+            //LocalBufferPool NetworkBufferPool#createBufferPool
+            return bufferPoolFactory.createBufferPool(//
                     pair.getLeft(),
                     pair.getRight(),
                     numberOfSubpartitions,
