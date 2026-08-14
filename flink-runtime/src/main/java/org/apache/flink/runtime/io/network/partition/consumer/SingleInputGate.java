@@ -125,6 +125,20 @@ import static org.apache.flink.util.Preconditions.checkState;
  * in two partitions (Partition 1 and 2). Each of these partitions is further partitioned into two
  * subpartitions -- one for each parallel reduce subtask.
  */
+//负责对接上游所有的发送端，把杂乱、异步的网络数据网络块（Buffer）打包整理好，以统一的迭代器形式提供给下游的算子线程（Task 线程）消费
+//1. 输入信道的集合管理器（Channel Aggregator）一个算子通常会接收来自上游多个并发实例（Subtasks）的数据。
+//   SingleInputGate 内部管理着一组 InputChannel。如果上游在同台机器（同 TaskManager），
+//   它会路由给 LocalInputChannel（走内存复制，极快）。如果上游在远程机器，它会路由给 RemoteInputChannel（走 Netty 网络传输）。
+//   SingleInputGate 将这些不同类型的通道屏蔽掉，对上层展现出统一的输入源视图。
+//2. 协调基于 Credit 的流量控制（Credit Coordinator）正如前面提到的，Flink 是通过 Credit（信用额度）来控制反压的。
+//   SingleInputGate 负责向其持有的所有 RemoteInputChannel 分配全局的、动态的内存缓冲块（Buffer Pool）。当它的专属内存池（BufferPool）有空闲时，
+//   它会触发各个 RemoteInputChannel 向网络上游发送 Credit（即发放“准送证”），从而在最前端控制数据的流入速度。
+//3. 跨通道的数据反序列化流控（Buffer 级别的多路复用）上游并发发送过来的数据在网络层是交织在一起的。
+//   SingleInputGate 内部维护了一个全局的可用数据队列（inputChannelsWithData）。
+//   任何一个子通道（Local 或 Remote）一旦收到了一个完整的 Buffer 数据，
+//   就会把自己登记到 SingleInputGate 的这个就绪队列中。
+//4. 统一的数据拉取接口（面向 Task 线程）对于下游的算子执行线程（如 StreamTask）来说，它不需要感知复杂的网络细节。它只需要不断地调用：inputGate.getNext()
+//   就会从就绪队列中弹出一个 Buffer（真实数据）或者 Event（如 Checkpoint Barrier、Watermark、EndOfPartition 信号），交给算子处理
 public class SingleInputGate extends IndexedInputGate {
 
     private static final Logger LOG = LoggerFactory.getLogger(SingleInputGate.class);

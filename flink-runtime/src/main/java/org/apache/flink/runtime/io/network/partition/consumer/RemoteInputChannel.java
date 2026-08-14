@@ -194,15 +194,15 @@ public class RemoteInputChannel extends InputChannel {
                     channelStatePersister);
             // Create a client and request the partition
             try {
-                partitionRequestClient =
-                        connectionManager.createPartitionRequestClient(connectionId);//
+                //NettyPartitionRequestClient  NettyConnectionManager#createPartitionRequestClient
+                partitionRequestClient = connectionManager.createPartitionRequestClient(connectionId);//
             } catch (IOException e) {
                 // IOExceptions indicate that we could not open a connection to the remote
                 // TaskExecutor
                 throw new PartitionConnectionException(partitionId, e);
             }
-
-            partitionRequestClient.requestSubpartition(
+            //NettyPartitionRequestClient#requestSubpartition
+            partitionRequestClient.requestSubpartition(//
                     partitionId, consumedSubpartitionIndexSet, this, 0);
         }
     }
@@ -563,8 +563,7 @@ public class RemoteInputChannel extends InputChannel {
      * Handles the input buffer. This method is taking over the ownership of the buffer and is fully
      * responsible for cleaning it up both on the happy path and in case of an error.
      */
-    public void onBuffer(Buffer buffer, int sequenceNumber, int backlog, int subpartitionId)
-            throws IOException {
+    public void onBuffer(Buffer buffer, int sequenceNumber, int backlog, int subpartitionId) throws IOException {//
         boolean recycleBuffer = true;
 
         try {
@@ -600,7 +599,7 @@ public class RemoteInputChannel extends InputChannel {
                 SequenceBuffer sequenceBuffer =
                         new SequenceBuffer(buffer, sequenceNumber, subpartitionId);
                 DataType dataType = buffer.getDataType();
-                if (dataType.hasPriority()) {
+                if (dataType.hasPriority()) {//false
                     firstPriorityEvent = addPriorityBuffer(sequenceBuffer);
                     recycleBuffer = false;
                 } else {
@@ -627,11 +626,11 @@ public class RemoteInputChannel extends InputChannel {
             if (firstPriorityEvent) {
                 notifyPriorityEvent(sequenceNumber);
             }
-            if (wasEmpty) {
+            if (wasEmpty) {//true
                 notifyChannelNonEmpty();
             }
 
-            if (backlog >= 0) {
+            if (backlog >= 0) {//0
                 onSenderBacklog(backlog);
             }
         } finally {

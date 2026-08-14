@@ -194,7 +194,7 @@ class CreditBasedPartitionRequestClientHandler extends ChannelInboundHandlerAdap
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         try {
-            decodeMsg(msg);
+            decodeMsg(msg);//
         } catch (Throwable t) {
             notifyAllChannelsOfErrorAndClose(t);
         }
@@ -294,7 +294,7 @@ class CreditBasedPartitionRequestClientHandler extends ChannelInboundHandlerAdap
             }
 
             try {
-                decodeBufferOrEvent(inputChannel, bufferOrEvent);
+                decodeBufferOrEvent(inputChannel, bufferOrEvent);//
             } catch (Throwable t) {
                 inputChannel.onError(t);
             }
@@ -358,7 +358,7 @@ class CreditBasedPartitionRequestClientHandler extends ChannelInboundHandlerAdap
         }
     }
 
-    private void decodeBufferOrEvent(
+    private void decodeBufferOrEvent(//
             RemoteInputChannel inputChannel, NettyMessage.BufferResponse bufferOrEvent)
             throws Throwable {
         if (bufferOrEvent.isBuffer() && bufferOrEvent.bufferSize == 0) {
@@ -401,7 +401,7 @@ class CreditBasedPartitionRequestClientHandler extends ChannelInboundHandlerAdap
                     throw throwable;
                 }
             } else {
-                inputChannel.onBuffer(
+                inputChannel.onBuffer(//
                         bufferOrEvent.getBuffer(),
                         bufferOrEvent.sequenceNumber,
                         bufferOrEvent.backlog,

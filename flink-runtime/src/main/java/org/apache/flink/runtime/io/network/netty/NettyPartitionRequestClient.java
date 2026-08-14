@@ -124,8 +124,8 @@ public class NettyPartitionRequestClient implements PartitionRequestClient {
 
         clientHandler.addInputChannel(inputChannel);
 
-        final PartitionRequest request =
-                new PartitionRequest(
+        //创建分区请求对象
+        final PartitionRequest request = new PartitionRequest(
                         partitionId,
                         subpartitionIndexSet,
                         inputChannel.getInputChannelId(),
@@ -156,6 +156,7 @@ public class NettyPartitionRequestClient implements PartitionRequestClient {
                 };
 
         if (delayMs == 0) {
+            //
             ChannelFuture f = tcpChannel.writeAndFlush(request);
             f.addListener(listener);
         } else {
