@@ -229,7 +229,7 @@ public class LocalInputChannel extends InputChannel implements BufferAvailabilit
     }
 
     @Override
-    public Optional<BufferAndAvailability> getNextBuffer() throws IOException {
+    public Optional<BufferAndAvailability> getNextBuffer() throws IOException {//
         checkError();
 
         if (!toBeConsumedBuffers.isEmpty()) {
@@ -257,8 +257,8 @@ public class LocalInputChannel extends InputChannel implements BufferAvailabilit
             // input gate's queue
             subpartitionView = checkAndWaitForSubpartitionView();
         }
-
-        BufferAndBacklog next = subpartitionView.getNextBuffer();
+        //【重点】PipelinedSubpartitionView#getNextBuffer
+        BufferAndBacklog next = subpartitionView.getNextBuffer();//
         // ignore the empty buffer directly
         while (next != null && next.buffer().readableBytes() == 0) {
             next.buffer().recycleBuffer();

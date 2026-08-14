@@ -395,6 +395,8 @@ public class SingleInputGate extends IndexedInputGate {
     private void internalRequestPartitions() {
         for (InputChannel inputChannel : inputChannels()) {
             try {
+                //本地 LocalInputChannel#requestSubpartitions
+                //远程 RemoteInputChannel#requestSubpartitions
                 inputChannel.requestSubpartitions();//
             } catch (Throwable t) {
                 inputChannel.setError(t);
@@ -817,8 +819,7 @@ public class SingleInputGate extends IndexedInputGate {
         return getNextBufferOrEvent(false);//
     }
 
-    private Optional<BufferOrEvent> getNextBufferOrEvent(boolean blocking)
-            throws IOException, InterruptedException {
+    private Optional<BufferOrEvent> getNextBufferOrEvent(boolean blocking) throws IOException, InterruptedException {//
         if (hasReceivedAllEndOfPartitionEvents) {
             return Optional.empty();
         }
@@ -835,8 +836,7 @@ public class SingleInputGate extends IndexedInputGate {
         throughputCalculator.resumeMeasurement();
 
         InputWithData<InputChannel, Buffer> inputWithData = next.get();
-        final BufferOrEvent bufferOrEvent =
-                transformToBufferOrEvent(
+        final BufferOrEvent bufferOrEvent = transformToBufferOrEvent(
                         inputWithData.data,
                         inputWithData.moreAvailable,
                         inputWithData.input,
@@ -845,8 +845,7 @@ public class SingleInputGate extends IndexedInputGate {
         return Optional.of(bufferOrEvent);
     }
 
-    private Optional<InputWithData<InputChannel, Buffer>> waitAndGetNextData(boolean blocking)
-            throws IOException, InterruptedException {
+    private Optional<InputWithData<InputChannel, Buffer>> waitAndGetNextData(boolean blocking) throws IOException, InterruptedException {//
         while (true) {
             synchronized (inputChannelsWithData) {
                 Optional<InputChannel> inputChannelOpt = getChannel(blocking);//
@@ -855,12 +854,12 @@ public class SingleInputGate extends IndexedInputGate {
                 }
 
                 final InputChannel inputChannel = inputChannelOpt.get();
-                Optional<Buffer> buffer = readRecoveredOrNormalBuffer(inputChannel);
+                Optional<Buffer> buffer = readRecoveredOrNormalBuffer(inputChannel);//
                 if (!buffer.isPresent()) {
                     checkUnavailability();
                     continue;
                 }
-
+                // getNextBuffer = 1
                 int numSubpartitions = inputChannel.getConsumedSubpartitionIndexSet().size();
                 if (numSubpartitions > 1) {
                     switch (buffer.get().getDataType()) {
@@ -883,10 +882,9 @@ public class SingleInputGate extends IndexedInputGate {
                             break;
                     }
                 }
-
-                final boolean morePriorityEvents =
-                        inputChannelsWithData.getNumPriorityElements() > 0;
-                if (buffer.get().getDataType().hasPriority()) {
+                //false
+                final boolean morePriorityEvents = inputChannelsWithData.getNumPriorityElements() > 0;
+                if (buffer.get().getDataType().hasPriority()) {//false
                     if (!morePriorityEvents) {
                         priorityAvailabilityHelper.resetUnavailable();
                     }
@@ -913,23 +911,24 @@ public class SingleInputGate extends IndexedInputGate {
         }
 
         //  After the recovered buffers are read, read the normal buffers
-        return enabledTieredStorage()
+        return enabledTieredStorage() // enabledTieredStorage() = false
                 ? readBufferFromTieredStore(inputChannel)
-                : readBufferFromInputChannel(inputChannel);
+                : readBufferFromInputChannel(inputChannel);//
     }
 
     private Optional<Buffer> readBufferFromInputChannel(InputChannel inputChannel)
             throws IOException, InterruptedException {
-        Optional<BufferAndAvailability> bufferAndAvailabilityOpt = inputChannel.getNextBuffer();
-        if (!bufferAndAvailabilityOpt.isPresent()) {
+        //【重点】如果是 LocalInputChannel#getNextBuffer   最终会从PipelinedSubpartition 的buffers队列获取消息
+        Optional<BufferAndAvailability> bufferAndAvailabilityOpt = inputChannel.getNextBuffer();//
+        if (!bufferAndAvailabilityOpt.isPresent()) {//fasle
             return Optional.empty();
         }
         final BufferAndAvailability bufferAndAvailability = bufferAndAvailabilityOpt.get();
-        if (bufferAndAvailability.moreAvailable()) {
+        if (bufferAndAvailability.moreAvailable()) {//false
             // enqueue the inputChannel at the end to avoid starvation
             queueChannelUnsafe(inputChannel, bufferAndAvailability.morePriorityEvents());
         }
-        if (bufferAndAvailability.hasPriority()) {
+        if (bufferAndAvailability.hasPriority()) {//false
             lastPrioritySequenceNumber[inputChannel.getChannelIndex()] =
                     bufferAndAvailability.getSequenceNumber();
         }
@@ -1226,7 +1225,7 @@ public class SingleInputGate extends IndexedInputGate {
                     return;
                 }
                 //todo 将通道入队列
-                if (!queueChannelUnsafe(channel, priority)) {
+                if (!queueChannelUnsafe(channel, priority)) {//
                     return;
                 }
                 // priority = false
@@ -1268,8 +1267,7 @@ public class SingleInputGate extends IndexedInputGate {
         }
 
         final boolean alreadyEnqueued = enqueuedInputChannelsWithData.get(channel.getChannelIndex());
-        if (alreadyEnqueued
-                && (!priority || inputChannelsWithData.containsPriorityElement(channel))) {
+        if (alreadyEnqueued && (!priority || inputChannelsWithData.containsPriorityElement(channel))) {
             // already notified / prioritized (double notification), ignore
             return false;
         }

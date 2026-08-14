@@ -86,12 +86,20 @@ public class BufferConsumer implements Closeable {
      *     memory both of them must be recycled/closed.
      */
     public Buffer build() {
+        //获取上游 Task 线程最新的写入进度  cachedPosition = position
         writerPosition.update();
+        //将这个最新的写位置快照记录在 cachedWriterPosition 变量中。这确立了本次发送数据的右边界
         int cachedWriterPosition = writerPosition.getCached();
-        Buffer slice =
-                buffer.readOnlySlice(
-                        currentReaderPosition, cachedWriterPosition - currentReaderPosition);
+        //零拷贝内存切片  currentReaderPosition 左边界（上一次网络线程读到了哪里）
+        // cachedWriterPosition - currentReaderPosition：本次要读的长度（上游新写了多少字节）
+        //利用 Netty 底层的切片机制，在原有内存块上划定一个只读的区间。它不会发生任何内存拷贝（Zero-Copy），只是创建了一个指向相同物理内存的新指针引用
+        //因为是 readOnlySlice（只读），网络发送线程绝对无法篡改数据，保证了线程安全
+        Buffer slice = buffer.readOnlySlice(currentReaderPosition, cachedWriterPosition - currentReaderPosition);
+        //切片创建成功后，立即将 currentReaderPosition 推进到本次的写位置快照
         currentReaderPosition = cachedWriterPosition;
+        //增加引用计数并返回
+        //因为底层的物理内存被网络层的 slice 引用了，为了防止上游或者其他线程在发送完成前误释放这块内存，必须调用 retainBuffer() 增加其引用计数（Reference Count）。
+        // 当下游 Netty 真正把数据发送到网卡后，网络层会调用 recycleBuffer() 减少引用计数，当计数归零时内存才会真正回收到内存池
         return slice.retainBuffer();
     }
 
@@ -222,6 +230,7 @@ public class BufferConsumer implements Closeable {
         }
 
         private void update() {
+            //SettablePositionMarker#get() 获取 position 的值
             this.cachedPosition = positionMarker.get();
         }
     }

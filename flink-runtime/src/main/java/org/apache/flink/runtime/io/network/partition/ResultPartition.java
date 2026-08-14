@@ -165,7 +165,8 @@ public abstract class ResultPartition implements ResultPartitionWriter {
         //这个Task输出的数据有可能要被分发到下游的多个Task,就会有多个分区
         //ResultPartition  包含多个ResultSubPartition
         //TaskManager > TaskExecutor > ResultPartitionManager(管理多个ResultPartition)
-        // 一个Task 对应一个ResultPartition，一个TaskManager 可能运行多个Task
+        //一个TaskManager 可能运行多个Task  一个Task 对应一个ResultPartition
+        //ResultPartitionManager#registerResultPartition
         partitionManager.registerResultPartition(this);
     }
 
@@ -326,9 +327,9 @@ public abstract class ResultPartition implements ResultPartitionWriter {
 
     @Override
     public ResultSubpartitionView createSubpartitionView(
-            ResultSubpartitionIndexSet indexSet, BufferAvailabilityListener availabilityListener)
-            throws IOException {
+            ResultSubpartitionIndexSet indexSet, BufferAvailabilityListener availabilityListener) throws IOException {//
         if (indexSet.size() == 1) {
+            // 返回 PipelinedSubpartitionView
             return createSubpartitionView(indexSet.values().iterator().next(), availabilityListener);//
         } else {
             UnionResultSubpartitionView unionView =

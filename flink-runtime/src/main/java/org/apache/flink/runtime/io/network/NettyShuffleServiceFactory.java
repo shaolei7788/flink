@@ -80,7 +80,7 @@ public class NettyShuffleServiceFactory
                         shuffleEnvironmentContext.getNetworkMemorySize(),
                         shuffleEnvironmentContext.isLocalCommunicationOnly(),
                         shuffleEnvironmentContext.getHostAddress());
-        return createNettyShuffleEnvironment(
+        return createNettyShuffleEnvironment(//
                 networkConfig,
                 shuffleEnvironmentContext.getTaskExecutorResourceId(),
                 shuffleEnvironmentContext.getEventPublisher(),
@@ -101,7 +101,7 @@ public class NettyShuffleServiceFactory
             ScheduledExecutor scheduledExecutor,
             int numberOfSlots,
             String[] tmpDirPaths) {
-        return createNettyShuffleEnvironment(
+        return createNettyShuffleEnvironment(//
                 config,
                 taskExecutorResourceId,
                 taskEventPublisher,
@@ -126,13 +126,13 @@ public class NettyShuffleServiceFactory
         NettyConfig nettyConfig = config.nettyConfig();
         ConnectionManager connectionManager =
                 nettyConfig != null
-                        ? new NettyConnectionManager(
+                        ? new NettyConnectionManager(//
                                 resultPartitionManager,
                                 taskEventPublisher,
                                 nettyConfig,
                                 config.isConnectionReuseEnabled())
                         : new LocalConnectionManager();
-        return createNettyShuffleEnvironment(
+        return createNettyShuffleEnvironment(//
                 config,
                 taskExecutorResourceId,
                 taskEventPublisher,
@@ -145,7 +145,7 @@ public class NettyShuffleServiceFactory
     }
 
     @VisibleForTesting
-    public static NettyShuffleEnvironment createNettyShuffleEnvironment(
+    public static NettyShuffleEnvironment createNettyShuffleEnvironment(//
             NettyShuffleEnvironmentConfiguration config,
             ResourceID taskExecutorResourceId,
             TaskEventPublisher taskEventPublisher,

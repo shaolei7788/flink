@@ -101,7 +101,7 @@ public class BufferBuilder implements AutoCloseable {
         //返回这次实际上成功写进去了多少个字节
         int writtenBytes = append(source);
         //它负责把当前写线程刚刚推高的最新写指针位置，同步、固化 到我们之前长篇分析过的共享指针标记（positionMarker）中
-        commit();
+        commit();//
         return writtenBytes;
     }
 
@@ -216,16 +216,16 @@ public class BufferBuilder implements AutoCloseable {
      *
      * <p>Remember to commit the {@link SettablePositionMarker} to make the changes visible.
      */
+    //是连接 上游 Task 线程（写数据） 与 下游 Netty 线程（读数据） 的关键桥梁
     static class SettablePositionMarker implements PositionMarker {
 
-        //是线程间共享的、具有多线程可见性的“最新真实提交水位线”  主要面向写线程
+        //由写线程实时更新的易变状态  上游写线程的真实写入位置 每往下游 Buffer 写入一条 Record，它就前进一次
         private volatile int position = 0;
 
         /**
          * Locally cached value of volatile {@code position} to avoid unnecessary volatile accesses.
          */
-        //cachedPosition 是消费者（读线程）为了压榨 CPU 性能、避免频繁进行多线程同步而设计的一份“本地私有快照缓存”
-        //完全面向读线程
+        //读线程在特定时机同步过来的只读快照  下游读线程看到的写入位置快照。 由 Netty 线程（消费者） 维护和更新
         private int cachedPosition = 0;
 
         @Override

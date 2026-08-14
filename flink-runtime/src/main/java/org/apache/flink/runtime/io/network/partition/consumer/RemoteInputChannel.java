@@ -195,7 +195,7 @@ public class RemoteInputChannel extends InputChannel {
             // Create a client and request the partition
             try {
                 partitionRequestClient =
-                        connectionManager.createPartitionRequestClient(connectionId);
+                        connectionManager.createPartitionRequestClient(connectionId);//
             } catch (IOException e) {
                 // IOExceptions indicate that we could not open a connection to the remote
                 // TaskExecutor

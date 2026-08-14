@@ -783,7 +783,7 @@ public class RestClient implements AutoCloseableAsync {
                         new ConnectionIdleException("Channel became idle."));
                 ctx.close();
             } else {
-                super.userEventTriggered(ctx, evt);
+                super.userEventTriggered(ctx, evt);//
             }
         }
 

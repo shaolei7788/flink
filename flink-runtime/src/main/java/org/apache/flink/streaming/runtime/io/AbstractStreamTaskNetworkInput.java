@@ -165,7 +165,7 @@ public abstract class AbstractStreamTaskNetworkInput<
                 }
                 if (result.isFullRecord()) {
                     //只有当确认一条完整的记录被成功反序列化出来时才执行
-                    // deserializationDelegate = NonReusingDeserializationDelegate
+                    //反序列化数据 NonReusingDeserializationDelegate#getInstance
                     StreamElement element = deserializationDelegate.getInstance();
                     //todo 【重点】处理数据并发送给下一个operator
                     //output = StreamTaskNetworkOutput

@@ -23,6 +23,7 @@ import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.shaded.netty4.io.netty.bootstrap.Bootstrap;
 import org.apache.flink.shaded.netty4.io.netty.channel.ChannelException;
 import org.apache.flink.shaded.netty4.io.netty.channel.ChannelFuture;
+import org.apache.flink.shaded.netty4.io.netty.channel.ChannelHandler;
 import org.apache.flink.shaded.netty4.io.netty.channel.ChannelInitializer;
 import org.apache.flink.shaded.netty4.io.netty.channel.ChannelOption;
 import org.apache.flink.shaded.netty4.io.netty.channel.epoll.Epoll;
@@ -69,6 +70,7 @@ class NettyClient {
     }
 
     void init(final NettyProtocol protocol, NettyBufferPool nettyBufferPool) throws IOException {
+        //确保该客户端在整台 TaskManager 的生命周期中只被初始化一次，防止重复拉起线程池和重复分配底层句柄
         checkState(bootstrap == null, "Netty client has already been initialized.");
 
         this.protocol = protocol;
@@ -82,9 +84,11 @@ class NettyClient {
         // --------------------------------------------------------------------
 
         if (Epoll.isAvailable()) {
+            //如果作业运行在 Linux 生产环境
             initEpollBootstrap();
             LOG.info("Transport type 'auto': using EPOLL.");
         } else {
+            //如果作业运行在 Mac/Windows
             initNioBootstrap();
             LOG.info("Transport type 'auto': using NIO.");
         }
@@ -92,16 +96,19 @@ class NettyClient {
         // --------------------------------------------------------------------
         // Configuration
         // --------------------------------------------------------------------
-
+        //禁用 Nagle 算法 Nagle 算法会尝试在系统层把多个微小的数据包“攒满一个大包”再发出去，这会带来严重的网络延迟
         bootstrap.option(ChannelOption.TCP_NODELAY, true);
+        //开启 TCP 的应用层心跳保活检测机制，用来在操作系统层面灵敏地发现死掉的网络连接
         bootstrap.option(ChannelOption.SO_KEEPALIVE, true);
 
         // Timeout for new connections
+        //防止因为某些算子过载导致建立网络连接时客户端傻傻死等，超时后会直接上报以便触发 Flink 自身的分布式故障容错
         bootstrap.option(
                 ChannelOption.CONNECT_TIMEOUT_MILLIS,
                 config.getClientConnectTimeoutSeconds() * 1000);
 
         // Pooled allocator for Netty's ByteBuf instances
+        //强行将 Netty 的内存分配器替换为 Flink 自己深度定制的 NettyBufferPool
         bootstrap.option(ChannelOption.ALLOCATOR, nettyBufferPool);
 
         // Receive and send buffer size
@@ -149,9 +156,7 @@ class NettyClient {
         String name =
                 NettyConfig.CLIENT_THREAD_GROUP_NAME + " (" + config.getServerPortRange() + ")";
 
-        NioEventLoopGroup nioGroup =
-                new NioEventLoopGroup(
-                        config.getClientNumThreads(), NettyServer.getNamedThreadFactory(name));
+        NioEventLoopGroup nioGroup = new NioEventLoopGroup(config.getClientNumThreads(), NettyServer.getNamedThreadFactory(name));
         bootstrap.group(nioGroup).channel(NioSocketChannel.class);
 
         config.getTcpKeepIdleInSeconds()
@@ -200,13 +205,14 @@ class NettyClient {
     // Client connections
     // ------------------------------------------------------------------------
 
+    //serverSocketAddress = localhost/127.0.0.1:63888
     ChannelFuture connect(final InetSocketAddress serverSocketAddress) {
         checkState(bootstrap != null, "Client has not been initialized yet.");
 
         // --------------------------------------------------------------------
         // Child channel pipeline for accepted connections
         // --------------------------------------------------------------------
-
+        //添加handler
         bootstrap.handler(
                 new ChannelInitializer<SocketChannel>() {
                     @Override
@@ -221,7 +227,9 @@ class NettyClient {
                                             serverSocketAddress.getPort());
                             channel.pipeline().addLast("ssl", sslHandler);
                         }
-                        channel.pipeline().addLast(protocol.getClientChannelHandlers());
+                        //【重点】NettyProtocol#getClientChannelHandlers
+                        ChannelHandler[] clientChannelHandlers = protocol.getClientChannelHandlers();
+                        channel.pipeline().addLast(clientChannelHandlers);
                     }
                 });
 

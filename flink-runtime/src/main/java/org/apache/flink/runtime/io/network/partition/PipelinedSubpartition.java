@@ -211,7 +211,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
 
             // Add the bufferConsumer and update the stats
             //调用 addBuffer 把 bufferConsumer 塞进刚才提到的 PrioritizedDeque 物理队列
-            if (addBuffer(bufferConsumer, partialRecordLength)) {
+            if (addBuffer(bufferConsumer, partialRecordLength)) {//
                 prioritySequenceNumber = sequenceNumber;
             }
             //读取这个 bufferConsumer 的大小，瞬间累加到前面提到的 totalNumberOfBuffers 和 totalNumberOfBytes 计数器中，为 Web UI 和 Metrics 提供最实时的发送吞吐量监控
@@ -234,7 +234,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
     }
 
     @GuardedBy("buffers")
-    private boolean addBuffer(BufferConsumer bufferConsumer, int partialRecordLength) {
+    private boolean addBuffer(BufferConsumer bufferConsumer, int partialRecordLength) {//
         assert Thread.holdsLock(buffers);
         if (bufferConsumer.getDataType().hasPriority()) {//false
             return processPriorityBuffer(bufferConsumer, partialRecordLength);
@@ -485,31 +485,43 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
         }
     }
 
+    //【重点】从内部的 buffers 队列中消费 BufferConsumer，将其切片/转化为可读的 Buffer，并计算当前的积压量（Backlog）和后续数据状态，最后打包返回
     @Nullable
-    BufferAndBacklog pollBuffer() {
+    BufferAndBacklog pollBuffer() {//
+        //确保了多线程环境（通常是 Task 线程写入，Netty 线程读取）下的线程安全
         synchronized (buffers) {
-            if (isBlocked) {
+            if (isBlocked) {//false
+                //如果当前子分区处于被阻塞状态（例如触发了某种反压或特定的对齐 Barrier 机制），则直接拒绝拉取，返回 null
                 return null;
             }
 
             Buffer buffer = null;
 
             if (buffers.isEmpty()) {
+                //buffers 队列为空
                 flushRequested = false;
             }
 
             while (!buffers.isEmpty()) {
-                BufferConsumerWithPartialRecordLength bufferConsumerWithPartialRecordLength =
-                        buffers.peek();
-                BufferConsumer bufferConsumer =
-                        bufferConsumerWithPartialRecordLength.getBufferConsumer();
-                if (Buffer.DataType.TIMEOUTABLE_ALIGNED_CHECKPOINT_BARRIER
-                        == bufferConsumer.getDataType()) {
+                //buffer 队列不为空进来
+                //获取队列第一个（队头 Head）
+                BufferConsumerWithPartialRecordLength bufferConsumerWithPartialRecordLength = buffers.peek();
+                //获取BufferConsumer
+                BufferConsumer bufferConsumer = bufferConsumerWithPartialRecordLength.getBufferConsumer();
+                //判断bufferConsumer 数据类型 bufferConsumer.getDataType() = DATA_BUFFER
+                if (Buffer.DataType.TIMEOUTABLE_ALIGNED_CHECKPOINT_BARRIER == bufferConsumer.getDataType()) {
+                    //Flink 的 Checkpoint 机制依赖 Barrier。如果遇到了支持超时的对齐 Barrier（Timeoutable Aligned Checkpoint Barrier），
+                    // 这里会立即触发其状态转换（例如尝试将其转化为非对齐或触发超时倒计时），确保分布式快照的正确性
                     completeTimeoutableCheckpointBarrier(bufferConsumer);
                 }
-                buffer = buildSliceBuffer(bufferConsumerWithPartialRecordLength);
+                //这里通过切片（Slice）技术将其转化为一个只读的 Buffer（消费者视角），无内存拷贝，极度高效
+                //buffer = ReadOnlySlicedNetworkBuffer
+                buffer = buildSliceBuffer(bufferConsumerWithPartialRecordLength);//
 
+                //Flink 保证只有队列中的最后一个 Buffer 可以处于“未写满/未结束（Unfinished）”状态。
+                // 如果队列里有多个 Buffer，排在头部的 Buffer 必须是已经写满且 Finished 的。如果违反，说明写入和读取的拓扑顺序发生了严重 Bug
                 checkState(
+                        //BufferConsumer.isFinished() 判断当前这个缓冲区（Buffer）是否已经“写结束”，即上游的 Task 线程是否已经停止向这个 Buffer 写入数据。
                         bufferConsumer.isFinished() || buffers.size() == 1,
                         "When there are multiple buffers, an unfinished bufferConsumer can not be at the head of the buffers queue.");
 
@@ -519,7 +531,10 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
                 }
 
                 if (bufferConsumer.isFinished()) {
+                    //如果头部的 BufferConsumer 已经完全读完（Finished），将其从队列中弹出（poll），并调用 close() 释放其对应的引用计数（或内存）。
+                    // 同时，减少 Backlog（积压数）。Backlog 的大小直接决定了 Flink Credit-based 流控机制中下游给上游发放多少信用额度（Credit）
                     requireNonNull(buffers.poll()).getBufferConsumer().close();
+                    // 减少buffersInBacklog 的数量
                     decreaseBuffersInBacklogUnsafe(bufferConsumer.isBuffer());
                 }
 
@@ -530,15 +545,20 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
                 // is finished
                 // 2. in approximate recovery mode, a partial record takes a whole buffer builder
                 if (receiverExclusiveBuffersPerChannel == 0 && bufferConsumer.isFinished()) {
+                    //如果下游分配给当前通道的专属信用额度（Exclusive Credit）为 0，
+                    // 且当前 Buffer 刚好写完。即使这个 Buffer 内部没有实际的业务数据（是一个空 Buffer），Flink 也会坚持把这个空 Buffer 返回
+                    //让下游 Task 能够感知到并释放为这个空 Buffer 预留的内存资源，防止在极端的反压或近似恢复（Approximate Recovery）模式下导致内存死锁
                     break;
                 }
-
                 if (buffer.readableBytes() > 0) {
+                    // 有新数据，正常跳出循环并把切片数据返回发走
                     break;
                 }
+                // 没新数据，把这次创建的空切片回收掉
                 buffer.recycleBuffer();
                 buffer = null;
                 if (!bufferConsumer.isFinished()) {
+                    // 因为 buffer 没写满，绝对不能执行 buffers.poll()！它必须留在队列里等上游继续写
                     break;
                 }
             }
@@ -548,9 +568,11 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
             }
 
             if (buffer.getDataType().isBlockingUpstream()) {
+                // 关键动作：将当前子分区标记为阻塞状态！
+                // 检查当前拉取出来的这个 Buffer 里的数据类型，是否需要立即“阻塞/反压”上游的写入线程，停止让上游继续生产数据
                 isBlocked = true;
             }
-
+            //修改指标信息
             updateStatistics(buffer);
             // Do not report last remaining buffer on buffers as available to read (assuming it's
             // unfinished).
@@ -564,8 +586,13 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
                     subpartitionInfo);
             return new BufferAndBacklog(
                     buffer,
-                    getBuffersInBacklogUnsafe(),
-                    isDataAvailableUnsafe() ? getNextBufferTypeUnsafe() : Buffer.DataType.NONE,
+                    //告诉下游：“我这里还堆积了多少个 Buffer 没发”。
+                    // 下游 Netty 接收端收到这个值后，会根据这个数值向本地的 LocalBufferPool 申请对应数量的 Floating Credits（浮动额度）并回传给上游
+                    getBuffersInBacklogUnsafe(),//0
+                    isDataAvailableUnsafe() ?
+                            //提前告诉下游下一个 Buffer 是什么类型  DATA_BUFFER 还是 EVENT_BUFFER
+                            getNextBufferTypeUnsafe() : Buffer.DataType.NONE,
+                    //序号自增。用于下游检测网络传输是否丢包或乱序
                     sequenceNumber++);
         }
     }
@@ -620,17 +647,16 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
         return readView;
     }
 
-    public ResultSubpartitionView.AvailabilityWithBacklog getAvailabilityAndBacklog(
-            boolean isCreditAvailable) {
+    public ResultSubpartitionView.AvailabilityWithBacklog getAvailabilityAndBacklog(boolean isCreditAvailable) {
         synchronized (buffers) {
             boolean isAvailable;
             if (isCreditAvailable) {
+                //
                 isAvailable = isDataAvailableUnsafe();
             } else {
                 isAvailable = getNextBufferTypeUnsafe().isEvent();
             }
-            return new ResultSubpartitionView.AvailabilityWithBacklog(
-                    isAvailable, getBuffersInBacklogUnsafe());
+            return new ResultSubpartitionView.AvailabilityWithBacklog(isAvailable, getBuffersInBacklogUnsafe());
         }
     }
 
@@ -825,8 +851,8 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
         return Math.max(0, numBuffers - 1);
     }
 
-    Buffer buildSliceBuffer(BufferConsumerWithPartialRecordLength buffer) {
-        return buffer.build();
+    Buffer buildSliceBuffer(BufferConsumerWithPartialRecordLength buffer) {//
+        return buffer.build();//
     }
 
     /** for testing only. */

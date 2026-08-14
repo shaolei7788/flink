@@ -69,6 +69,7 @@ public class NettyMessageClientDecoderDelegate extends ChannelInboundHandlerAdap
         this.nonBufferResponseDecoder = new NonBufferResponseDecoder();
     }
 
+    // 当客户端与服务端连接成功后，会自动触发此方法
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         bufferResponseDecoder.onChannelActive(ctx);

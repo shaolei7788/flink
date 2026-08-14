@@ -49,16 +49,18 @@ class PartitionRequestServerHandler extends SimpleChannelInboundHandler<NettyMes
 
     private final PartitionRequestQueue outboundQueue;
 
-    PartitionRequestServerHandler(
+    PartitionRequestServerHandler(//
             ResultPartitionProvider partitionProvider,
             TaskEventPublisher taskEventPublisher,
             PartitionRequestQueue outboundQueue) {
-
+        //ResultPartitionManager
         this.partitionProvider = partitionProvider;
+        //TaskEventDispatcher
         this.taskEventPublisher = taskEventPublisher;
         this.outboundQueue = outboundQueue;
     }
 
+    //在整个 TCP 连接的生命周期中，channelRegistered 只会触发一次（早于连接激活 channelActive 和任何数据的读写）
     @Override
     public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
         super.channelRegistered(ctx);
@@ -78,17 +80,14 @@ class PartitionRequestServerHandler extends SimpleChannelInboundHandler<NettyMes
             // Intermediate result partition requests
             // ----------------------------------------------------------------
             if (msgClazz == PartitionRequest.class) {
+                // 收到下游拉取分区数据的请求
                 PartitionRequest request = (PartitionRequest) msg;
 
                 LOG.debug("Read channel on {}: {}.", ctx.channel().localAddress(), request);
 
-                NetworkSequenceViewReader reader;
-                reader =
-                        new CreditBasedSequenceNumberingViewReader(
-                                request.receiverId, request.credit, outboundQueue);
+                NetworkSequenceViewReader reader = new CreditBasedSequenceNumberingViewReader(request.receiverId, request.credit, outboundQueue);//
 
-                reader.requestSubpartitionViewOrRegisterListener(
-                        partitionProvider, request.partitionId, request.queueIndexSet);
+                reader.requestSubpartitionViewOrRegisterListener(partitionProvider, request.partitionId, request.queueIndexSet);//
 
             }
             // ----------------------------------------------------------------

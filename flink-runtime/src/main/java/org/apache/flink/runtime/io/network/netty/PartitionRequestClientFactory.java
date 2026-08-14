@@ -84,7 +84,7 @@ class PartitionRequestClientFactory {
 
             if (clientFuture == null) {
                 try {
-                    client = connectWithRetries(connectionId);
+                    client = connectWithRetries(connectionId);//
                 } catch (Throwable e) {
                     newClientFuture.completeExceptionally(
                             new IOException("Could not create Netty client.", e));
@@ -118,12 +118,11 @@ class PartitionRequestClientFactory {
         return connectionReuseEnabled;
     }
 
-    private NettyPartitionRequestClient connectWithRetries(ConnectionID connectionId)
-            throws InterruptedException, RemoteTransportException {
+    private NettyPartitionRequestClient connectWithRetries(ConnectionID connectionId) throws InterruptedException, RemoteTransportException {//
         int tried = 0;
         while (true) {
             try {
-                return connect(connectionId);
+                return connect(connectionId);//
             } catch (RemoteTransportException e) {
                 tried++;
                 if (tried > retryNumber) {
@@ -146,7 +145,8 @@ class PartitionRequestClientFactory {
             // It's important to use `sync` here because it waits for this future until it is
             // done, and rethrows the cause of the failure if this future failed. `await` only
             // waits for this future to be completed, without throwing the error.
-            Channel channel = nettyClient.connect(connectionId.getAddress()).sync().channel();
+            //
+            Channel channel = nettyClient.connect(connectionId.getAddress()).sync().channel();//
             NetworkClientHandler clientHandler = channel.pipeline().get(NetworkClientHandler.class);
             return new NettyPartitionRequestClient(channel, clientHandler, connectionId, this);
         } catch (InterruptedException e) {

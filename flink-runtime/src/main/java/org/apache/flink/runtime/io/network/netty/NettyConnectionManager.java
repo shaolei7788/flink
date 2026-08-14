@@ -41,12 +41,11 @@ public class NettyConnectionManager implements ConnectionManager {
 
     private final NettyProtocol nettyProtocol;
 
-    public NettyConnectionManager(
+    public NettyConnectionManager(//
             ResultPartitionProvider partitionProvider,
             TaskEventPublisher taskEventPublisher,
             NettyConfig nettyConfig,
-            boolean connectionReuseEnabled) {
-
+            boolean connectionReuseEnabled) {//true
         this(
                 new NettyBufferPool(nettyConfig.getNumberOfArenas()),
                 partitionProvider,
@@ -56,37 +55,38 @@ public class NettyConnectionManager implements ConnectionManager {
     }
 
     @VisibleForTesting
-    public NettyConnectionManager(
+    public NettyConnectionManager(//
             NettyBufferPool bufferPool,
+            //ResultPartitionManager
             ResultPartitionProvider partitionProvider,
+            //TaskEventDispatcher
             TaskEventPublisher taskEventPublisher,
             NettyConfig nettyConfig,
-            boolean connectionReuseEnabled) {
-
+            boolean connectionReuseEnabled) {//true
+        //作为服务端。负责监听网络端口，等待其他 TaskManager（下游）连进来索要数据
         this.server = new NettyServer(nettyConfig);
+        //作为客户端。负责主动作出对外连接，连向其他 TaskManager（上游）去拉取/接收数据
         this.client = new NettyClient(nettyConfig);
         this.bufferPool = checkNotNull(bufferPool);
+        //背景：如果下游 TaskManager 有 10 个 Task 都要从上游同一个 TaskManager 拉数据，如果建 10 个 TCP 连接，会造成巨大的网络句柄浪费和协议开销
+        //当 connectionReuseEnabled 为 true 时，PartitionRequestClientFactory 内部会维护一个连接缓存池。
+        // 当不同的 Task 发起请求时，工厂会强行让它们复用同一个底层的 TCP Channel 通道，仅在应用层通过 InputChannelID 进行多路复用
+        this.partitionRequestClientFactory = new PartitionRequestClientFactory(client, nettyConfig.getNetworkRetries(), connectionReuseEnabled);
 
-        this.partitionRequestClientFactory =
-                new PartitionRequestClientFactory(
-                        client, nettyConfig.getNetworkRetries(), connectionReuseEnabled);
-
-        this.nettyProtocol =
-                new NettyProtocol(
-                        checkNotNull(partitionProvider), checkNotNull(taskEventPublisher));
+        this.nettyProtocol = new NettyProtocol(checkNotNull(partitionProvider), checkNotNull(taskEventPublisher));//
     }
 
     @Override
     public int start() throws IOException {
-        client.init(nettyProtocol, bufferPool);
+        client.init(nettyProtocol, bufferPool);//
 
-        return server.init(nettyProtocol, bufferPool);
+        return server.init(nettyProtocol, bufferPool);//
     }
 
     @Override
     public PartitionRequestClient createPartitionRequestClient(ConnectionID connectionId)
             throws IOException, InterruptedException {
-        return partitionRequestClientFactory.createPartitionRequestClient(connectionId);
+        return partitionRequestClientFactory.createPartitionRequestClient(connectionId);//
     }
 
     @Override

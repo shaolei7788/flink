@@ -47,8 +47,8 @@ public class PipelinedSubpartitionView implements ResultSubpartitionView {
     @Nullable
     @Override
     public BufferAndBacklog getNextBuffer() {
-        //PipelinedSubpartition#pollBuffer  获取数据
-        return parent.pollBuffer();
+        //【重点】PipelinedSubpartition#pollBuffer  获取数据
+        return parent.pollBuffer();//
     }
 
     @Override
@@ -89,6 +89,7 @@ public class PipelinedSubpartitionView implements ResultSubpartitionView {
 
     @Override
     public AvailabilityWithBacklog getAvailabilityAndBacklog(boolean isCreditAvailable) {
+        //PipelinedSubpartition#getAvailabilityAndBacklog
         return parent.getAvailabilityAndBacklog(isCreditAvailable);
     }
 

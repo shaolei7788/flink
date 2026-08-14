@@ -24,6 +24,7 @@ import org.apache.flink.util.FatalExitExceptionHandler;
 import org.apache.flink.shaded.guava33.com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.flink.shaded.netty4.io.netty.bootstrap.ServerBootstrap;
 import org.apache.flink.shaded.netty4.io.netty.channel.ChannelFuture;
+import org.apache.flink.shaded.netty4.io.netty.channel.ChannelHandler;
 import org.apache.flink.shaded.netty4.io.netty.channel.ChannelInitializer;
 import org.apache.flink.shaded.netty4.io.netty.channel.ChannelOption;
 import org.apache.flink.shaded.netty4.io.netty.channel.epoll.Epoll;
@@ -72,10 +73,10 @@ class NettyServer {
     int init(final NettyProtocol protocol, NettyBufferPool nettyBufferPool) throws IOException {
         return init(
                 nettyBufferPool,
-                sslHandlerFactory -> new ServerChannelInitializer(protocol, sslHandlerFactory));
+                sslHandlerFactory -> new ServerChannelInitializer(protocol, sslHandlerFactory));//
     }
 
-    int init(
+    int init(//
             NettyBufferPool nettyBufferPool,
             Function<SSLHandlerFactory, ServerChannelInitializer> channelInitializer)
             throws IOException {
@@ -127,8 +128,10 @@ class NettyServer {
         // --------------------------------------------------------------------
         // Child channel pipeline for accepted connections
         // --------------------------------------------------------------------
-
-        bootstrap.childHandler(channelInitializer.apply(sslHandlerFactory));
+        // 会执行 new ServerChannelInitializer(protocol, sslHandlerFactory)
+        // ServerChannelInitializer 是 netty 常规用法 业务处理逻辑在其 initChannel 里面的handler
+        ServerChannelInitializer serverChannelInitializer = channelInitializer.apply(sslHandlerFactory);//
+        bootstrap.childHandler(serverChannelInitializer);
 
         // --------------------------------------------------------------------
         // Start Server
@@ -208,11 +211,9 @@ class NettyServer {
     private void initNioBootstrap() {
         // Add the server port number to the name in order to distinguish
         // multiple servers running on the same host.
-        String name =
-                NettyConfig.SERVER_THREAD_GROUP_NAME + " (" + config.getServerPortRange() + ")";
+        String name = NettyConfig.SERVER_THREAD_GROUP_NAME + " (" + config.getServerPortRange() + ")";
 
-        NioEventLoopGroup nioGroup =
-                new NioEventLoopGroup(config.getServerNumThreads(), getNamedThreadFactory(name));
+        NioEventLoopGroup nioGroup = new NioEventLoopGroup(config.getServerNumThreads(), getNamedThreadFactory(name));
         bootstrap.group(nioGroup).channel(NioServerSocketChannel.class);
     }
 
@@ -245,8 +246,7 @@ class NettyServer {
         private final NettyProtocol protocol;
         private final SSLHandlerFactory sslHandlerFactory;
 
-        public ServerChannelInitializer(
-                NettyProtocol protocol, SSLHandlerFactory sslHandlerFactory) {
+        public ServerChannelInitializer(NettyProtocol protocol, SSLHandlerFactory sslHandlerFactory) {
             this.protocol = protocol;
             this.sslHandlerFactory = sslHandlerFactory;
         }
@@ -254,11 +254,11 @@ class NettyServer {
         @Override
         public void initChannel(SocketChannel channel) throws Exception {
             if (sslHandlerFactory != null) {
-                channel.pipeline()
-                        .addLast("ssl", sslHandlerFactory.createNettySSLHandler(channel.alloc()));
+                channel.pipeline().addLast("ssl", sslHandlerFactory.createNettySSLHandler(channel.alloc()));
             }
-
-            channel.pipeline().addLast(protocol.getServerChannelHandlers());
+            //【重点】 NettyProtocol#getServerChannelHandlers
+            ChannelHandler[] serverChannelHandlers = protocol.getServerChannelHandlers();
+            channel.pipeline().addLast(serverChannelHandlers);//
         }
     }
 }

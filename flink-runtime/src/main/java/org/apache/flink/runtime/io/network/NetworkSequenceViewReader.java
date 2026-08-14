@@ -51,7 +51,7 @@ public interface NetworkSequenceViewReader {
      * @param subpartitionIndexSet the sub partition indexes
      * @throws IOException the thrown exception
      */
-    void requestSubpartitionViewOrRegisterListener(
+    void requestSubpartitionViewOrRegisterListener(//
             ResultPartitionProvider partitionProvider,
             ResultPartitionID resultPartitionId,
             ResultSubpartitionIndexSet subpartitionIndexSet)

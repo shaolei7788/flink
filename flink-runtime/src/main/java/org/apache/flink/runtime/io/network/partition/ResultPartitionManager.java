@@ -82,23 +82,25 @@ public class ResultPartitionManager implements ResultPartitionProvider {
         }
     }
 
+    //
     public void registerResultPartition(ResultPartition partition) throws IOException {
         PartitionRequestListenerManager listenerManager;
         synchronized (registeredPartitions) {
             checkState(!isShutdown, "Result partition manager already shut down.");
-
-            ResultPartition previous =
-                    registeredPartitions.put(partition.getPartitionId(), partition);
+            //将当前Task 刚刚初始化好的 ResultPartition 注册到全局 Map 中
+            ResultPartition previous = registeredPartitions.put(partition.getPartitionId(), partition);
 
             if (previous != null) {
+                //如果该 ID 已经存在（previous != null），说明系统状态错乱，抛出异常
                 throw new IllegalStateException("Result partition already registered.");
             }
-
+            //去 listenerManagers 里面查找有没有这个分区 ID 对应的监听器管理器
+            // 如果下游Task比当前Task先启动 发起了请求，当前Task数据未就绪，就会在这个 listenerManagers 中为该分区 ID 挂载一个监听器
             listenerManager = listenerManagers.remove(partition.getPartitionId());
         }
         if (listenerManager != null) {
-            for (PartitionRequestListener listener :
-                    listenerManager.getPartitionRequestListeners()) {
+            for (PartitionRequestListener listener : listenerManager.getPartitionRequestListeners()) {
+                //异步唤醒下游
                 listener.notifyPartitionCreated(partition);
             }
         }
@@ -129,6 +131,7 @@ public class ResultPartitionManager implements ResultPartitionProvider {
         return subpartitionView;
     }
 
+    //
     @Override
     public Optional<ResultSubpartitionView> createSubpartitionViewOrRegisterListener(
             ResultPartitionID partitionId,
@@ -142,20 +145,18 @@ public class ResultPartitionManager implements ResultPartitionProvider {
             final ResultPartition partition = registeredPartitions.get(partitionId);
 
             if (partition == null) {
+                //当前Task分区没有注册，会创建一个监听器  对应当前类 registerResultPartition 方法
                 listenerManagers
                         .computeIfAbsent(partitionId, key -> new PartitionRequestListenerManager())
                         .registerListener(partitionRequestListener);
                 subpartitionView = null;
             } else {
-
                 LOG.debug("Requesting subpartitions {} of {}.", subpartitionIndexSet, partition);
-
-                subpartitionView =
-                        partition.createSubpartitionView(
-                                subpartitionIndexSet, availabilityListener);
+                //如果上游 Task 已经注册，直接创建并返回
+                subpartitionView = partition.createSubpartitionView(subpartitionIndexSet, availabilityListener);
             }
         }
-
+        // subpartitionView = PipelinedSubpartitionView
         return subpartitionView == null ? Optional.empty() : Optional.of(subpartitionView);
     }
 

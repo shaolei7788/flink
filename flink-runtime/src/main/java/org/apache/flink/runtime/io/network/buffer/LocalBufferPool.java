@@ -417,7 +417,7 @@ public class LocalBufferPool implements BufferPool {
         if (targetChannel == UNKNOWN_CHANNEL) {
             return new BufferBuilder(memorySegment, this);
         } else {
-            return new BufferBuilder(memorySegment, subpartitionBufferRecyclers[targetChannel]);
+            return new BufferBuilder(memorySegment, subpartitionBufferRecyclers[targetChannel]);//
         }
     }
 

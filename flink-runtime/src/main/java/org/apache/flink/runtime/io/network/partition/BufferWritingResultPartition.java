@@ -179,7 +179,7 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
         // 走到这里说明record 全部写进Buffer了
         if (buffer.isFull()) {
             // full buffer, full record
-            // 情况 B  将其送入发送队列
+            // 情况 B buffer 已经装满了 需要发送出去 将其送入发送队列
             finishUnicastBufferBuilder(targetSubpartition);
         }
         // partial buffer, full record
@@ -247,7 +247,7 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
     }
 
     @Override
-    protected ResultSubpartitionView createSubpartitionView(
+    protected ResultSubpartitionView createSubpartitionView(//
             int subpartitionIndex, BufferAvailabilityListener availabilityListener)
             throws IOException {
         checkElementIndex(subpartitionIndex, numSubpartitions, "Subpartition not found.");

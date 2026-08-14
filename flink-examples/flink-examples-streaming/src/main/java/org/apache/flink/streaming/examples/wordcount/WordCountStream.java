@@ -40,9 +40,16 @@ public class WordCountStream {
 		// KeyedStream extends DataStream
 		// DataStreamSource extends SingleOutputStreamOperator extends DataStream
     	// SingleOutputStreamOperator extends DataStream
-        // 1. 创建流式执行环境 flink run -d -t yarn-per-job
-		// env =  StreamContextEnvironment 如果是本地 LocalStreamEnvironment
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        // 1. 先在idea 启动 StandaloneSessionClusterEntrypoint
+        // 2. 再 启动 TaskManagerRunner
+        //
+        //
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.createRemoteEnvironment(
+                "localhost",
+                8081,
+                "D:\\source\\flink\\flink-examples\\flink-examples-streaming\\target\\flink-examples-streaming-2.2-SNAPSHOT.jar"
+        );
+        //StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 		env.setParallelism(2);
 
 		// 开启 checkpoint，并设置间隔 ms

@@ -66,7 +66,7 @@ public class BufferConsumerWithPartialRecordLength {
     }
 
     public Buffer build() {
-        return bufferConsumer.build();
+        return bufferConsumer.build();//
     }
 
     public boolean cleanupPartialRecord() {

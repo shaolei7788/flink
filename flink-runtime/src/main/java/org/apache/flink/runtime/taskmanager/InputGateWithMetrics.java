@@ -139,7 +139,8 @@ public class InputGateWithMetrics extends IndexedInputGate {
 
     @Override
     public Optional<BufferOrEvent> pollNext() throws IOException, InterruptedException {
-        return inputGate.pollNext().map(this::updateMetrics);//
+        //SingleInputGate#pollNext
+        return inputGate.pollNext().map(this::updateMetrics);
     }
 
     @Override

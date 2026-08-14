@@ -16,23 +16,24 @@
   ~ limitations under the License.
   -->
 
-<ng-container *ngIf="!isError">
-  <flink-job-status [isLoading]="isLoading"></flink-job-status>
-  <div class="content">
-    <nz-skeleton [nzActive]="true" *ngIf="isLoading"></nz-skeleton>
-    <div class="router" *ngIf="!isLoading">
-      <router-outlet></router-outlet>
-    </div>
-  </div>
-</ng-container>
+<configuration>
+    <appender name="file" class="ch.qos.logback.core.FileAppender">
+        <file>${log.file}</file>
+        <append>false</append>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{60} %X{sourceThread} - %msg%n</pattern>
+        </encoder>
+    </appender>
 
-<nz-alert
-  *ngIf="isError"
-  nzShowIcon
-  nzType="warning"
-  nzMessage="Job failed during initialization of JobManager"
-  [nzDescription]="descriptionTemplateRef"
-></nz-alert>
-<ng-template #descriptionTemplateRef>
-  <pre>{{ errorDetails }}</pre>
-</ng-template>
+    <appender name="console" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{60} %X{sourceThread} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="ch.qos.logback" level="WARN" />
+    <root level="${ROOT_LOG_LEVEL:-INFO}">
+        <appender-ref ref="file"/>
+        <appender-ref ref="console"/>
+    </root>
+</configuration>
