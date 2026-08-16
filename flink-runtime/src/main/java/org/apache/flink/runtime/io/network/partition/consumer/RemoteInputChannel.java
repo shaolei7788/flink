@@ -125,7 +125,7 @@ public class RemoteInputChannel extends InputChannel {
 
     private long totalQueueSizeInBytes;
 
-    public RemoteInputChannel(
+    public RemoteInputChannel(//
             SingleInputGate inputGate,
             int channelIndex,
             ResultPartitionID partitionId,
@@ -194,16 +194,15 @@ public class RemoteInputChannel extends InputChannel {
                     channelStatePersister);
             // Create a client and request the partition
             try {
-                partitionRequestClient =
-                        connectionManager.createPartitionRequestClient(connectionId);//
+                //NettyConnectionManager#createPartitionRequestClient
+                partitionRequestClient = connectionManager.createPartitionRequestClient(connectionId);//
             } catch (IOException e) {
                 // IOExceptions indicate that we could not open a connection to the remote
                 // TaskExecutor
                 throw new PartitionConnectionException(partitionId, e);
             }
-
-            partitionRequestClient.requestSubpartition(
-                    partitionId, consumedSubpartitionIndexSet, this, 0);
+            //NettyPartitionRequestClient#requestSubpartition
+            partitionRequestClient.requestSubpartition(partitionId, consumedSubpartitionIndexSet, this, 0);
         }
     }
 
@@ -253,7 +252,9 @@ public class RemoteInputChannel extends InputChannel {
     }
 
     @Override
-    public Optional<BufferAndAvailability> getNextBuffer() throws IOException {
+    public Optional<BufferAndAvailability> getNextBuffer() throws IOException {//
+        //首先检查当前通道与上游物理分区的网络请求连接队列是否已经成功建立（初始化）。
+        // 如果因突发 Failover 导致连接尚未 Ready 却误触发了数据拉取，这里会提前拦截并抛出对应的状态异常，防止出现严重的非法空指针
         checkPartitionRequestQueueInitialized();
 
         final SequenceBuffer next;
@@ -265,10 +266,8 @@ public class RemoteInputChannel extends InputChannel {
             if (next != null) {
                 totalQueueSizeInBytes -= next.buffer.getSize();
             }
-            nextDataType =
-                    receivedBuffers.peek() != null
-                            ? receivedBuffers.peek().buffer.getDataType()
-                            : DataType.NONE;
+            //下一条数据类型
+            nextDataType = receivedBuffers.peek() != null ? receivedBuffers.peek().buffer.getDataType() : DataType.NONE;
         }
 
         if (next == null) {
@@ -286,10 +285,11 @@ public class RemoteInputChannel extends InputChannel {
                 channelInfo,
                 channelStatePersister,
                 next.sequenceNumber);
+        //当前通道总计输入了多少字节
         numBytesIn.inc(next.buffer.getSize());
+        //总计接收到的 Buffer 块数
         numBuffersIn.inc();
-        return Optional.of(
-                new BufferAndAvailability(next.buffer, nextDataType, 0, next.sequenceNumber));
+        return Optional.of(new BufferAndAvailability(next.buffer, nextDataType, 0, next.sequenceNumber));
     }
 
     // ------------------------------------------------------------------------
@@ -556,19 +556,22 @@ public class RemoteInputChannel extends InputChannel {
      * @param backlog The number of unsent buffers in the producer's sub partition.
      */
     public void onSenderBacklog(int backlog) throws IOException {
-        notifyBufferAvailable(bufferManager.requestFloatingBuffers(backlog + initialCredit));
+        int buffers = bufferManager.requestFloatingBuffers(backlog + initialCredit);
+        notifyBufferAvailable(buffers);
     }
 
     /**
      * Handles the input buffer. This method is taking over the ownership of the buffer and is fully
      * responsible for cleaning it up both on the happy path and in case of an error.
      */
-    public void onBuffer(Buffer buffer, int sequenceNumber, int backlog, int subpartitionId)
-            throws IOException {
+    //校验网络序列号、执行非对齐检查点（Unaligned Checkpoint）的状态持久化、将数据压入私有缓存队列，并向外层的 SingleInputGate 发出唤醒通知
+    public void onBuffer(Buffer buffer, int sequenceNumber, int backlog, int subpartitionId) throws IOException {
         boolean recycleBuffer = true;
 
         try {
+            //检查收到的 sequenceNumber 是否等于本地预期的 expectedSequenceNumber
             if (expectedSequenceNumber != sequenceNumber) {
+                //一旦由于网络重调度或某些极其罕见的物理异常导致乱序，立刻抛出 BufferReorderingException 触发当前的 Task 容错重启，防止下游算子读到错误或错位的脏数据
                 onError(new BufferReorderingException(expectedSequenceNumber, sequenceNumber));
                 return;
             }
@@ -594,25 +597,28 @@ public class RemoteInputChannel extends InputChannel {
                 if (isReleased.get()) {
                     return;
                 }
-
+                //
                 wasEmpty = receivedBuffers.isEmpty();
 
-                SequenceBuffer sequenceBuffer =
-                        new SequenceBuffer(buffer, sequenceNumber, subpartitionId);
+                SequenceBuffer sequenceBuffer = new SequenceBuffer(buffer, sequenceNumber, subpartitionId);
                 DataType dataType = buffer.getDataType();
                 if (dataType.hasPriority()) {
+                    //如果收到的是 CheckpointBarrier 等紧急控制事件，会调用 addPriorityBuffer() 直接插队推进优先处理队列
                     firstPriorityEvent = addPriorityBuffer(sequenceBuffer);
                     recycleBuffer = false;
                 } else {
-                    receivedBuffers.add(sequenceBuffer);
-                    recycleBuffer = false;
+                    //DATA_BUFFER 普通数据
+                    //【重点】将数据加入 私有receivedBuffers 队列
+                    receivedBuffers.add(sequenceBuffer);//
+                    recycleBuffer = false;//true
                     if (dataType.requiresAnnouncement()) {
+                        //通告机制（requiresAnnouncement）：如果某些事件需要下游提前感知，会生成一个 announce 通告急件优先发送
                         firstPriorityEvent = addPriorityBuffer(announce(sequenceBuffer));
                     }
                 }
                 totalQueueSizeInBytes += buffer.getSize();
-                final OptionalLong barrierId =
-                        channelStatePersister.checkForBarrier(sequenceBuffer.buffer);
+                //探这个 Buffer 到底是不是一个物理 Barrier
+                final OptionalLong barrierId = channelStatePersister.checkForBarrier(sequenceBuffer.buffer);
                 if (barrierId.isPresent() && barrierId.getAsLong() > lastBarrierId) {
                     // checkpoint was not yet started by task thread,
                     // so remember the numbers of buffers to spill for the time when
@@ -620,18 +626,24 @@ public class RemoteInputChannel extends InputChannel {
                     lastBarrierId = barrierId.getAsLong();
                     lastBarrierSequenceNumber = sequenceBuffer.sequenceNumber;
                 }
+                //在 Netty 线程中直接异步地把当前队列里积压的所有普通数据 Buffer 全部倾倒并持久化到分布式存储（如本地磁盘或 HDFS）中
                 channelStatePersister.maybePersist(buffer);
+                // 推进下一期序列号
                 ++expectedSequenceNumber;
             }
 
-            if (firstPriorityEvent) {
+            if (firstPriorityEvent) {//false
                 notifyPriorityEvent(sequenceNumber);
             }
+            //如果压入数据前，当前通道的私有队列是空的（wasEmpty = true），说明下游的 SingleInputGate 此时大概率因为没数据而处于休眠或者让出 CPU 的状态
             if (wasEmpty) {
-                notifyChannelNonEmpty();
+                //通知通道不为空
+                notifyChannelNonEmpty();//
             }
-
-            if (backlog >= 0) {
+            //会根据这个积压量以及当前 RemoteInputChannel 本地空闲的 Exclusive/Floating Buffers 剩余量进行精密的算术计算，
+            // 计算出下游当前还能容纳多少数据，并转化为最新的 Credit（信用额度）值，
+            // 通过下一次网络回包（Acknowledgement）反向发送给上游。上游收到信用额度后决定发多少数据。这就是 Flink 零丢包、精准防爆内存的反压控制核心
+            if (backlog >= 0) {// =0
                 onSenderBacklog(backlog);
             }
         } finally {

@@ -64,8 +64,7 @@ public class StreamSource<OUT, SRC extends SourceFunction<OUT>>
 
     public void run(final Object lockingObject, final OperatorChain<?, ?> operatorChain)
             throws Exception {
-
-        run(lockingObject, output, operatorChain);
+        run(lockingObject, output, operatorChain);//
     }
 
     public void run(
@@ -104,6 +103,7 @@ public class StreamSource<OUT, SRC extends SourceFunction<OUT>>
                         emitProgressiveWatermarks);
 
         try {
+            //SocketTextStreamFunction#run
             userFunction.run(ctx);
         } finally {
             if (latencyEmitter != null) {

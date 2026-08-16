@@ -47,6 +47,7 @@ import static org.apache.flink.util.Preconditions.checkState;
  * The result partition manager keeps track of all currently produced/consumed partitions of a task
  * manager.
  */
+// 是一个 TaskManager 级别（进程级）单例。它在 TaskManager 启动时就被创建了，用来管理这个进程内所有 Task 的输出
 public class ResultPartitionManager implements ResultPartitionProvider {
 
     private static final Logger LOG = LoggerFactory.getLogger(ResultPartitionManager.class);
@@ -69,8 +70,7 @@ public class ResultPartitionManager implements ResultPartitionProvider {
         this(0, null);
     }
 
-    public ResultPartitionManager(
-            int partitionListenerTimeout, ScheduledExecutor scheduledExecutor) {
+    public ResultPartitionManager(int partitionListenerTimeout, ScheduledExecutor scheduledExecutor) {
         this.partitionListenerTimeout = partitionListenerTimeout;
         if (partitionListenerTimeout > 0 && scheduledExecutor != null) {
             this.partitionListenerTimeoutChecker =
@@ -124,7 +124,7 @@ public class ResultPartitionManager implements ResultPartitionProvider {
             }
 
             LOG.debug("Requesting subpartitions {} of {}.", subpartitionIndexSet, partition);
-
+            //PipelinedResultPartition#createSubpartitionView
             subpartitionView = partition.createSubpartitionView(subpartitionIndexSet, availabilityListener);//
         }
 
@@ -153,7 +153,7 @@ public class ResultPartitionManager implements ResultPartitionProvider {
             } else {
                 LOG.debug("Requesting subpartitions {} of {}.", subpartitionIndexSet, partition);
                 //如果上游 Task 已经注册，直接创建并返回
-                subpartitionView = partition.createSubpartitionView(subpartitionIndexSet, availabilityListener);
+                subpartitionView = partition.createSubpartitionView(subpartitionIndexSet, availabilityListener);//
             }
         }
         // subpartitionView = PipelinedSubpartitionView

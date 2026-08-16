@@ -313,7 +313,7 @@ public abstract class AbstractStreamTaskNetworkInput<
                 "currentRecordDeserializer has already been released");
         //反序列化器内部的指针会重置并指向这个新的 Buffer 内存块
         //SpillingAdaptiveSpanningRecordDeserializer#setNextBuffer
-        currentRecordDeserializer.setNextBuffer(bufferOrEvent.getBuffer());
+        currentRecordDeserializer.setNextBuffer(bufferOrEvent.getBuffer());//
     }
 
     protected R getActiveSerializer(InputChannelInfo channelInfo) {

@@ -102,6 +102,7 @@ public class SourceStreamTask<
      */
     private volatile FinishingReason finishingReason = FinishingReason.END_OF_DATA;
 
+    //会通过反射调用 Task loadAndInstantiateInvokable方法里的 statelessCtor.newInstance(environment);
     public SourceStreamTask(Environment env) throws Exception {
         this(env, new Object());
     }

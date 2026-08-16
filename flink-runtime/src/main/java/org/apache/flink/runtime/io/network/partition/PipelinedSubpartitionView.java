@@ -38,7 +38,7 @@ public class PipelinedSubpartitionView implements ResultSubpartitionView {
     /** Flag indicating whether this view has been released. */
     final AtomicBoolean isReleased;
 
-    public PipelinedSubpartitionView(PipelinedSubpartition parent, BufferAvailabilityListener listener) {
+    public PipelinedSubpartitionView(PipelinedSubpartition parent, BufferAvailabilityListener listener) {//
         this.parent = checkNotNull(parent);
         this.availabilityListener = checkNotNull(listener);
         this.isReleased = new AtomicBoolean();

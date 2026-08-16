@@ -272,9 +272,9 @@ public class LocalBufferPool implements BufferPool {
         }
         this.maxBuffersPerChannel = maxBuffersPerChannel;
         this.maxOverdraftBuffersPerGate = maxOverdraftBuffersPerGate;
-        System.out.println(Thread.currentThread().getName() + " numberOfRequiredMemorySegments:" + numberOfRequiredMemorySegments
-		+ ",currentPoolSize:" + currentPoolSize + ",maxNumberOfMemorySegments:"+maxNumberOfMemorySegments +
-			",maxBuffersPerChannel:" + maxBuffersPerChannel);
+        // System.out.println(Thread.currentThread().getName() + " numberOfRequiredMemorySegments:" + numberOfRequiredMemorySegments
+		// + ",currentPoolSize:" + currentPoolSize + ",maxNumberOfMemorySegments:"+maxNumberOfMemorySegments +
+		// 	",maxBuffersPerChannel:" + maxBuffersPerChannel);
         // Lock is only taken, because #checkAndUpdateAvailability asserts it. It's a small penalty
         // for thread safety.
         synchronized (this.availableMemorySegments) {

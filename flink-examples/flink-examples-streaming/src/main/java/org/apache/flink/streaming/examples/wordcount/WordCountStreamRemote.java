@@ -35,7 +35,7 @@ import org.apache.flink.util.Collector;
 //print 															LegacySinkTransformation		add				6
 //KeyGroup 是 Flink 中一组 Key 的逻辑集合，是状态管理的最小单元。每个 KeyGroup 包含通过哈希算法映射到同一组的多个 Key。
 // Flink 在作业启动时就确定了 KeyGroup 的总数，这个数量由maxParallelism参数决定，并在整个作业生命周期内保持不变。
-public class WordCountStream {
+public class WordCountStreamRemote {
     public static void main(String[] args) throws Exception {
 		// KeyedStream extends DataStream
 		// DataStreamSource extends SingleOutputStreamOperator extends DataStream
@@ -44,7 +44,12 @@ public class WordCountStream {
         // 2. 再 启动 TaskManagerRunner
         //
         //
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.createRemoteEnvironment(
+                "localhost",
+                8081,
+                "/Users/shaolei/Desktop/workspace/source/flink/flink-examples/flink-examples-streaming/target/flink-examples-streaming-2.2-SNAPSHOT.jar"
+        );
+        //StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 		env.setParallelism(2);
 
 		// 开启 checkpoint，并设置间隔 ms

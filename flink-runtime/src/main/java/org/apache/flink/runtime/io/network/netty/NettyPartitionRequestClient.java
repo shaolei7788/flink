@@ -55,20 +55,26 @@ public class NettyPartitionRequestClient implements PartitionRequestClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(NettyPartitionRequestClient.class);
 
+    //代表了一个真实的 TCP 物理长连接
+    //发送 PartitionRequest 请求数据、发送 AddCredit 告知上游本地还有多少空闲缓冲区 最终都是通过调用 tcpChannel.writeAndFlush(msg) 发送给远程上游的
     private final Channel tcpChannel;
 
+    //该连接在 Netty Pipeline 中注册的入站处理器
     private final NetworkClientHandler clientHandler;
 
+    //包含了远程 TaskManager 的网络地址（InetSocketAddress）和连接索引（connectionIndex）
     private final ConnectionID connectionId;
 
+    //当底层的 tcpChannel 因为网络闪断、超时或者对方宕机而关闭时，这个 Client 会通过这个 clientFactory 引用，把自己从全局的连接池缓存中移除，防止其他下游 Task 继续拿到这个坏掉的连接
     private final PartitionRequestClientFactory clientFactory;
 
     /** If zero, the underlying TCP channel can be safely closed. */
+    //一个线程安全的原子计数器，用于记录当前有多少个下游 RemoteInputChannel 正在复用这个物理连接
     private final AtomicInteger closeReferenceCounter = new AtomicInteger(0);
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    NettyPartitionRequestClient(
+    NettyPartitionRequestClient(//
             Channel tcpChannel,
             NetworkClientHandler clientHandler,
             ConnectionID connectionId,
@@ -127,36 +133,40 @@ public class NettyPartitionRequestClient implements PartitionRequestClient {
         final PartitionRequest request =
                 new PartitionRequest(
                         partitionId,
-                        subpartitionIndexSet,
+                        subpartitionIndexSet,//[1，1]
                         inputChannel.getInputChannelId(),
-                        inputChannel.getInitialCredit());
+                        inputChannel.getInitialCredit());//2
 
-        final ChannelFutureListener listener =
-                future -> {
-                    if (!future.isSuccess()) {
-                        clientHandler.removeInputChannel(inputChannel);
-                        inputChannel.onError(
-                                new LocalTransportException(
-                                        String.format(
-                                                "Sending the partition request to '%s [%s] (#%d)' failed.",
-                                                connectionId.getAddress(),
-                                                connectionId
-                                                        .getResourceID()
-                                                        .getStringWithMetadata(),
-                                                connectionId.getConnectionIndex()),
-                                        future.channel().localAddress(),
-                                        future.cause()));
-                        sendToChannel(
-                                new ConnectionErrorMessage(
-                                        future.cause() == null
-                                                ? new RuntimeException(
-                                                        "Cannot send partition request.")
-                                                : future.cause()));
-                    }
-                };
+        final ChannelFutureListener listener = new ChannelFutureListener(){
+
+            @Override
+            public void operationComplete(ChannelFuture future) throws Exception {
+                if (!future.isSuccess()) {
+                    clientHandler.removeInputChannel(inputChannel);
+                    inputChannel.onError(
+                            new LocalTransportException(
+                                    String.format(
+                                            "Sending the partition request to '%s [%s] (#%d)' failed.",
+                                            connectionId.getAddress(),
+                                            connectionId
+                                                    .getResourceID()
+                                                    .getStringWithMetadata(),
+                                            connectionId.getConnectionIndex()),
+                                    future.channel().localAddress(),
+                                    future.cause()));
+                    sendToChannel(
+                            new ConnectionErrorMessage(
+                                    future.cause() == null
+                                            ? new RuntimeException(
+                                            "Cannot send partition request.")
+                                            : future.cause()));
+                }
+            };
+        };
 
         if (delayMs == 0) {
-            ChannelFuture f = tcpChannel.writeAndFlush(request);
+            //
+            ChannelFuture f = tcpChannel.writeAndFlush(request);//
             f.addListener(listener);
         } else {
             final ChannelFuture[] f = new ChannelFuture[1];

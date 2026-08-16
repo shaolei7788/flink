@@ -280,25 +280,38 @@ public abstract class NettyMessage {
                         + Byte.BYTES
                         + Byte.BYTES
                         + Integer.BYTES;
-
+        //实际包裹的数据实体。分析：指向 Flink 堆外内存（MemorySegment）的引用。里面可能装着序列化后的用户记录（StreamRecord），也可能装着控制事件
         final Buffer buffer;
-
+        //下游接收端的唯一标识（对应下游的 RemoteInputChannel）。
+        // 分析：Flink 的多个逻辑通道会复用同一个物理 TCP 连接（Netty Channel）。
+        // Netty 收到字节流后，必须通过这个 receiverId 准确地把数据分发给下游具体的 Task 和 Channel，它是网络多路复用的“路标”
         final InputChannelID receiverId;
-
+        //上游数据源的子分区索引（Subpartition Index）。分析：明确指出这份数据来自于上游算子的哪一个具体分区。
+        // 在动态重平衡、故障恢复（Failover）或者下游消费端进行数据追踪时，这个 ID 是定位上游源头的核心依据
         final int subpartitionId;
 
+        //该通道内发送的 Buffer 递增序列号。分析：用于保障数据的有序性（Ordering）和不丢不重（Exactly-Once）。
+        // 下游接收端会检查收到的 sequenceNumber 是否等于 expectedSequenceNumber。如果由于网络异常出现乱序或断流，Flink 能够立刻检测到并触发错误重试
         final int sequenceNumber;
 
+        //上游该子分区（Subpartition）当前仍然积压的 Buffer 数量
         final int backlog;
-
+        //标记该 Buffer 内部数据的具体类型（如 DATA_BUFFER、EVENT_BUFFER 等）
         final Buffer.DataType dataType;
 
+        //标记该 Buffer 在网络传输前是否经过了压缩。分析：Flink 支持对网络传输的 Buffer 进行压缩以节省带宽。如果为 true，下游 Netty 接收端在将数据交给 Task 线程前，必须先调用解压器（LZ4 等）将其还原
         final boolean isCompressed;
 
+        //当前 Buffer 的实际有效数据大小（字节数）。分析：Flink 分配的内存块（MemorySegment）大小通常是固定的（例如 32KB），
+        // 但最后打包发送时，Buffer 可能并没有被完全填满。bufferSize 记录了实际写入了多少字节，下游读取时只读取这个长度，防止读到尾部的脏数据
         final int bufferSize;
 
+        //当 Flink 需要传输一个极大的数据对象（例如一个超大的字符串、长数组或大状态），单个标准的 MemorySegment 容纳不下时，该数据会被拆分到多个物理 Buffer 中传输
+        // 这个大对象被拆成了多少个小碎片发过来
+        // numOfPartialBuffers = 0 代表当前 BufferResponse 承载的是一个独立的、完整的 Buffer，没有经过任何切片（Slice）或拆分
         final int numOfPartialBuffers;
 
+        //按顺序记录了每个碎片具体的字节大小。下游通过这两个属性，可以把网络上陆续收到的碎片重新拼接（Assemble）还原成原始的大 Buffer
         private List<Integer> partialBufferSizes = new ArrayList<>();
 
         private BufferResponse(

@@ -78,6 +78,7 @@ public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamO
      *
      * @param env The task environment for this task.
      */
+    //会通过反射调用 Task loadAndInstantiateInvokable方法里的 statelessCtor.newInstance(environment);
     public OneInputStreamTask(Environment env) throws Exception {
         super(env);
     }

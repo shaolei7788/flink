@@ -1676,6 +1676,7 @@ public class Task
         // instantiate the class
         try {
             //noinspection ConstantConditions  --> cannot happen
+            //创建StreamTask 实例
             return statelessCtor.newInstance(environment);
         } catch (InvocationTargetException e) {
             // directly forward exceptions from the eager initialization

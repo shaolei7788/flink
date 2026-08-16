@@ -64,7 +64,7 @@ public class SpillingAdaptiveSpanningRecordDeserializer<T extends IOReadableWrit
     }
 
     @Override
-    public void setNextBuffer(Buffer buffer) throws IOException {
+    public void setNextBuffer(Buffer buffer) throws IOException {//
         currentBuffer = buffer;
 
         int offset = buffer.getMemorySegmentOffset();

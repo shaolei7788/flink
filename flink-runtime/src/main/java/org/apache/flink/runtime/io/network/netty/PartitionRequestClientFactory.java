@@ -74,16 +74,15 @@ class PartitionRequestClientFactory {
         // We map the input ConnectionID to a new value to restrict the number of tcp connections
         connectionId = new ConnectionID(connectionId.getResourceID(), connectionId.getAddress(), 0);
         while (true) {
-            final CompletableFuture<NettyPartitionRequestClient> newClientFuture =
-                    new CompletableFuture<>();
+            final CompletableFuture<NettyPartitionRequestClient> newClientFuture = new CompletableFuture<>();
 
-            final CompletableFuture<NettyPartitionRequestClient> clientFuture =
-                    clients.putIfAbsent(connectionId, newClientFuture);
+            final CompletableFuture<NettyPartitionRequestClient> clientFuture = clients.putIfAbsent(connectionId, newClientFuture);
 
             final NettyPartitionRequestClient client;
 
             if (clientFuture == null) {
                 try {
+                    //
                     client = connectWithRetries(connectionId);//
                 } catch (Throwable e) {
                     newClientFuture.completeExceptionally(
@@ -122,6 +121,7 @@ class PartitionRequestClientFactory {
         int tried = 0;
         while (true) {
             try {
+                //
                 return connect(connectionId);//
             } catch (RemoteTransportException e) {
                 tried++;
@@ -138,7 +138,7 @@ class PartitionRequestClientFactory {
             }
         }
     }
-
+    //"localhost/127.0.0.1:51554 (tm02) [0]"
     private NettyPartitionRequestClient connect(ConnectionID connectionId)
             throws RemoteTransportException, InterruptedException {
         try {
@@ -147,8 +147,9 @@ class PartitionRequestClientFactory {
             // waits for this future to be completed, without throwing the error.
             //
             Channel channel = nettyClient.connect(connectionId.getAddress()).sync().channel();//
+            //CreditBasedPartitionRequestClientHandler
             NetworkClientHandler clientHandler = channel.pipeline().get(NetworkClientHandler.class);
-            return new NettyPartitionRequestClient(channel, clientHandler, connectionId, this);
+            return new NettyPartitionRequestClient(channel, clientHandler, connectionId, this);//
         } catch (InterruptedException e) {
             throw e;
         } catch (Exception e) {

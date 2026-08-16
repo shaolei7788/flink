@@ -44,9 +44,8 @@ public class StreamSourceContexts {
             long watermarkInterval,
             long idleTimeout,
             boolean emitProgressiveWatermarks) {
-
-        final SourceFunction.SourceContext<OUT> ctx =
-                new ManualWatermarkContext<>(
+        //
+        final SourceFunction.SourceContext<OUT> ctx = new ManualWatermarkContext<>(
                         output,
                         processingTimeService,
                         checkpointLock,
@@ -63,14 +62,16 @@ public class StreamSourceContexts {
      */
     private static class SwitchingOnClose<T> implements SourceFunction.SourceContext<T> {
 
+        //nestedContext = ManualWatermarkContext
         private SourceFunction.SourceContext<T> nestedContext;
 
-        private SwitchingOnClose(SourceFunction.SourceContext<T> nestedContext) {
+        private SwitchingOnClose(SourceFunction.SourceContext<T> nestedContext) {//
             this.nestedContext = nestedContext;
         }
 
         @Override
         public void collect(T element) {
+            //StreamSourceContexts$ManualWatermarkContext#collect
             nestedContext.collect(element);
         }
 
@@ -386,6 +387,7 @@ public class StreamSourceContexts {
 
         @Override
         protected void processAndCollect(T element) {
+            //CountingOutput#collect
             output.collect(reuse.replace(element));
         }
 
@@ -471,7 +473,7 @@ public class StreamSourceContexts {
         }
 
         @Override
-        public final void collect(T element) {
+        public final void collect(T element) {//
             synchronized (checkpointLock) {
                 processAndEmitWatermarkStatus(WatermarkStatus.ACTIVE);
 
@@ -481,7 +483,7 @@ public class StreamSourceContexts {
                     scheduleNextIdleDetectionTask();
                 }
 
-                processAndCollect(element);
+                processAndCollect(element);//
             }
         }
 

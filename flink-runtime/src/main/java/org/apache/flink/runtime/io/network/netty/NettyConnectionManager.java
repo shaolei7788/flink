@@ -86,6 +86,7 @@ public class NettyConnectionManager implements ConnectionManager {
     @Override
     public PartitionRequestClient createPartitionRequestClient(ConnectionID connectionId)
             throws IOException, InterruptedException {
+        //PartitionRequestClientFactory#createPartitionRequestClient
         return partitionRequestClientFactory.createPartitionRequestClient(connectionId);//
     }
 

@@ -241,7 +241,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
         } else if (Buffer.DataType.TIMEOUTABLE_ALIGNED_CHECKPOINT_BARRIER == bufferConsumer.getDataType()) {
             processTimeoutableCheckpointBarrier(bufferConsumer);
         }
-        //
+        //【重点】
         buffers.add(new BufferConsumerWithPartialRecordLength(bufferConsumer, partialRecordLength));
         return false;
     }

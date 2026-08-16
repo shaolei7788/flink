@@ -141,7 +141,7 @@ class CreditBasedSequenceNumberingViewReader
             //PipelinedSubpartitionView
             Optional<ResultSubpartitionView> subpartitionViewOptional =
                     //ResultPartitionManager#createSubpartitionViewOrRegisterListener
-                    partitionProvider.createSubpartitionViewOrRegisterListener(
+                    partitionProvider.createSubpartitionViewOrRegisterListener(//
                             resultPartitionId,
                             subpartitionIndexSet,
                             this,

@@ -172,7 +172,7 @@ public abstract class InputChannel {
      */
     protected void notifyChannelNonEmpty() {
         //SingleInputGate#notifyChannelNonEmpty  通知下游的inputGate 有数据了
-        inputGate.notifyChannelNonEmpty(this);
+        inputGate.notifyChannelNonEmpty(this);//
     }
 
     public void notifyPriorityEvent(int priorityBufferNumber) {

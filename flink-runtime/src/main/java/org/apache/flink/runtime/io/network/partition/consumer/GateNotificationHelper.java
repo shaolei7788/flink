@@ -17,6 +17,8 @@
 
 package org.apache.flink.runtime.io.network.partition.consumer;
 
+import org.apache.flink.runtime.io.AvailabilityProvider;
+
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -58,6 +60,8 @@ class GateNotificationHelper implements AutoCloseable {
      */
     public void notifyDataAvailable() {
         availabilityMonitor.notifyAll();
-        toNotify = inputGate.availabilityHelper.getUnavailableToResetAvailable();
+        //
+        AvailabilityProvider.AvailabilityHelper availabilityHelper = inputGate.availabilityHelper;
+        toNotify = availabilityHelper.getUnavailableToResetAvailable();
     }
 }

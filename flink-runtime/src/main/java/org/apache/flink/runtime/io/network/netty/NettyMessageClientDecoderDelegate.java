@@ -106,10 +106,12 @@ public class NettyMessageClientDecoderDelegate extends ChannelInboundHandlerAdap
         try {
             while (data.isReadable()) {
                 if (currentDecoder != null) {
+                    //对数据进行解码
                     NettyMessageDecoder.DecodingResult result = currentDecoder.onChannelRead(data);
                     if (!result.isFinished()) {
                         break;
                     }
+                    //调用下一个handler 进行处理 即调用 CreditBasedPartitionRequestClientHandler#channelRead
                     ctx.fireChannelRead(result.getMessage());
 
                     currentDecoder = null;

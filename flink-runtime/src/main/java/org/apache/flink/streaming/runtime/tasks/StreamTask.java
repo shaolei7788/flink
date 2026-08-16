@@ -371,7 +371,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
      * @param actionExecutor a mean to wrap all actions performed by this task thread. Currently,
      *     only SynchronizedActionExecutor can be used to preserve locking semantics.
      */
-    protected StreamTask(
+    protected StreamTask(//
             Environment environment,
             @Nullable TimerService timerService,
             Thread.UncaughtExceptionHandler uncaughtExceptionHandler,
@@ -415,7 +415,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
             //new MailboxDefaultAction() {
             //     @Override
             //     public void runDefaultAction(Controller controller) throws Exception {
-            //         this.processInput(); // 调用当前类的 processInput 读数据
+            //         this.processInput(controller); // 调用当前类的 processInput 读数据
             //     }
             // }
             this.mailboxProcessor =
@@ -697,6 +697,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
             //StreamOneInputProcessor#getAvailableFuture
             //最终获取的是SingleInputGate 父类 InputGate 里 的属性 AvailabilityHelper availabilityHelper
             // AvailabilityHelper#getAvailableFuture 也就是CompletableFuture对象
+            // System.out.println(Thread.currentThread().getName() + "========" + inputProcessor.getClass().getName());
             resumeFuture = inputProcessor.getAvailableFuture();//
         } else if (changelogWriterAvailabilityProvider != null
                 && !changelogWriterAvailabilityProvider.isAvailable()) {

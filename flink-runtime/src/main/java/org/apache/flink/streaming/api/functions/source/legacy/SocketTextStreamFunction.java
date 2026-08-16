@@ -120,6 +120,7 @@ public class SocketTextStreamFunction implements SourceFunction<String> {
                             if (delimiter.equals("\n") && record.endsWith("\r")) {
                                 record = record.substring(0, record.length() - 1);
                             }
+                            // StreamSourceContexts$SwitchingOnClose  SwitchingOnClose 是内部类
                             ctx.collect(record);
                             buffer.delete(0, delimPos + delimiter.length());
                         }

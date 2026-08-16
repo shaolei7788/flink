@@ -194,7 +194,8 @@ class CreditBasedPartitionRequestClientHandler extends ChannelInboundHandlerAdap
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         try {
-            decodeMsg(msg);
+            //解析netty发送过来的消息
+            decodeMsg(msg);//
         } catch (Throwable t) {
             notifyAllChannelsOfErrorAndClose(t);
         }
@@ -283,18 +284,17 @@ class CreditBasedPartitionRequestClientHandler extends ChannelInboundHandlerAdap
         // ---- Buffer --------------------------------------------------------
         if (msgClazz == NettyMessage.BufferResponse.class) {
             NettyMessage.BufferResponse bufferOrEvent = (NettyMessage.BufferResponse) msg;
-
+            //获取通道
             RemoteInputChannel inputChannel = inputChannels.get(bufferOrEvent.receiverId);
             if (inputChannel == null || inputChannel.isReleased()) {
                 bufferOrEvent.releaseBuffer();
-
                 cancelRequestFor(bufferOrEvent.receiverId);
-
                 return;
             }
 
             try {
-                decodeBufferOrEvent(inputChannel, bufferOrEvent);
+                //
+                decodeBufferOrEvent(inputChannel, bufferOrEvent);//
             } catch (Throwable t) {
                 inputChannel.onError(t);
             }
@@ -358,18 +358,20 @@ class CreditBasedPartitionRequestClientHandler extends ChannelInboundHandlerAdap
         }
     }
 
-    private void decodeBufferOrEvent(
+    private void decodeBufferOrEvent(//
             RemoteInputChannel inputChannel, NettyMessage.BufferResponse bufferOrEvent)
             throws Throwable {
         if (bufferOrEvent.isBuffer() && bufferOrEvent.bufferSize == 0) {
+            //它的核心作用是让 inputChannel 感知上游的最新积压量，从而向其反馈正确的 Credit（信用额度），实现精确的流控，且完全避免了申请内存和数据拷贝的开销
             inputChannel.onEmptyBuffer(bufferOrEvent.sequenceNumber, bufferOrEvent.backlog);
         } else if (bufferOrEvent.getBuffer() != null) {
+            //bufferOrEvent.numOfPartialBuffers = 0  当前 BufferResponse 承载的是一个独立的、完整的 Buffer，没有经过任何切片（Slice）或拆分
             if (bufferOrEvent.numOfPartialBuffers > 0) {
                 int offset = 0;
 
                 int seq = bufferOrEvent.sequenceNumber;
-                AtomicInteger waitToBeReleased =
-                        new AtomicInteger(bufferOrEvent.numOfPartialBuffers);
+                AtomicInteger waitToBeReleased = new AtomicInteger(bufferOrEvent.numOfPartialBuffers);
+                //处理buffer数量
                 AtomicInteger processedPartialBuffers = new AtomicInteger(0);
                 try {
                     for (int i = 0; i < bufferOrEvent.numOfPartialBuffers; i++) {
@@ -387,9 +389,7 @@ class CreditBasedPartitionRequestClientHandler extends ChannelInboundHandlerAdap
                                         offset,
                                         size),
                                 seq++,
-                                i == bufferOrEvent.numOfPartialBuffers - 1
-                                        ? bufferOrEvent.backlog
-                                        : -1,
+                                i == bufferOrEvent.numOfPartialBuffers - 1 ? bufferOrEvent.backlog : -1,
                                 -1);
                         offset += size;
                     }
@@ -401,7 +401,8 @@ class CreditBasedPartitionRequestClientHandler extends ChannelInboundHandlerAdap
                     throw throwable;
                 }
             } else {
-                inputChannel.onBuffer(
+                //RemoteInputChannel#onBuffer
+                inputChannel.onBuffer(//
                         bufferOrEvent.getBuffer(),
                         bufferOrEvent.sequenceNumber,
                         bufferOrEvent.backlog,

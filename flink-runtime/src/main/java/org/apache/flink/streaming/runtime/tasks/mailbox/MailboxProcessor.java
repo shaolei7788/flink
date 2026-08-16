@@ -564,7 +564,8 @@ public class MailboxProcessor implements Closeable {
         }
 
         @Override
-        public void resume() {
+        public void
+        resume() {
             if (mailbox.isMailboxThread()) {
                 resumeInternal();
             } else {

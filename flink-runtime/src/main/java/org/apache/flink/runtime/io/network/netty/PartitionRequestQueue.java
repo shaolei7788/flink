@@ -323,6 +323,27 @@ class PartitionRequestQueue extends ChannelInboundHandlerAdapter {
         writeAndFlushNextMessageIfPossible(ctx.channel());
     }
 
+    //[ 下游 TaskManager ]                                       [ 上游 TaskManager ]
+    //  (SingleInputGate 侧)                                      (ResultPartition 侧)
+    //           │                                                          │
+    //           │  1. 下游算子消费了数据，空出 BufferPool 内存                  │
+    //           │                                                          │
+    //           ├───────────────── 发送 NettyMessage.PartitionRequest ────►│ (建立逻辑拉取连接)
+    //           ├───────────────── 发送 NettyMessage.AddCredit ───────────►│ (告知上游: 我有空位了!)
+    //           │                                                          │
+    //           │                                                          ▼
+    //           │                                              [PartitionRequestQueue]
+    //           │                                              监听到下游的 Credit 增量
+    //           │                                              从 ResultPartition 提取数据
+    //           │                                                          │
+    //           │◄──────────────── 执行 channel.writeAndFlush(msg) ────────┘
+    //           │                  (msg = NettyMessage.BufferResponse)
+    //           │                   ▲
+    //           │                   └─ 物理上是在【通知下游】处理新数据
+    //           ▼
+    //  下游 Netty 线程收到 msg
+    //  调用 decodeBufferOrEvent
+    //  唤醒下游 Mailbox 线程开始消费!
     private void writeAndFlushNextMessageIfPossible(final Channel channel) throws IOException {
         if (fatalError || !channel.isWritable()) {
             //fatalError：如果之前发生过严重的网络或内存致命错误，直接拒绝发送
@@ -388,6 +409,8 @@ class PartitionRequestQueue extends ChannelInboundHandlerAdapter {
 
                     // Write and flush and wait until this is done before
                     // trying to continue with the next buffer.
+                    //PartitionRequestQueue 是运行在上游Task
+                    // channel.writeAndFlush(msg) 是在向“下游”发送数据或控制事件
                     // writeListener = WriteAndFlushNextMessageIfPossibleListener
                     //每获取一个buffer 发起一次请求
                     //当 Netty 异步把这这一个包成功推到网卡后，writeListener 的回调函数会再次触发并重新调用 writeAndFlushNextMessageIfPossible
