@@ -51,7 +51,7 @@ public class WordCountStreamRemote {
         );
         //StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 		env.setParallelism(2);
-
+        //
 		// 开启 checkpoint，并设置间隔 ms
 		//env.enableCheckpointing(1000 * 30);
 		// 模式 Exactly-Once、At-Least-Once
