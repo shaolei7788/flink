@@ -202,7 +202,7 @@ public class RemoteInputChannel extends InputChannel {
                 throw new PartitionConnectionException(partitionId, e);
             }
             //NettyPartitionRequestClient#requestSubpartition
-            partitionRequestClient.requestSubpartition(partitionId, consumedSubpartitionIndexSet, this, 0);
+            partitionRequestClient.requestSubpartition(partitionId, consumedSubpartitionIndexSet, this, 0);//
         }
     }
 

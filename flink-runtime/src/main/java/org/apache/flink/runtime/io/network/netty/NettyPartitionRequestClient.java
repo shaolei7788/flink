@@ -51,6 +51,8 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  * <p>This client is shared by all remote input channels, which request a partition from the same
  * {@link ConnectionID}.
  */
+//代表下游的 Task，通过建立好的 Netty TCP 通道，向上游跨节点的 TaskManager（TM）异步发送数据分区读取请求，
+//并作为底层物理连接的抽象，辅助维护基于 Credit 的流量控制（Credit-based Flow Control）
 public class NettyPartitionRequestClient implements PartitionRequestClient {
 
     private static final Logger LOG = LoggerFactory.getLogger(NettyPartitionRequestClient.class);
@@ -60,6 +62,7 @@ public class NettyPartitionRequestClient implements PartitionRequestClient {
     private final Channel tcpChannel;
 
     //该连接在 Netty Pipeline 中注册的入站处理器
+    //CreditBasedPartitionRequestClientHandler
     private final NetworkClientHandler clientHandler;
 
     //包含了远程 TaskManager 的网络地址（InetSocketAddress）和连接索引（connectionIndex）
@@ -112,6 +115,7 @@ public class NettyPartitionRequestClient implements PartitionRequestClient {
      * <p>The request goes to the remote producer, for which this partition request client instance
      * has been created.
      */
+    //通过底层建立好的 Netty TCP 通道，向上游的 TaskManager 异步发起一个“数据分区消费请求”，并在本地注册监听器，用于后续接收数据或处理网络异常
     @Override
     public void requestSubpartition(
             final ResultPartitionID partitionId,
@@ -127,14 +131,14 @@ public class NettyPartitionRequestClient implements PartitionRequestClient {
                 subpartitionIndexSet,
                 partitionId,
                 delayMs);
-
+        //将 InputChannel 挂载到 Handler
         clientHandler.addInputChannel(inputChannel);
 
         final PartitionRequest request =
                 new PartitionRequest(
-                        partitionId,
-                        subpartitionIndexSet,//[1，1]
-                        inputChannel.getInputChannelId(),
+                        partitionId,//目标中间结果分区
+                        subpartitionIndexSet,//[1，1] 表示下游想要消费的子分区索引集合
+                        inputChannel.getInputChannelId(),//下游自己的唯一 ID
                         inputChannel.getInitialCredit());//2
 
         final ChannelFutureListener listener = new ChannelFutureListener(){
@@ -142,7 +146,9 @@ public class NettyPartitionRequestClient implements PartitionRequestClient {
             @Override
             public void operationComplete(ChannelFuture future) throws Exception {
                 if (!future.isSuccess()) {
+                    // 移除注册，防止内存泄漏
                     clientHandler.removeInputChannel(inputChannel);
+                    // 通知下游 Channel 报错
                     inputChannel.onError(
                             new LocalTransportException(
                                     String.format(
@@ -154,6 +160,7 @@ public class NettyPartitionRequestClient implements PartitionRequestClient {
                                             connectionId.getConnectionIndex()),
                                     future.channel().localAddress(),
                                     future.cause()));
+                    // 发送网络错误消息
                     sendToChannel(
                             new ConnectionErrorMessage(
                                     future.cause() == null
@@ -164,11 +171,14 @@ public class NettyPartitionRequestClient implements PartitionRequestClient {
             };
         };
 
-        if (delayMs == 0) {
-            //
+        if (delayMs == 0) {//true
+            //绝大多数常规 Shuffle 的场景
             ChannelFuture f = tcpChannel.writeAndFlush(request);//
             f.addListener(listener);
         } else {
+            // 延迟发送逻辑
+            //这通常出现在 Flink 的 批处理（Batch Job） 或者 分层存储（Tiered Storage）、或者是某些重试/重连机制中。
+            // 当上游节点尚未准备好，或者下游需要等待特定事件时，会利用 Netty 的 EventLoop 定时线程池提交一个延迟任务，等到 delayMs 毫秒后再真正把 PartitionRequest 发出去。
             final ChannelFuture[] f = new ChannelFuture[1];
             tcpChannel
                     .eventLoop()

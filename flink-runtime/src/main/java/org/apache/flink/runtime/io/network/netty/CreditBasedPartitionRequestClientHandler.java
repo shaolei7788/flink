@@ -65,8 +65,7 @@ class CreditBasedPartitionRequestClientHandler extends ChannelInboundHandlerAdap
             LoggerFactory.getLogger(CreditBasedPartitionRequestClientHandler.class);
 
     /** Channels, which already requested partitions from the producers. */
-    private final ConcurrentMap<InputChannelID, RemoteInputChannel> inputChannels =
-            new ConcurrentHashMap<>();
+    private final ConcurrentMap<InputChannelID, RemoteInputChannel> inputChannels = new ConcurrentHashMap<>();
 
     /** Messages to be sent to the producers (credit announcement or resume consumption request). */
     private final ArrayDeque<ClientOutboundMessage> clientOutboundMessages = new ArrayDeque<>();
