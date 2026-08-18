@@ -55,50 +55,62 @@ import static org.apache.flink.util.Preconditions.checkState;
 /** Default {@link ShuffleMaster} for netty and local file based shuffle implementation. */
 public class NettyShuffleMaster implements ShuffleMaster<NettyShuffleDescriptor> {
 
+    //每个 InputChannel（逻辑输入通道）所需的专属 Buffer 数量基准值（默认流模式为 2）
     private final int buffersPerInputChannel;
 
+    //每个 InputGate（对应一个 Task 的所有输入连接）允许共享的流动 Buffer 数量基准值（默认 8）
     private final int floatingBuffersPerGate;
 
+    //每个 InputGate 能够向集群索要的保底（Required）Buffer 的最大上限
     private final Optional<Integer> maxRequiredBuffersPerGate;
 
+    //触发 Sort-Shuffle 的最小并行度阈值（默认 128）     批模式
     private final int sortShuffleMinParallelism;
 
+    //运行 Sort-Shuffle 所需的最小 Buffer 内存块数量（默认 64） 批模式
     private final int sortShuffleMinBuffers;
 
+    //单个网络页（MemorySegment）的物理大小（默认 32KB）
     private final int networkBufferSize;
 
+    //【下面几个参数都是批模式下使用的】
+
+    //是否启用 JobMaster 级别故障恢复时的 Shuffle 数据保留开关。深意：当 JobMaster 发生异常重启（例如 JM 漂移、HA 切换）时，如果该项为 true，
+    // 已经运行完成的上游 TaskManager 上的 Shuffle 数据（特别是 Batch 作业在本地磁盘留存的中间结果）不会被强行清理。
+    // 新接管的 JobMaster 可以通过元数据直接无缝对接到原有的 TaskManager 上读取数据，避免了整个作业全部从 Source 端重跑，极大提升了批处理的容错效率
     private final boolean enableJobMasterFailover;
 
-    @Nullable private final TieredInternalShuffleMaster tieredInternalShuffleMaster;
+    //如果作业启用了分层存储，这个组件就会被激活（不为 null）。它负责在全局调度不同的存储层（如内存层、本地磁盘层、远端分布式文件系统层 OSS/HDFS），是 Flink 现代流批一体、存算分离网络栈的核心中枢
+    @Nullable
+    private final TieredInternalShuffleMaster tieredInternalShuffleMaster;
 
+    //缓存每个运行中作业的 Shuffle 上下文
+    //一个 JobManager 实例可以同时运行多个不同的作业（Job）。这个 Map 用 JobID 做隔离，
+    // 里面包含了跟底层 ResourceManager、TaskManager 进行网络通信的回调句柄（Context），用于在运行时动态接收 TM 的网络状态报告
     private final Map<JobID, JobShuffleContext> jobShuffleContexts = new HashMap<>();
 
-    private final Map<JobID, Map<ResultPartitionID, ShuffleDescriptor>> jobShuffleDescriptors =
-            new HashMap<>();
+    //当上游 Task 在某个 TaskManager 上成功部署并初始化了 ResultPartition 后，它会把自己的物理网络地址（IP、端口、PartitionID）上报给 JobMaster
+    //JobMaster 收到后，会将其封装为 ShuffleDescriptor（数据传输说明书），并塞进这个双层 Map 中。
+    //当下游 Task 准备启动时，JobMaster 会去这个 Map 里查询：“你要消费的那个 ResultPartitionID 现在在哪个机器上？”，然后把查到的 ShuffleDescriptor 发给下游 Task。下游 Task 正是拿着这个说明书，去调用我们在前几问分析的 NettyPartitionRequestClient#requestSubpartition 真正发起网络物理连接的
+    private final Map<JobID, Map<ResultPartitionID, ShuffleDescriptor>> jobShuffleDescriptors = new HashMap<>();
 
-    public NettyShuffleMaster(ShuffleMasterContext shuffleMasterContext) {
+    public NettyShuffleMaster(ShuffleMasterContext shuffleMasterContext) {//
         Configuration conf = shuffleMasterContext.getConfiguration();
         checkNotNull(conf);
         buffersPerInputChannel = 2;
         floatingBuffersPerGate = 8;
-        maxRequiredBuffersPerGate =
-                conf.getOptional(
-                        NettyShuffleEnvironmentOptions.NETWORK_READ_MAX_REQUIRED_BUFFERS_PER_GATE);
-        sortShuffleMinParallelism = 1;
-        sortShuffleMinBuffers =
-                conf.get(NettyShuffleEnvironmentOptions.NETWORK_SORT_SHUFFLE_MIN_BUFFERS);
-        networkBufferSize = ConfigurationParserUtils.getPageSize(conf);
+        maxRequiredBuffersPerGate = conf.getOptional(NettyShuffleEnvironmentOptions.NETWORK_READ_MAX_REQUIRED_BUFFERS_PER_GATE);//
+        sortShuffleMinParallelism = 1;//1
+        sortShuffleMinBuffers = conf.get(NettyShuffleEnvironmentOptions.NETWORK_SORT_SHUFFLE_MIN_BUFFERS);//512
+        networkBufferSize = ConfigurationParserUtils.getPageSize(conf);//32768
 
-        if (isHybridShuffleEnabled(conf)) {
-            tieredInternalShuffleMaster =
-                    new TieredInternalShuffleMaster(
-                            shuffleMasterContext, this::getShuffleDescriptor);
+        if (isHybridShuffleEnabled(conf)) {//false
+            tieredInternalShuffleMaster = new TieredInternalShuffleMaster(shuffleMasterContext, this::getShuffleDescriptor);
         } else {
             tieredInternalShuffleMaster = null;
         }
-
-        enableJobMasterFailover =
-                conf.get(BatchExecutionOptions.JOB_RECOVERY_ENABLED) && supportsBatchSnapshot();
+        //false
+        enableJobMasterFailover = conf.get(BatchExecutionOptions.JOB_RECOVERY_ENABLED) && supportsBatchSnapshot();
 
         checkArgument(
                 !maxRequiredBuffersPerGate.isPresent() || maxRequiredBuffersPerGate.get() >= 1,
@@ -128,11 +140,9 @@ public class NettyShuffleMaster implements ShuffleMaster<NettyShuffleDescriptor>
                             resultPartitionID);
         }
 
-        NettyShuffleDescriptor shuffleDeploymentDescriptor =
-                new NettyShuffleDescriptor(
+        NettyShuffleDescriptor shuffleDeploymentDescriptor = new NettyShuffleDescriptor(
                         producerDescriptor.getProducerLocation(),
-                        createConnectionInfo(
-                                producerDescriptor, partitionDescriptor.getConnectionIndex()),
+                        createConnectionInfo(producerDescriptor, partitionDescriptor.getConnectionIndex()),
                         resultPartitionID,
                         tierShuffleDescriptors);
         if (enableJobMasterFailover) {

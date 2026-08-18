@@ -123,7 +123,7 @@ class CreditBasedSequenceNumberingViewReader
     // 如果数据源还没准备好，就注册一个监听器等它准备好。绑定成功后，立刻触发数据推送流程
     @Override
     public void requestSubpartitionViewOrRegisterListener(//
-            ResultPartitionProvider partitionProvider,
+            ResultPartitionProvider partitionProvider,//ResultPartitionManager
             ResultPartitionID resultPartitionId,
             ResultSubpartitionIndexSet subpartitionIndexSet)
             throws IOException {
@@ -134,7 +134,7 @@ class CreditBasedSequenceNumberingViewReader
                     partitionRequestListener == null, "Partition request listener already created");
             //
             partitionRequestListener =
-                    new NettyPartitionRequestListener(partitionProvider, this, subpartitionIndexSet, resultPartitionId);
+                    new NettyPartitionRequestListener(partitionProvider, this, subpartitionIndexSet, resultPartitionId);//
             // The partition provider will create subpartitionView if resultPartition is
             // registered, otherwise it will register a listener of partition request to the result
             // partition manager.
@@ -157,6 +157,7 @@ class CreditBasedSequenceNumberingViewReader
                 return;
             }
         }
+        //场景：上游启动慢 下游启动快 下游发送了请求分区的消息
         //主动触发一次通知，告诉框架“我现在有视图了，去看看里面有没有上游之前已经积压的数据”
         notifyDataAvailable(subpartitionView);//
         //通知 PartitionRequestQueue，告知有一个新的 Reader 创建成功并加入了队列，Netty 队列会将其纳入轮询和调度管理中
@@ -169,7 +170,8 @@ class CreditBasedSequenceNumberingViewReader
             throws IOException {
         synchronized (requestLock) {
             checkState(subpartitionView == null, "Subpartitions already requested");
-            subpartitionView = partition.createSubpartitionView(subpartitionIndexSet, this);
+            //创建子分区消费视图
+            subpartitionView = partition.createSubpartitionView(subpartitionIndexSet, this);//
             if (subpartitionIndexSet.size() == 1) {
                 subpartitionId = subpartitionIndexSet.values().iterator().next();
             }
@@ -189,13 +191,22 @@ class CreditBasedSequenceNumberingViewReader
         subpartitionView.notifyRequiredSegmentId(subpartitionId, segmentId);
     }
 
+    //下游恢复消费
+    //在 Flink 引入 Unaligned Checkpoint（非对齐检查点） 机制后，当进行 Checkpoint 时，如果下游正在做 Barrier 阻挡或者触发了某些反压保护，
+    // 下游可能会向物理网络发出暂停消费（isBlocked / Pause Consumption） 的控制信令，
+    // 导致上游对应的 Reader 暂时挂起。当算子快照制作完成，或者网络反压状态从极端异常恢复后，
+    // 下游就会发送一个 ResumeConsumption 消息（也就是你在前几问看到的调用链：addCreditOrResumeConsumption 传入的函数式行为）。上游收到后，就会调用本方法来解冻该数据流
     @Override
     public void resumeConsumption() {
+        //下游通道初始化时分配给当前 Channel 的独占（Exclusive）Buffer 数量
         if (initialCredit == 0) {
+            //处理没有独占 Buffer（Exclusive Buffer）的极端反压边界
             // reset available credit if no exclusive buffer is available at the
             // consumer side for all floating buffers must have been released
             numCreditsAvailable = 0;
         }
+        //将恢复消费的指令下沉到真正存放数据的 ResultSubpartitionView（即内存队列的读取快照视图）
+        //PipelinedSubpartitionView#resumeConsumption
         subpartitionView.resumeConsumption();
     }
 
@@ -290,6 +301,7 @@ class CreditBasedSequenceNumberingViewReader
     @Override
     public BufferAndAvailability getNextBuffer() throws IOException {
         //PipelinedSubpartitionView#getNextBuffer
+        //最终会从 PipelinedSubpartition的buffers队列获取数据
         BufferAndBacklog next = subpartitionView.getNextBuffer();
         if (next != null) {
             //next.buffer().isBuffer()：判断这是否是一个普通的数据 Buffer
@@ -302,13 +314,14 @@ class CreditBasedSequenceNumberingViewReader
 
             final Buffer.DataType nextDataType = getNextDataType(next);
             //提前把下一个 Buffer 的类型封装起来发给下游。当下游网络层发现“下一个是 Barrier 事件”时，就可以提前做好准备，甚至在当前 Buffer 刚到时就做好紧急切换的准备，实现超前的网络流控控制
+
             return new BufferAndAvailability(
                     //数据本身
                     next.buffer(),
                     //下一个数据的类型
                     nextDataType,
                     //当前剩下的积压量
-                    next.buffersInBacklog(),
+                    next.buffersInBacklog(),//
                     //保证顺序的序列号
                     next.getSequenceNumber());
         } else {

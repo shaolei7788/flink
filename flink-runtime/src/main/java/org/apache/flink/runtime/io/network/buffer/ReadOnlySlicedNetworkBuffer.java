@@ -127,7 +127,7 @@ public final class ReadOnlySlicedNetworkBuffer extends ReadOnlyByteBuf implement
 
     @Override
     public void recycleBuffer() {
-        getBuffer().recycleBuffer();
+        getBuffer().recycleBuffer();//NetworkBuffer#recycleBuffer
     }
 
     @Override

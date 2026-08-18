@@ -241,6 +241,8 @@ public class MailboxProcessor implements Closeable {
             if (isNextLoopPossible()) {
                 // 2. 邮箱空了，执行“默认行为”——也就是源源不断地读取并处理 upstream 流数据
                 // 执行mailboxDefaultAction.runDefaultAction方法 就是执行 processInput
+                //对于sourceTask SourceStreamTask#processInput
+                //其它Task  StreamTask#processInput
                 mailboxDefaultAction.runDefaultAction(mailboxController); // lock is acquired inside default action as needed
             }
         }

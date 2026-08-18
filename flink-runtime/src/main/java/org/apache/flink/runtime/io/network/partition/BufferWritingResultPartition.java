@@ -153,7 +153,7 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
 
         for (ResultSubpartition subpartition : subpartitions) {
             //PipelinedSubpartition#flush
-            subpartition.flush();
+            subpartition.flush();//
         }
     }
 
@@ -179,8 +179,8 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
         // 走到这里说明record 全部写进Buffer了
         if (buffer.isFull()) {
             // full buffer, full record
-            // 情况 B buffer 已经装满了 需要发送出去 将其送入发送队列
-            finishUnicastBufferBuilder(targetSubpartition);
+            //【重点】 只是标记buffer 为finish  需等待下一条数据来了或者OutputFlusher线程触发 才会触发通知
+            finishUnicastBufferBuilder(targetSubpartition);//
         }
         // partial buffer, full record
         //如果代码走到最后，Buffer 没满，数据也写完了。Flink 什么都不做
@@ -254,7 +254,7 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
         checkState(!isReleased(), "Partition released.");
 
         ResultSubpartition subpartition = subpartitions[subpartitionIndex];
-        //PipelinedSubpartitionView
+        //PipelinedSubpartitionView  用于消费ResultSubPartition中产生的Buffer数据，然后推送到网络中
         ResultSubpartitionView readView = subpartition.createReadView(availabilityListener);//
 
         LOG.debug("Created {}", readView);
@@ -316,7 +316,7 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
         BufferBuilder buffer = unicastBufferBuilders[targetSubpartition];
 
         if (buffer == null) {
-            System.out.println(Thread.currentThread().getName() + ": Creating buffer for subpartition " + targetSubpartition);
+            //System.out.println(Thread.currentThread().getName() + ": Creating buffer for subpartition " + targetSubpartition);
             //情况 B（首次写入或旧 Buffer 已满）：如果 buffer == null，说明这是任务刚启动、或者上一个 Buffer 刚刚写满并被“封口”清空了。
             // 向 Task 的本地内存池（LocalBufferPool）申请一块全新的、干净的 32KB 内存块（MemorySegment）
             buffer = requestNewUnicastBufferBuilder(targetSubpartition);//
@@ -332,6 +332,28 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
         return buffer;
     }
 
+
+
+    //1. 触发数据 Buffer 发送的 4 种条件（全景）你提到的“要么满了（32KB），要么时间到了（buffer-timeout 默认 100ms）”是流处理中最基础、最常见的两种触发发送情况。
+    // 但实际上，Flink 内部一共有 4 种 情况会触发 Buffer 的发送：
+    // 条件一：Buffer 满了（物理空间占满，32KB 耗尽）。
+    // 条件二：时间到了（满足低延迟要求，由 OutputFlusher 线程定时触发 flush()）。
+    // 条件三：有事件（Event）插入（正如上一问分析的，当 Watermark 或 Barrier 来临时，会强行截断当前正在写的 Data Buffer 并立刻发送）。
+    // 条件四：放不下最后一条数据（即你提到的情况，触发“跨 Buffer 拆分”）
+    //
+    //2. 核心场景剖析：最后一条数据放不下怎么办？当算子产出了最后一条很大的数据（例如一条复杂的 JSON 日志，大小为 5KB），
+    // 而当前的 Data Buffer 已经写了 30KB，只剩下 2KB 的剩余空间时，Flink 的处理逻辑非常硬核且优雅，
+    // 它是由 RecordWriter 和 StreamRecordSerializer 共同控制的：
+
+    // 第一步：能塞多少塞多少（部分序列化）Flink 不会因为当前 Buffer 放不下，就直接浪费掉那剩下的 2KB 空间。序列化器会启动跨 Buffer 写入（Spanning/Segmented Serialization）机制：
+    // 它会把这 5KB 数据的前 2KB 前缀，强行序列化并塞满当前 Buffer 最后的剩余空间。
+
+    // 第二步：强制截断并发送（触发你的问题场景）当把当前的 Buffer 填得一丝不剩（满 32KB）之后，这个 Buffer 的使命就完成了。Flink 会立刻执行以下操作：
+    // 将这个被塞满的 Buffer 状态标记为 isFinished = true。
+    // 将它推入 PipelinedSubpartition 的 buffers 队列。调用 notifyDataAvailable() 唤醒底层的 Netty 线程（PartitionRequestQueue）立刻把这个 Buffer 发送出去。
+
+    // 第三步：申请新 Buffer 续写尾部随后，上游 Task 线程会向本地缓冲池（LocalBufferPool）申请一个全新的、干净的 32KB 内存段（Buffer B）。
+    // 序列化器会把刚才那条大数据的后 3KB 尾部，继续写进这个新 Buffer B 的开头
     private int append(ByteBuffer record, BufferBuilder buffer) {
         // Try to avoid hard back-pressure in the subsequent calls to request buffers
         // by ignoring Buffer Debloater hints and extending the buffer if possible (trim).
@@ -418,7 +440,7 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
         BufferBuilder buffer = broadcastBufferBuilder;
 
         if (buffer == null) {
-            buffer = requestNewBroadcastBufferBuilder();
+            buffer = requestNewBroadcastBufferBuilder();//
             createBroadcastBufferConsumers(buffer, 0, record.remaining());
         }
 
@@ -480,10 +502,10 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
         return bufferBuilder;
     }
 
-    private BufferBuilder requestNewBroadcastBufferBuilder() throws IOException {
+    private BufferBuilder requestNewBroadcastBufferBuilder() throws IOException {//
         checkInProduceState();
         ensureBroadcastMode();
-
+        //向当前 Task 绑定的本地缓冲池（LocalBufferPool）申请一块 32KB 的堆外内存
         final BufferBuilder bufferBuilder = requestNewBufferBuilderFromPool(0);
         broadcastBufferBuilder = bufferBuilder;
         return bufferBuilder;
@@ -518,14 +540,24 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
         }
     }
 
+    //当写数据时，Flink 会向缓冲池申请一块 MemorySegment，并基于它同时创建两个对象：
+    //BufferBuilder（写视图）：给当前算子线程用来往 MemorySegment 里写数据的。
+    //BufferConsumer（读视图）：供 Netty 网络线程用来从 MemorySegment 里读数据的。
+    //这两个对象共享同一块底层的 MemorySegment。
     private void finishUnicastBufferBuilder(int targetSubpartition) {
         final BufferBuilder bufferBuilder = unicastBufferBuilders[targetSubpartition];
         if (bufferBuilder != null) {
+            //标记写入结束 这块 Buffer 里的数据长度固定了，不会再增加了
+            //调用 finish() 之后，这个 Buffer 就会从“正在写入（Unfinished）”状态，彻底转变为“已完成（Finished）”状态
+            //返回这个 Buffer 内部实际写入了多少个有效字节
             int bytes = bufferBuilder.finish();
             resultPartitionBytes.inc(targetSubpartition, bytes);
             numBytesOut.inc(bytes);
             numBuffersOut.inc();
             unicastBufferBuilders[targetSubpartition] = null;
+            //释放写入权限
+            //底层那块 32KB 的 MemorySegment 并没有被销毁。 因为 Flink 使用了引用计数（Reference Counting）机制。
+            //虽然写方（Builder）释放了引用，但读方（Consumer）依然握着它的引用
             bufferBuilder.close();
         }
     }

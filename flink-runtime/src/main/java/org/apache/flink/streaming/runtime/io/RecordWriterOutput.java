@@ -145,7 +145,8 @@ public class RecordWriterOutput<OUT>
         try {
             // 处理数据 recordWriter = ChannelSelectorRecordWriter
             // 处理事件 recordWriter = BroadcastRecordWriter
-            recordWriter.emit(serializationDelegate);
+            //【重点】 数据跟事件会存在不同的buffer里面
+            recordWriter.emit(serializationDelegate);//
         } catch (IOException e) {
             throw new UncheckedIOException(e.getMessage(), e);
         }

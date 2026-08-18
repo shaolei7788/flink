@@ -115,7 +115,7 @@ public abstract class RecordWriter<T extends IOReadableWritable> implements Avai
         ByteBuffer byteBuffer = serializeRecord(serializer, record);//
         //[PIPELINED_BOUNDED, 2 subpartitions, 3 pending consumptions]
         // targetPartition=PipelinedResultPartition  BufferWritingResultPartition#emitRecord
-        targetPartition.emitRecord(byteBuffer, targetSubpartition);
+        targetPartition.emitRecord(byteBuffer, targetSubpartition);//
         // PipelinedResultPartition#emitRecord  PipelinedResultPartition extends BufferWritingResultPartition
         if (flushAlways) {// false
             //flushAlways 一般是 false 所以这里一般不运行

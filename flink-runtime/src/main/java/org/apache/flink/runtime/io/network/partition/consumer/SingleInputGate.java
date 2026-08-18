@@ -1376,7 +1376,7 @@ public class SingleInputGate extends IndexedInputGate {
             // already notified / prioritized (double notification), ignore
             return false;
         }
-        //发现当前 Channel 不在就绪队列中
+        //发现当前 Channel 不在就绪队列中 【重点】 下游算子就是从inputChannelsWithData 获取数据
         inputChannelsWithData.add(channel, priority, alreadyEnqueued);
         if (!alreadyEnqueued) {
             //
@@ -1404,7 +1404,7 @@ public class SingleInputGate extends IndexedInputGate {
             }
         }
         //队列不为空
-        //从带有优先级的双端队列队头弹出一个最紧急/最早到达的 InputChannel
+        //【重点】从带有优先级的双端队列队头弹出一个最紧急/最早到达的 InputChannel
         InputChannel inputChannel = inputChannelsWithData.poll();
         //将该通道在位图中对应的 Bit 位重新清零（置为 false）
         //一旦清零，意味着当前 Channel 已经从 InputGate 的总就绪队列中被取出来了。如果此时网络层（Netty 线程）又收到了该 Channel 的下一个新 Buffer，

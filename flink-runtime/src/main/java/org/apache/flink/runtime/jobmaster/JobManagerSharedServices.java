@@ -178,12 +178,11 @@ public class JobManagerSharedServices {
 
         final ShuffleMasterContext shuffleMasterContext =
                 new ShuffleMasterContextImpl(config, fatalErrorHandler);
-        final ShuffleMaster<?> shuffleMaster =
-                ShuffleServiceLoader.loadShuffleServiceFactory(config)
-                        .createShuffleMaster(shuffleMasterContext);
+        //NettyShuffleMaster
+        final ShuffleMaster<?> shuffleMaster = ShuffleServiceLoader.loadShuffleServiceFactory(config).createShuffleMaster(shuffleMasterContext);//
+        //空方法
         shuffleMaster.start();
 
-        return new JobManagerSharedServices(
-                futureExecutor, ioExecutor, libraryCacheManager, shuffleMaster, blobServer);
+        return new JobManagerSharedServices(futureExecutor, ioExecutor, libraryCacheManager, shuffleMaster, blobServer);//
     }
 }

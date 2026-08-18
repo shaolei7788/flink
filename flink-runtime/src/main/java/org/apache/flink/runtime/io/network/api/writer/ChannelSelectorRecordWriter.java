@@ -49,7 +49,10 @@ public final class ChannelSelectorRecordWriter<T extends IOReadableWritable>
         this.channelSelector = checkNotNull(channelSelector);
         this.channelSelector.setup(numberOfSubpartitions);
     }
+
+
     //record = SerializationDelegate
+    // ChannelSelectorRecordWriter将数据存在PipelinedSubpartition里的buffers里，
     @Override
     public void emit(T record) throws IOException {
         //todo 用来决定record到底被分发到那一个分区
@@ -58,7 +61,7 @@ public final class ChannelSelectorRecordWriter<T extends IOReadableWritable>
         //System.out.println(Thread.currentThread().getName() + " -> " + channelSelector.getClass().getName());
         //RebalancePartitioner#selectChannel  轮询方式
         int channelNum = channelSelector.selectChannel(record);
-        emit(record, channelNum);
+        emit(record, channelNum);//
     }
 
     @Override

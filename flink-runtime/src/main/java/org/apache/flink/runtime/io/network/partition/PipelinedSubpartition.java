@@ -504,7 +504,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
 
             while (!buffers.isEmpty()) {
                 //buffer 队列不为空进来
-                //获取队列第一个（队头 Head）
+                //【重点】获取buffers队列第一个（队头 Head）
                 BufferConsumerWithPartialRecordLength bufferConsumerWithPartialRecordLength = buffers.peek();
                 //获取BufferConsumer
                 BufferConsumer bufferConsumer = bufferConsumerWithPartialRecordLength.getBufferConsumer();
@@ -584,7 +584,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
                     buffer,
                     parent.getOwningTaskName(),
                     subpartitionInfo);
-            return new BufferAndBacklog(
+            return new BufferAndBacklog(//
                     buffer,
                     //告诉下游：“我这里还堆积了多少个 Buffer 没发”。
                     // 下游 Netty 接收端收到这个值后，会根据这个数值向本地的 LocalBufferPool 申请对应数量的 Floating Credits（浮动额度）并回传给上游
@@ -625,7 +625,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
     }
 
     @Override
-    public PipelinedSubpartitionView createReadView(BufferAvailabilityListener availabilityListener) {
+    public PipelinedSubpartitionView createReadView(BufferAvailabilityListener availabilityListener) {//
         synchronized (buffers) {
             checkState(!isReleased);
             checkState(
@@ -640,7 +640,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
                     parent.getOwningTaskName(),
                     getSubPartitionIndex(),
                     parent.getPartitionId());
-
+            //
             readView = new PipelinedSubpartitionView(this, availabilityListener);//
         }
 
@@ -746,7 +746,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
             flushRequested = buffers.size() > 1 || isDataAvailableInUnfinishedBuffer;
         }
         if (notifyDataAvailable) { // true
-            notifyDataAvailable();
+            notifyDataAvailable();//
         }
     }
 
@@ -799,11 +799,17 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
     @Override
     public int getBuffersInBacklogUnsafe() {
         if (isBlocked || buffers.isEmpty()) {
+            //isBlocked：如果当前子分区由于 Unaligned Checkpoint（非对齐检查点） 等原因被阻塞（Blocked）暂停消费了，无论队列里有多少数据，对外一律宣告 Backlog 为 0
             return 0;
         }
 
-        if (flushRequested
+        if (
+                //已经显式触发了刷出（Flush）。说明数据必须立刻发走
+                flushRequested
+                //当前子分区已经写完结束了（比如 Batch 结束或 Stream 收到 EndOfPartitionEvent
                 || isFinished
+                //最关键的一点。 检查队列里最后那一个刚刚放进去的 Buffer 是不是普通的“数据块”。如果它不是普通的 Data Buffer（例如它是一个 Checkpoint Barrier 事件、或者元数据事件），
+                // 这意味着上一个真正的数据 Buffer 已经完全填满切分好了。此时计数器 buffersInBacklog 里的数字是绝对精准的，直接返回
                 || !checkNotNull(buffers.peekLast()).getBufferConsumer().isBuffer()) {
             return buffersInBacklog;
         } else {

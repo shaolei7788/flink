@@ -67,7 +67,7 @@ public class NettyShuffleServiceFactory
 
     @Override
     public NettyShuffleMaster createShuffleMaster(ShuffleMasterContext shuffleMasterContext) {
-        return new NettyShuffleMaster(shuffleMasterContext);
+        return new NettyShuffleMaster(shuffleMasterContext);//
     }
 
     @Override

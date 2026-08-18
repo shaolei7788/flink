@@ -939,8 +939,7 @@ public class Task
         return t;
     }
 
-    private void restoreAndInvoke(
-            TaskInvokable finalInvokable, AutoCloseableRegistry cleanUpRegistry) throws Exception {
+    private void restoreAndInvoke(TaskInvokable finalInvokable, AutoCloseableRegistry cleanUpRegistry) throws Exception {
         try {
             // switch to the INITIALIZING state, if that fails, we have been canceled/failed in the
             // meantime
@@ -954,7 +953,8 @@ public class Task
 
             // make sure the user code classloader is accessible thread-locally
             executingThread.setContextClassLoader(userCodeClassLoader.asClassLoader());
-
+            // 流模式 invokable可能是 SourceStreamTask ，执行父类 StreamTask#restore
+            // 流模式 invokable可能是 OneInputStreamTask ，执行父类 StreamTask#restore
             runWithSystemExitMonitoring(finalInvokable::restore);
             //更改状态为 RUNNING
             if (!transitionState(ExecutionState.INITIALIZING, ExecutionState.RUNNING)) {
@@ -973,7 +973,7 @@ public class Task
             // 批模式 invokable可能是 Flat Map -> Map (1/2)#0 ，StreamTask#invoke
             // 批模式 invokable可能是 KeyedAggregation -> Sink:pint -> Map (1/2)#0 ，OneInputStreamTask#invoke
             //System.out.println(finalInvokable.getClass().getName() + " =======");
-            runWithSystemExitMonitoring(finalInvokable::invoke);
+            runWithSystemExitMonitoring(finalInvokable::invoke);//
         } catch (Throwable throwable) {
             cleanUpRegistry.registerCloseable(
                     () -> runWithSystemExitMonitoring(() -> finalInvokable.cleanUp(throwable)));
@@ -991,6 +991,7 @@ public class Task
     private void runWithSystemExitMonitoring(RunnableWithException action) throws Exception {
         FlinkSecurityManager.monitorUserSystemExitForCurrentThread();
         try {
+            //
             action.run();
         } finally {
             FlinkSecurityManager.unmonitorUserSystemExitForCurrentThread();

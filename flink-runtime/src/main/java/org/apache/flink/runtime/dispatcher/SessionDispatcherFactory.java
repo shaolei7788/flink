@@ -46,7 +46,7 @@ public enum SessionDispatcherFactory implements DispatcherFactory {
                 recoveredJobs,
                 recoveredDirtyJobResults,
                 dispatcherBootstrapFactory,
-                DispatcherServices.from(
+                DispatcherServices.from(//
                         partialDispatcherServicesWithJobPersistenceComponents,
                         JobMasterServiceLeadershipRunnerFactory.INSTANCE,
                         CheckpointResourcesCleanupRunnerFactory.INSTANCE));

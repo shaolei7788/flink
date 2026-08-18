@@ -155,7 +155,7 @@ public class BufferConsumer implements Closeable {
     @Override
     public void close() {
         if (!buffer.isRecycled()) {
-            buffer.recycleBuffer();
+            buffer.recycleBuffer();//
         }
     }
 
@@ -204,7 +204,9 @@ public class BufferConsumer implements Closeable {
      * implemented independently of one another - so that the cached values can not accidentally
      * leak from one to another.
      */
+    //核心作用是高性能、线程安全地追踪和缓存 Buffer 数据的当前写入位置（Writer Position）
     private static class CachedPositionMarker {
+        //SettablePositionMarker
         private final PositionMarker positionMarker;
 
         /**

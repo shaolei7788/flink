@@ -54,18 +54,27 @@ import static org.apache.flink.util.Preconditions.checkArgument;
  * A nonEmptyReader of partition queues, which listens for channel writability changed events before
  * writing and flushing {@link Buffer} instances.
  */
+//负责接收下游发送过来的 PartitionRequest 请求，为每个请求在内存中建立数据读取视图（View），并基于 Credit 流量控制机制以及公平性策略，异步、高效地将上游生成的数据推送给下游
 class PartitionRequestQueue extends ChannelInboundHandlerAdapter {
 
     private static final Logger LOG = LoggerFactory.getLogger(PartitionRequestQueue.class);
 
+    //当 Flink 成功把一个 BufferResponse（数据块）推入物理网卡的发送缓冲区后，Netty 会触发这个监听器的 operationComplete 回调
     private final ChannelFutureListener writeListener = new WriteAndFlushNextMessageIfPossibleListener();
 
+    //一个基于内存的、非线程安全的双端队列（ArrayDeque），里面存放的是当前处于“就绪状态”的 Reader
+    //什么是“就绪状态”：一个 Reader 必须同时满足两个条件才能进这个队列：
+    //上游有数：上游的 Task 已经把数据写到了对应的 ResultSubpartition 里。
+    //下游有额度（Credit > 0）：下游汇报过自己有空闲的 Buffer 能够接收数据
     /** The readers which are already enqueued available for transferring data. */
     private final ArrayDeque<NetworkSequenceViewReader> availableReaders = new ArrayDeque<>();
 
     /** All the readers created for the consumers' partition requests. */
+    //Key 是下游的 InputChannelID（唯一标识），Value 是对应的 NetworkSequenceViewReader
     private final ConcurrentMap<InputChannelID, NetworkSequenceViewReader> allReaders = new ConcurrentHashMap<>();
 
+    //标记当前网络通道是否遭遇了致命错误
+    //它作为网络栈的“安全阀门”，能防止损坏的数据继续扩散，或者防止系统在已经崩溃的物理通道上做无谓的重试
     private boolean fatalError;
 
     private ChannelHandlerContext ctx;
@@ -106,7 +115,7 @@ class PartitionRequestQueue extends ChannelInboundHandlerAdapter {
     // reader = CreditBasedSequenceNumberingViewReader
     private void enqueueAvailableReader(final NetworkSequenceViewReader reader) throws Exception {//
         if (reader.isRegisteredAsAvailable()) {
-            //因为上游 Task 线程的写入和下游 Credit 的回传是完全并发、互不相关的异步事件，很有可能在极短时间内连续发射两个通知
+            //防止重复处理 因为上游 Task 线程的写入和下游 Credit 的回传是完全并发、互不相关的异步事件，很有可能在极短时间内连续发射两个通知
             return;
         }
         //CreditBasedSequenceNumberingViewReader#getAvailabilityAndBacklog
@@ -176,16 +185,20 @@ class PartitionRequestQueue extends ChannelInboundHandlerAdapter {
      * @param receiverId The input channel id to identify the consumer.
      * @param operation The operation to be performed (add credit or resume data consumption).
      */
-    void addCreditOrResumeConsumption(
-            InputChannelID receiverId, Consumer<NetworkSequenceViewReader> operation)
+    //是 Flink 网络栈上游处理下游反压解除信号的关键入口
+    void addCreditOrResumeConsumption(InputChannelID receiverId, Consumer<NetworkSequenceViewReader> operation)
             throws Exception {
         if (fatalError) {
             return;
         }
-
+        //根据下游传过来的物理标识 receiverId（即 InputChannelID），去allReaders（ConcurrentMap）中快速检索到负责为该下游发货的 NetworkSequenceViewReader 实例
         NetworkSequenceViewReader reader = obtainReader(receiverId);
-
+        //场景 A：下游追加了 Credit reader.addCredit(request.credit) 它会把下游刚刚释放的 Buffer 数量累加到 Reader 内部的 Credit 计数器中
+        //   它会把下游刚刚释放的 Buffer 数量累加到 Reader 内部的 Credit 计数器中
+        //场景 B：下游恢复消费 （对应 ResumeConsumption 消息，通常用于非对齐检查点 Unaligned Checkpoint 后的恢复）
+        //   NetworkSequenceViewReader::resumeConsumption(request.credit)  负责重置 Reader 的暂停标志
         operation.accept(reader);
+        //重新激活并触发调度
         enqueueAvailableReader(reader);
     }
 
@@ -370,7 +383,7 @@ class PartitionRequestQueue extends ChannelInboundHandlerAdapter {
                 }
                 //CreditBasedSequenceNumberingViewReader#peekNextBufferSubpartitionId
                 nextSubpartitionId = reader.peekNextBufferSubpartitionId();
-                //CreditBasedSequenceNumberingViewReader#getNextBuffer   最终会从 PipelinedSubpartition的buffers队列获取数据
+                //CreditBasedSequenceNumberingViewReader#getNextBuffer 【重点】  最终会从 PipelinedSubpartition的buffers队列获取数据
                 next = reader.getNextBuffer();
                 if (next == null) {
                     //没数据

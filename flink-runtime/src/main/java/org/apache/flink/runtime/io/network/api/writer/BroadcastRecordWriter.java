@@ -38,13 +38,13 @@ public final class BroadcastRecordWriter<T extends IOReadableWritable> extends R
 
     @Override
     public void emit(T record) throws IOException {
-        broadcastEmit(record);
+        broadcastEmit(record);//
     }
 
     @Override
     public void broadcastEmit(T record) throws IOException {
         checkErroneous();
-
+        //BufferWritingResultPartition#broadcastRecord
         targetPartition.broadcastRecord(serializeRecord(serializer, record));
 
         if (flushAlways) {

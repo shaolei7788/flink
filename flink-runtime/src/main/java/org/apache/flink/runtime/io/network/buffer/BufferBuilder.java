@@ -46,7 +46,7 @@ public class BufferBuilder implements AutoCloseable {
     public BufferBuilder(MemorySegment memorySegment, BufferRecycler recycler) {
         this.memorySegment = checkNotNull(memorySegment);
         this.buffer = new NetworkBuffer(memorySegment, recycler);
-        this.maxCapacity = buffer.getMaxCapacity();
+        this.maxCapacity = buffer.getMaxCapacity();//32768
     }
 
     /**
@@ -143,7 +143,7 @@ public class BufferBuilder implements AutoCloseable {
      * @return number of written bytes.
      */
     public int finish() {
-        int writtenBytes = positionMarker.markFinished();
+        int writtenBytes = positionMarker.markFinished();//
         commit();
         return writtenBytes;
     }
@@ -175,12 +175,12 @@ public class BufferBuilder implements AutoCloseable {
      * than already written data.
      */
     public void trim(int newSize) {
-        maxCapacity =
-                Math.min(Math.max(newSize, positionMarker.getCached()), buffer.getMaxCapacity());
+        maxCapacity = Math.min(Math.max(newSize, positionMarker.getCached()), buffer.getMaxCapacity());
     }
 
     @Override
     public void close() {
+        //NetworkBuffer#recycleBuffer
         buffer.recycleBuffer();
     }
 
@@ -246,10 +246,15 @@ public class BufferBuilder implements AutoCloseable {
          *
          * @return current position as of {@link #getCached()}
          */
+        //将当前标记改为“已结束（Finished）”状态，并返回最后一次写入的实际字节位置（Position）
         public int markFinished() {
+            //获取当前缓存的写入位置
             int currentPosition = getCached();
+            //Flink 巧妙地利用了负数来代表“已结束（Finished）”状态。
+            //如果需要获取最终写入了多少字节，下游只需要再取一次反即可：-newValue。这种设计完美实现了一个 int 变量同时存储“状态”和“位置”
             int newValue = -currentPosition;
             if (newValue == 0) {
+                //
                 newValue = FINISHED_EMPTY;
             }
             set(newValue);

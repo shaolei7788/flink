@@ -261,6 +261,7 @@ public class RemoteInputChannel extends InputChannel {
         final DataType nextDataType;
 
         synchronized (receivedBuffers) {
+            //【重点】 从receivedBuffers 队列获取数据
             next = receivedBuffers.poll();
 
             if (next != null) {
@@ -272,8 +273,7 @@ public class RemoteInputChannel extends InputChannel {
 
         if (next == null) {
             if (isReleased.get()) {
-                throw new CancelTaskException(
-                        "Queried for a buffer after channel has been released.");
+                throw new CancelTaskException("Queried for a buffer after channel has been released.");
             }
             return Optional.empty();
         }

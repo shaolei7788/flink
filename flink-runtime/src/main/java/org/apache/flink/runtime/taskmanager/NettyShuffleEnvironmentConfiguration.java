@@ -324,10 +324,8 @@ public class NettyShuffleEnvironmentConfiguration {
 
         int buffersPerChannel = 2;
         int extraBuffersPerGate = 8;
-
-        Optional<Integer> maxRequiredBuffersPerGate =
-                configuration.getOptional(
-                        NettyShuffleEnvironmentOptions.NETWORK_READ_MAX_REQUIRED_BUFFERS_PER_GATE);
+        //
+        Optional<Integer> maxRequiredBuffersPerGate = configuration.getOptional(NettyShuffleEnvironmentOptions.NETWORK_READ_MAX_REQUIRED_BUFFERS_PER_GATE);
 
         int maxBuffersPerChannel = 10;
 

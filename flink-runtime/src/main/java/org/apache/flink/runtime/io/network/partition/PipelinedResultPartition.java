@@ -268,7 +268,7 @@ public class PipelinedResultPartition extends BufferWritingResultPartition
                     addToSubpartition(i, eventBufferConsumer.copy(), 0);//
                 }
             }
-        }
+        }// 会执行BufferConsumer#close
     }
 
     @Override

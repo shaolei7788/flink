@@ -47,7 +47,7 @@ public class WordCountStreamRemote {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.createRemoteEnvironment(
                 "localhost",
                 8081,
-                "/Users/shaolei/Desktop/workspace/source/flink/flink-examples/flink-examples-streaming/target/flink-examples-streaming-2.2-SNAPSHOT.jar"
+                "D:\\source\\flink\\flink-examples\\flink-examples-streaming\\target\\flink-examples-streaming-2.2-SNAPSHOT.jar"
         );
         //StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 		env.setParallelism(2);

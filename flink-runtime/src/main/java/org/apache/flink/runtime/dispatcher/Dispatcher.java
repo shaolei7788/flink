@@ -239,7 +239,7 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
                 new DefaultJobManagerRunnerRegistry(INITIAL_JOB_MANAGER_RUNNER_REGISTRY_CAPACITY));
     }
 
-    private Dispatcher(
+    private Dispatcher(//
             RpcService rpcService,
             DispatcherId fencingToken,
             Collection<ExecutionPlan> recoveredJobs,
@@ -286,10 +286,8 @@ public abstract class Dispatcher extends FencedRpcEndpoint<DispatcherId>
         this.jobManagerMetricGroup = dispatcherServices.getJobManagerMetricGroup();
         this.metricServiceQueryAddress = dispatcherServices.getMetricQueryServiceAddress();
         this.ioExecutor = dispatcherServices.getIoExecutor();
-
-        this.jobManagerSharedServices =
-                JobManagerSharedServices.fromConfiguration(
-                        configuration, blobServer, fatalErrorHandler);
+        //JobManagerSharedServices
+        this.jobManagerSharedServices = JobManagerSharedServices.fromConfiguration(configuration, blobServer, fatalErrorHandler);
 
         this.jobManagerRunnerRegistry =
                 new OnMainThreadJobManagerRunnerRegistry(

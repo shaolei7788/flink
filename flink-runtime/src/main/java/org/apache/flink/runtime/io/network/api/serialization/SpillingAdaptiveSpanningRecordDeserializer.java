@@ -94,7 +94,8 @@ public class SpillingAdaptiveSpanningRecordDeserializer<T extends IOReadableWrit
 
         final DeserializationResult result = readNextRecord(target);
         if (result.isBufferConsumed()) {
-            currentBuffer.recycleBuffer();
+            //当下游读取游标达到了这个 Buffer 的末尾 表示当前 Buffer 里的数据全部被处理完了
+            currentBuffer.recycleBuffer();//ReadOnlySlicedNetworkBuffer#recycleBuffer 会回收buffer
             currentBuffer = null;
         }
         return result;

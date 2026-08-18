@@ -32,7 +32,7 @@ import java.util.Collection;
  * clusters.
  */
 public class StandaloneDispatcher extends Dispatcher {
-    public StandaloneDispatcher(
+    public StandaloneDispatcher(//
             RpcService rpcService,
             DispatcherId fencingToken,
             Collection<ExecutionPlan> recoveredJobs,

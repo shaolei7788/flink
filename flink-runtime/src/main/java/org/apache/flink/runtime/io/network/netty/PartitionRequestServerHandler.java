@@ -53,10 +53,11 @@ class PartitionRequestServerHandler extends SimpleChannelInboundHandler<NettyMes
             ResultPartitionProvider partitionProvider,
             TaskEventPublisher taskEventPublisher,
             PartitionRequestQueue outboundQueue) {
-        //ResultPartitionManager
+        //ResultPartitionManager partitionProvider
         this.partitionProvider = partitionProvider;
-        //TaskEventDispatcher
+        //TaskEventDispatcher taskEventPublisher
         this.taskEventPublisher = taskEventPublisher;
+        //PartitionRequestQueue outboundQueue
         this.outboundQueue = outboundQueue;
     }
 
@@ -86,7 +87,9 @@ class PartitionRequestServerHandler extends SimpleChannelInboundHandler<NettyMes
                 LOG.debug("Read channel on {}: {}.", ctx.channel().localAddress(), request);
 
                 NetworkSequenceViewReader reader = new CreditBasedSequenceNumberingViewReader(request.receiverId, request.credit, outboundQueue);//
-
+                //ResultPartitionManager partitionProvider
+                //TaskEventDispatcher taskEventPublisher
+                //PartitionRequestQueue outboundQueue
                 reader.requestSubpartitionViewOrRegisterListener(partitionProvider, request.partitionId, request.queueIndexSet);//
 
             }

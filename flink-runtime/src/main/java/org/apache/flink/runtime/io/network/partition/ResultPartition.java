@@ -149,6 +149,7 @@ public abstract class ResultPartition implements ResultPartitionWriter {
      * <p>The pool is registered with the partition *after* it as been constructed in order to
      * conform to the life-cycle of task registrations in the {@link TaskExecutor}.
      */
+    //为输出通道创建本地缓冲池（向 NetworkBufferPool 申请 MemorySegment 用于缓存输出数据）并将其注册到 ResultPartitionManager 中以便下游拉取
     @Override
     public void setup() throws IOException {
         checkState(
@@ -167,7 +168,7 @@ public abstract class ResultPartition implements ResultPartitionWriter {
         //TaskManager > TaskExecutor > ResultPartitionManager(管理多个ResultPartition)
         //一个TaskManager 可能运行多个Task  一个Task 对应一个ResultPartition
         //ResultPartitionManager#registerResultPartition
-        partitionManager.registerResultPartition(this);
+        partitionManager.registerResultPartition(this);//
     }
 
     /** Do the subclass's own setup operation. */

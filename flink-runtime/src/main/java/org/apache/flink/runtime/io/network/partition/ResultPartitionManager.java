@@ -89,7 +89,7 @@ public class ResultPartitionManager implements ResultPartitionProvider {
             checkState(!isShutdown, "Result partition manager already shut down.");
             //将当前Task 刚刚初始化好的 ResultPartition 注册到全局 Map 中
             ResultPartition previous = registeredPartitions.put(partition.getPartitionId(), partition);
-
+            // previous = null
             if (previous != null) {
                 //如果该 ID 已经存在（previous != null），说明系统状态错乱，抛出异常
                 throw new IllegalStateException("Result partition already registered.");
@@ -98,9 +98,10 @@ public class ResultPartitionManager implements ResultPartitionProvider {
             // 如果下游Task比当前Task先启动 发起了请求，当前Task数据未就绪，就会在这个 listenerManagers 中为该分区 ID 挂载一个监听器
             listenerManager = listenerManagers.remove(partition.getPartitionId());
         }
-        if (listenerManager != null) {
+        if (listenerManager != null) {// 第一次进来 listenerManager = null
+            //
             for (PartitionRequestListener listener : listenerManager.getPartitionRequestListeners()) {
-                //异步唤醒下游
+                //异步唤醒下游  创建子分区消费视图 并加入reader队列
                 listener.notifyPartitionCreated(partition);
             }
         }
