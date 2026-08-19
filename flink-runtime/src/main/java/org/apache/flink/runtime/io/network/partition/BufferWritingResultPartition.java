@@ -141,7 +141,7 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
 
     //强制将所有子通道内处于“在途、未填满”状态的内存数据块立即对外刷写（Flush）并唤醒网络层发射的“全网总动员令”
     protected void flushAllSubpartitions(boolean finishProducers) {
-        if (finishProducers) {//false
+        if (finishProducers) {//从 OutputFlusher 线程过来 finishProducers = false
             //finishProducers 标志位代表是否要彻底宣告关闭上游的写入流。
             // 如果是 true：通常发生在整个作业彻底运行结束（EndOfPartition）时。
             // Flink 会顺便把广播（Broadcast）和单播（Unicast）的 BufferBuilder 彻底锁死并强行切块（Finish），此后不再接收任何新数据。
@@ -407,7 +407,7 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
             int targetSubpartition, BufferConsumer bufferConsumer, int partialRecordLength)
             throws IOException {
         totalWrittenBytes += bufferConsumer.getWrittenBytes();
-        return subpartitions[targetSubpartition].add(bufferConsumer, partialRecordLength);//
+        return subpartitions[targetSubpartition].add(bufferConsumer, partialRecordLength);
     }
 
     private void resizeBuffer(

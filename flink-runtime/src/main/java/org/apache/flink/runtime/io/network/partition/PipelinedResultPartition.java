@@ -265,7 +265,7 @@ public class PipelinedResultPartition extends BufferWritingResultPartition
                 EventSerializer.toBufferConsumer(EndOfOutputChannelStateEvent.INSTANCE, false)) {
             for (int i = 0; i < subpartitions.length; i++) {
                 if (((PipelinedSubpartition) subpartitions[i]).isSupportChannelStateRecover()) {
-                    addToSubpartition(i, eventBufferConsumer.copy(), 0);//
+                    addToSubpartition(i, eventBufferConsumer.copy(), 0);
                 }
             }
         }// 会执行BufferConsumer#close

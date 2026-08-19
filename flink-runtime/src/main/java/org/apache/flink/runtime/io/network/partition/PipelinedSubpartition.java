@@ -738,7 +738,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
             // if there is more than 1 buffer, we already notified the reader
             // (at the latest when adding the second buffer)
             //队列里有且仅有唯一的一块 Buffer，而且它还没写满，属于正在写入的“未完成块”
-            // 返回true 代表写入了新数据
+            // 返回true 代表写入了新数据  isDataAvailable 是判断 读位置 < 写位置
             boolean isDataAvailableInUnfinishedBuffer = buffers.size() == 1 && buffers.peek().getBufferConsumer().isDataAvailable();
             //决定要不要唤醒网络线程
             // !isBlocked 当前通道绝对不能处于被对齐快照（Exactly-Once Barrier）锁死阻塞的状态 如果通道被 Block 住了，再有新数据也必须原地待命，绝对不通知
