@@ -4,6 +4,7 @@ import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.KeyedStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
@@ -45,22 +46,21 @@ public class WordCountStream {
         //
         //
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-		env.setParallelism(2);
+		env.setParallelism(1);
 
 		// 开启 checkpoint，并设置间隔 ms
-		//env.enableCheckpointing(1000 * 30);
+		env.enableCheckpointing(1000 * 30);
 		// 模式 Exactly-Once、At-Least-Once
-		//env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
-		// 模式 At-Least-Once
-		//env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.AT_LEAST_ONCE);
-
-		// 两个 checkpoint 之间最小间隔
-		//env.getCheckpointConfig().setMinPauseBetweenCheckpoints(500);
-		// 超时时间
-		//env.getCheckpointConfig().setCheckpointTimeout(60000);
-		// 同时执行的 checkpoint 数量（比如上一个还没执行完，下一个已经触发开始了）
-		// env.getCheckpointConfig().setMaxConcurrentCheckpoints(1);
-		// 当用户取消了作业后，是否保留远程存储上的Checkpoint数据
+		env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
+        //使用非对齐checkpoint
+        env.getCheckpointConfig().enableUnalignedCheckpoints();
+		//两个 checkpoint 之间最小间隔
+		env.getCheckpointConfig().setMinPauseBetweenCheckpoints(5000);
+		//超时时间
+		env.getCheckpointConfig().setCheckpointTimeout(60000);
+		//同时执行的 checkpoint 数量（比如上一个还没执行完，下一个已经触发开始了）
+		env.getCheckpointConfig().setMaxConcurrentCheckpoints(1);
+		//当用户取消了作业后，是否保留远程存储上的Checkpoint数据
 		//env.getCheckpointConfig().enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
 
 

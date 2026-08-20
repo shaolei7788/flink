@@ -94,7 +94,7 @@ public class CheckpointedInputGate implements PullingAsyncDataInput<BufferOrEven
         this.mailboxExecutor = mailboxExecutor;
         this.upstreamRecoveryTracker = upstreamRecoveryTracker;
 
-        waitForPriorityEvents(inputGate, mailboxExecutor);
+        waitForPriorityEvents(inputGate, mailboxExecutor);//
     }
 
     /**
@@ -124,11 +124,12 @@ public class CheckpointedInputGate implements PullingAsyncDataInput<BufferOrEven
 
     private void waitForPriorityEvents(InputGate inputGate, MailboxExecutor mailboxExecutor) {
         final CompletableFuture<?> priorityEventAvailableFuture =
-                inputGate.getPriorityEventAvailableFuture();
+                inputGate.getPriorityEventAvailableFuture();//
         assertNoException(
                 priorityEventAvailableFuture.thenRun(
                         () -> {
                             try {
+                                //
                                 mailboxExecutor.execute(
                                         MailboxExecutor.MailOptions.urgent(),
                                         this::processPriorityEvents,
@@ -159,7 +160,8 @@ public class CheckpointedInputGate implements PullingAsyncDataInput<BufferOrEven
         BufferOrEvent bufferOrEvent = next.get();
 
         if (bufferOrEvent.isEvent()) {
-            return handleEvent(bufferOrEvent);
+            //
+            return handleEvent(bufferOrEvent);//
         } else if (bufferOrEvent.isBuffer()) {
             /**
              * https://issues.apache.org/jira/browse/FLINK-19537 This is not entirely true, as it's
@@ -182,7 +184,8 @@ public class CheckpointedInputGate implements PullingAsyncDataInput<BufferOrEven
         Class<? extends AbstractEvent> eventClass = bufferOrEvent.getEvent().getClass();
         if (eventClass == CheckpointBarrier.class) {
             CheckpointBarrier checkpointBarrier = (CheckpointBarrier) bufferOrEvent.getEvent();
-            barrierHandler.processBarrier(checkpointBarrier, bufferOrEvent.getChannelInfo(), false);
+            //SingleCheckpointBarrierHandler#processBarrier
+            barrierHandler.processBarrier(checkpointBarrier, bufferOrEvent.getChannelInfo(), false);//
         } else if (eventClass == CancelCheckpointMarker.class) {
             barrierHandler.processCancellationBarrier(
                     (CancelCheckpointMarker) bufferOrEvent.getEvent(),

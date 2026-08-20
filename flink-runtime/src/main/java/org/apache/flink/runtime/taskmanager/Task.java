@@ -1401,9 +1401,9 @@ public class Task
         if (executionState == ExecutionState.RUNNING) {
             checkState(invokable instanceof CheckpointableTask, "invokable is not checkpointable");
             try {
-                ((CheckpointableTask) invokable)
-                        .triggerCheckpointAsync(checkpointMetaData, checkpointOptions)
-                        .handle(
+                //SourceStreamTask#triggerCheckpointAsync
+                CompletableFuture<Boolean> triggerCheckpointFuture = ((CheckpointableTask) invokable).triggerCheckpointAsync(checkpointMetaData, checkpointOptions);
+                triggerCheckpointFuture.handle(
                                 (triggerResult, exception) -> {
                                     if (exception != null || !triggerResult) {
                                         declineCheckpoint(

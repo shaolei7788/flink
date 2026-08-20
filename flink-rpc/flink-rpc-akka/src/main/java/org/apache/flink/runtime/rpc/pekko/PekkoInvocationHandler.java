@@ -236,8 +236,6 @@ class PekkoInvocationHandler implements InvocationHandler, PekkoBasedEndpoint, R
         //必须等组件底层的 Actor 系统把前面的地基完全铺好后，再以单线程、绝对安全的方式执行 onStart() 初始化，
         // 且在初始化完成前，绝不处理任何外界飞来的普通业务 RPC 请求
         rpcEndpoint.tell(ControlMessages.START, ActorRef.noSender());
-
-
     }
 
     @Override

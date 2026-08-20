@@ -139,8 +139,9 @@ public abstract class RecordWriter<T extends IOReadableWritable> implements Avai
         broadcastEvent(event, false);
     }
 
-    public void broadcastEvent(AbstractEvent event, boolean isPriorityEvent) throws IOException {
-        targetPartition.broadcastEvent(event, isPriorityEvent);
+    public void broadcastEvent(AbstractEvent event, boolean isPriorityEvent) throws IOException {//
+        //BufferWritingResultPartition#broadcastEvent
+        targetPartition.broadcastEvent(event, isPriorityEvent);//
 
         if (flushAlways) {
             flushAll();

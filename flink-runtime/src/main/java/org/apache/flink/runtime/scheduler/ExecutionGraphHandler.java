@@ -106,7 +106,7 @@ public class ExecutionGraphHandler {
         processCheckpointCoordinatorMessage(
                 "AcknowledgeCheckpoint",
                 coordinator ->
-                        coordinator.receiveAcknowledgeMessage(
+                        coordinator.receiveAcknowledgeMessage(//
                                 new AcknowledgeCheckpoint(
                                         jobID,
                                         executionAttemptID,
@@ -136,6 +136,7 @@ public class ExecutionGraphHandler {
             ioExecutor.execute(
                     () -> {
                         try {
+                            //
                             process.accept(checkpointCoordinator);
                         } catch (Exception t) {
                             log.warn("Error while processing " + messageType + " message", t);

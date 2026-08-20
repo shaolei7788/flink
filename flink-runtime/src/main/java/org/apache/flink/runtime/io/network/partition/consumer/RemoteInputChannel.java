@@ -632,7 +632,9 @@ public class RemoteInputChannel extends InputChannel {
                 ++expectedSequenceNumber;
             }
 
-            if (firstPriorityEvent) {//false
+            if (firstPriorityEvent) {
+                //如果是非对齐 firstPriorityEvent = true
+                //如果是对齐或数据 firstPriorityEvent = false
                 notifyPriorityEvent(sequenceNumber);
             }
             //如果压入数据前，当前通道的私有队列是空的（wasEmpty = true），说明下游的 SingleInputGate 此时大概率因为没数据而处于休眠或者让出 CPU 的状态

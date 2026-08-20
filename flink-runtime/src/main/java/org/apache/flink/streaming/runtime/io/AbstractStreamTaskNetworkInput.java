@@ -159,7 +159,7 @@ public abstract class AbstractStreamTaskNetworkInput<
                     throw new IOException(
                             String.format("Can't get next record for channel %s", lastChannel), e);
                 }
-                if (result.isBufferConsumed()) {
+                if (result.isBufferConsumed()) {//true
                     //如果返回的 result 标记当前 Buffer 的字节已经被读完 这样在下一次循环时，代码就会自动滑落到下方的“拉取新数据”分支
                     currentRecordDeserializer = null;
                 }
@@ -171,10 +171,12 @@ public abstract class AbstractStreamTaskNetworkInput<
                     //output = StreamTaskNetworkOutput
                     //System.out.println("StreamTaskNetworkOutput#processElement:" + Thread.currentThread().getName());
                     final boolean breakBatchEmitting = processElement(element, output);
+                    // check() 方式是执行 -> !this.mailboxProcessor.hasMail() && taskIsAvailable()
                     if (canEmitBatchOfRecords.check() && !breakBatchEmitting) {
-                        //如果当前时间片或执行额度没用完 canEmitBatchOfRecords.check() 为真 且下游算子没有要求中断（!breakBatchEmitting）
+                        // 继续处理 Buffer 中的下一条记录
                         continue;
                     }
+                    // 如果不能继续，优雅退出，让出主线程处理更高优先级的 Mail（如 Checkpoint）
                     return DataInputStatus.MORE_AVAILABLE;
                 }
             }
@@ -190,12 +192,15 @@ public abstract class AbstractStreamTaskNetworkInput<
                     processBuffer(bufferOrEvent.get());//
                 } else {
                     //处理特殊事件/控制信令  如 Checkpoint Barrier、Watermark、EndOfPartitionEvent
-                    DataInputStatus status = processEvent(bufferOrEvent.get(), output);
+                    BufferOrEvent event = bufferOrEvent.get();
+                    //AbstractStreamTaskNetworkInput#processEvent
+                    DataInputStatus status = processEvent(event, output);
                     if (status == DataInputStatus.MORE_AVAILABLE && canEmitBatchOfRecords.check()) {
                         continue;
                     }
                     return status;
                 }
+                //buffer 有数据  继续while 循环
             } else {
                 if (checkpointedInputGate.isFinished()) {
                     checkState(
@@ -292,8 +297,7 @@ public abstract class AbstractStreamTaskNetworkInput<
             }
         } else if (event.getClass() == WatermarkEvent.class) {
             try {
-                processWatermarkEvent(
-                        bufferOrEvent.getChannelInfo(), (WatermarkEvent) event, output);
+                processWatermarkEvent(bufferOrEvent.getChannelInfo(), (WatermarkEvent) event, output);
             } catch (Exception e) {
                 ExceptionUtils.rethrow(e);
             }

@@ -344,7 +344,8 @@ public abstract class OperatorChain<OUT, OP extends StreamOperator<OUT>>
 
     public void broadcastEvent(AbstractEvent event, boolean isPriorityEvent) throws IOException {
         for (RecordWriterOutput<?> streamOutput : streamOutputs) {
-            streamOutput.broadcastEvent(event, isPriorityEvent);
+            //RecordWriterOutput#broadcastEvent
+            streamOutput.broadcastEvent(event, isPriorityEvent);//
         }
     }
 

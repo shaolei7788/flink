@@ -215,13 +215,12 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
         finishBroadcastBufferBuilder();
         finishUnicastBufferBuilders();
 
-        try (BufferConsumer eventBufferConsumer =
-                EventSerializer.toBufferConsumer(event, isPriorityEvent)) {
+        try (BufferConsumer eventBufferConsumer = EventSerializer.toBufferConsumer(event, isPriorityEvent)) {
             totalWrittenBytes += ((long) eventBufferConsumer.getWrittenBytes() * numSubpartitions);
             for (ResultSubpartition subpartition : subpartitions) {
-                // Retain the buffer so that it can be recycled by each subpartition of
-                // targetPartition
-                subpartition.add(eventBufferConsumer.copy(), 0);
+                // Retain the buffer so that it can be recycled by each subpartition of targetPartition
+                //PipelinedSubpartition#add
+                subpartition.add(eventBufferConsumer.copy(), 0);//
             }
         }
     }
@@ -529,6 +528,7 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
             //【阻塞等待内存】
             //当前 Task 的执行线程（即处理数据、执行 map/filter 的用户线程）会直接挂起（Wait）。
             // 直到下游网络层通过 Netty 把数据发送出去并把内存块归还给 bufferPool 时，该线程才会被唤醒（Notify）并成功拿到 bufferBuilder
+            //LocalBufferPool#requestBufferBuilderBlocking
             bufferBuilder = bufferPool.requestBufferBuilderBlocking(targetSubpartition);
             //一旦成功拿到 Buffer 被唤醒，立刻调用 markEnd() 停止反压计时。这样就精确统计出了由于等待内存导致线程卡顿的时间
             hardBackPressuredTimeMsPerSecond.markEnd();

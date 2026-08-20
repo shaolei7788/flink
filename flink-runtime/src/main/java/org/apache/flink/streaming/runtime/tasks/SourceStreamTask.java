@@ -269,13 +269,14 @@ public class SourceStreamTask<
     // ------------------------------------------------------------------------
 
     @Override
-    public CompletableFuture<Boolean> triggerCheckpointAsync(
+    public CompletableFuture<Boolean> triggerCheckpointAsync(//
             CheckpointMetaData checkpointMetaData, CheckpointOptions checkpointOptions) {
         if (!externallyInducedCheckpoints) {
             if (isSynchronousSavepoint(checkpointOptions.getCheckpointType())) {
                 return triggerStopWithSavepointAsync(checkpointMetaData, checkpointOptions);
             } else {
-                return super.triggerCheckpointAsync(checkpointMetaData, checkpointOptions);
+                //
+                return super.triggerCheckpointAsync(checkpointMetaData, checkpointOptions);//
             }
         } else if (checkpointOptions.getCheckpointType().equals(CheckpointType.FULL_CHECKPOINT)) {
             // see FLINK-25256

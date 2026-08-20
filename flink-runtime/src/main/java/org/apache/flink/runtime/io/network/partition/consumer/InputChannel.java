@@ -176,7 +176,8 @@ public abstract class InputChannel {
     }
 
     public void notifyPriorityEvent(int priorityBufferNumber) {
-        inputGate.notifyPriorityEvent(this, priorityBufferNumber);
+        //SingleInputGate#notifyPriorityEvent
+        inputGate.notifyPriorityEvent(this, priorityBufferNumber);//
     }
 
     protected void notifyBufferAvailable(int numAvailableBuffers) throws IOException {}

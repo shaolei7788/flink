@@ -74,7 +74,8 @@ public class SpillingAdaptiveSpanningRecordDeserializer<T extends IOReadableWrit
         // check if some spanning record deserialization is pending
         if (spanningWrapper.getNumGatheredBytes() > 0) {
             spanningWrapper.addNextChunkFromMemorySegment(segment, offset, numBytes);
-        } else {//NonSpanningWrapper#initializeFromMemorySegment
+        } else {
+            //NonSpanningWrapper#initializeFromMemorySegment
             nonSpanningWrapper.initializeFromMemorySegment(segment, offset, numBytes + offset);
         }
     }

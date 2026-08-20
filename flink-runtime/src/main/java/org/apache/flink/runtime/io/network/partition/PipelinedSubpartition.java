@@ -210,7 +210,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
             }
 
             // Add the bufferConsumer and update the stats
-            //调用 addBuffer 把 bufferConsumer 塞进刚才提到的 PrioritizedDeque 物理队列
+            //调用 addBuffer 把 bufferConsumer 加入 buffers 队列，如果是对齐barrier，则放入buffer队首，非对齐或普通数据则加入队尾
             if (addBuffer(bufferConsumer, partialRecordLength)) {//
                 prioritySequenceNumber = sequenceNumber;
             }
@@ -219,14 +219,17 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
             //如果当前塞进来的是普通的业务数据块（而不是控制事件），它会让前面剖析的 buffersInBacklog（积压值）自增 1。
             // 这个不断上涨的数字将作为信使，通过网络告诉下游：“我这里堆积了更多的数据，你快多准备点 Buffer 来接盘！”
             increaseBuffersInBacklog(bufferConsumer);
+            // 如果事件是checkpoint shouldNotifyDataAvailable 方法返回true
             notifyDataAvailable = finish || shouldNotifyDataAvailable();
 
             isFinished |= finish;
             newBufferSize = bufferSize;
         }
-
+        //通知优先级事件
         notifyPriorityEvent(prioritySequenceNumber);
-        if (notifyDataAvailable) {//false
+        if (notifyDataAvailable) {
+            // 如果是数据 notifyDataAvailable = false
+            // 如果事件是checkpoint notifyDataAvailable = true
             notifyDataAvailable();
         }
 
@@ -236,7 +239,9 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
     @GuardedBy("buffers")
     private boolean addBuffer(BufferConsumer bufferConsumer, int partialRecordLength) {//
         assert Thread.holdsLock(buffers);
-        if (bufferConsumer.getDataType().hasPriority()) {//false
+        if (bufferConsumer.getDataType().hasPriority()) {
+            //如果是非对齐barrier hasPriority() = true
+            //如果是对齐barrier 或数据 hasPriority() = false
             return processPriorityBuffer(bufferConsumer, partialRecordLength);
         } else if (Buffer.DataType.TIMEOUTABLE_ALIGNED_CHECKPOINT_BARRIER == bufferConsumer.getDataType()) {
             processTimeoutableCheckpointBarrier(bufferConsumer);
@@ -246,18 +251,21 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
         return false;
     }
 
+    //非对齐才会调用该方法
     @GuardedBy("buffers")
     private boolean processPriorityBuffer(BufferConsumer bufferConsumer, int partialRecordLength) {
-        buffers.addPriorityElement(
-                new BufferConsumerWithPartialRecordLength(bufferConsumer, partialRecordLength));
+        //直接插入到当前内存队列的最前端
+        buffers.addPriorityElement(new BufferConsumerWithPartialRecordLength(bufferConsumer, partialRecordLength));
         final int numPriorityElements = buffers.getNumPriorityElements();
 
         CheckpointBarrier barrier = parseCheckpointBarrier(bufferConsumer);
         if (barrier != null) {
+            //只有非对齐检查点（Unaligned Checkpoint）的 Barrier 才有资格触发这个插队方法
             checkState(
                     barrier.getCheckpointOptions().isUnalignedCheckpoint(),
                     "Only unaligned checkpoints should be priority events");
             final Iterator<BufferConsumerWithPartialRecordLength> iterator = buffers.iterator();
+            // 跳过排在最前面的高优先级元素（包括刚刚放进去的 Barrier 自己）
             Iterators.advance(iterator, numPriorityElements);
             List<Buffer> inflightBuffers = new ArrayList<>();
             while (iterator.hasNext()) {
@@ -265,11 +273,13 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
 
                 if (buffer.isBuffer()) {
                     try (BufferConsumer bc = buffer.copy()) {
+                        // 拷贝一份真正的数据 Buffer
                         inflightBuffers.add(bc.build());
                     }
                 }
             }
             if (!inflightBuffers.isEmpty()) {
+                //把刚才捞出来的所有被超车的数据，直接作为输出通道状态（Output Channel State） 强行写入本次 Checkpoint（barrier.getId()）的快照文件中
                 channelStateWriter.addOutputData(
                         barrier.getId(),
                         subpartitionInfo,
@@ -277,6 +287,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
                         inflightBuffers.toArray(new Buffer[0]));
             }
         }
+        //通知 Netty 线程，有紧急任务（Priority Event）来了，赶紧过来把这个插队的 Barrier 发送给下游
         return needNotifyPriorityEvent();
     }
 

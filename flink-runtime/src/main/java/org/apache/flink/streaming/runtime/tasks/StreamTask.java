@@ -652,7 +652,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
      */
     protected void processInput(MailboxDefaultAction.Controller controller) throws Exception {
         //StreamOneInputProcessor#processInput  读取输入的数据
-        DataInputStatus status = inputProcessor.processInput();
+        DataInputStatus status = inputProcessor.processInput();//
         //MORE_AVAILABLE：表示在输入数据中还有更多的数据可以消费，当任务正常运行时，会一直处于MORE_AVAILABLE状态
         //NOTHING_AVAILABLE：表示当前没有数据可以消费，但是未来会有数据待处理，此时线程模型中的处理线程会被挂起并等待数据接入
         //END_OF_INPUT：表示数据已经达到最后的状态，之后不再有数据输入，也预示这整个Task结束
@@ -1296,10 +1296,10 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
     // ------------------------------------------------------------------------
 
     @Override
-    public CompletableFuture<Boolean> triggerCheckpointAsync(
+    public CompletableFuture<Boolean> triggerCheckpointAsync(//
             CheckpointMetaData checkpointMetaData, CheckpointOptions checkpointOptions) {
         checkForcedFullSnapshotSupport(checkpointOptions);
-
+        // checkpointOptions.getAlignment() = ALIGNED  默认是对齐
         MailboxExecutor.MailOptions mailOptions =
                 CheckpointOptions.AlignmentType.UNALIGNED == checkpointOptions.getAlignment()
                         ? MailboxExecutor.MailOptions.urgent()
@@ -1314,10 +1314,9 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
                                 Arrays.stream(getEnvironment().getAllInputGates())
                                         .allMatch(InputGate::isFinished);
 
-                        if (noUnfinishedInputGates) {
+                        if (noUnfinishedInputGates) {//true
                             result.complete(
-                                    triggerCheckpointAsyncInMailbox(
-                                            checkpointMetaData, checkpointOptions));
+                                    triggerCheckpointAsyncInMailbox(checkpointMetaData, checkpointOptions));//
                         } else {
                             result.complete(
                                     triggerUnfinishedChannelsCheckpoint(
@@ -1335,7 +1334,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         return result;
     }
 
-    private boolean triggerCheckpointAsyncInMailbox(
+    private boolean triggerCheckpointAsyncInMailbox(//
             CheckpointMetaData checkpointMetaData, CheckpointOptions checkpointOptions)
             throws Exception {
         FlinkSecurityManager.monitorUserSystemExitForCurrentThread();
@@ -1356,8 +1355,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
             subtaskCheckpointCoordinator.initInputsCheckpoint(
                     checkpointMetaData.getCheckpointId(), checkpointOptions);
 
-            boolean success =
-                    performCheckpoint(checkpointMetaData, checkpointOptions, checkpointMetrics);
+            boolean success = performCheckpoint(checkpointMetaData, checkpointOptions, checkpointMetrics);
             if (!success) {
                 declineCheckpoint(checkpointMetaData.getCheckpointId());
             }
@@ -1458,7 +1456,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         subtaskCheckpointCoordinator.abortCheckpointOnBarrier(checkpointId, cause, operatorChain);
     }
 
-    private boolean performCheckpoint(
+    private boolean performCheckpoint(//
             CheckpointMetaData checkpointMetaData,
             CheckpointOptions checkpointOptions,
             CheckpointMetricsBuilder checkpointMetrics)
@@ -1474,16 +1472,16 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         if (isRunning) {
             actionExecutor.runThrowing(
                     () -> {
-                        if (isSynchronous(checkpointType)) {
+                        if (isSynchronous(checkpointType)) {//false
                             setSynchronousSavepoint(checkpointMetaData.getCheckpointId());
                         }
 
                         if (areCheckpointsWithFinishedTasksEnabled()
                                 && endOfDataReceived
-                                && this.finalCheckpointMinId == null) {
+                                && this.finalCheckpointMinId == null) {//false
                             this.finalCheckpointMinId = checkpointMetaData.getCheckpointId();
                         }
-
+                        //SubtaskCheckpointCoordinatorImpl#checkpointState
                         subtaskCheckpointCoordinator.checkpointState(
                                 checkpointMetaData,
                                 checkpointOptions,

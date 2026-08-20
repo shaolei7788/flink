@@ -441,7 +441,7 @@ public class MailboxProcessor implements Closeable {
                 maybePauseIdleTimer();
             }
             Mail mail = maybeMail.get();
-            //System.out.println("processMailsNonBlocking : " + mail);
+            System.out.println("processMailsNonBlocking : " + mail);
             //运行邮件
             runMail(mail);
             if (singleStep) {

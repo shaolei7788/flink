@@ -48,7 +48,10 @@ import static org.apache.flink.util.Preconditions.checkState;
  */
 @NotThreadSafe
 public class BufferConsumerWithPartialRecordLength {
+
     private final BufferConsumer bufferConsumer;
+    //> 0：代表当前 Buffer 头部有 X 字节的数据属于上一个未写完的 Record。
+    //= 0：代表当前 Buffer 的开头非常完美，直接就是某一个全新 Record 的起始位置
     private final int partialRecordLength;
 
     public BufferConsumerWithPartialRecordLength(

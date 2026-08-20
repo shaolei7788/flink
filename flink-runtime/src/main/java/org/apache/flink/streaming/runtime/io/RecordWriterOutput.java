@@ -211,12 +211,13 @@ public class RecordWriterOutput<OUT>
     }
 
     public void broadcastEvent(AbstractEvent event, boolean isPriorityEvent) throws IOException {
-        if (event instanceof CheckpointBarrier && !supportsUnalignedCheckpoints) {
+        if (event instanceof CheckpointBarrier && !supportsUnalignedCheckpoints) {// event instanceof CheckpointBarrier = true supportsUnalignedCheckpoints = true
             final CheckpointBarrier barrier = (CheckpointBarrier) event;
             event = barrier.withOptions(barrier.getCheckpointOptions().withUnalignedUnsupported());
             isPriorityEvent = false;
         }
-        recordWriter.broadcastEvent(event, isPriorityEvent);
+        //RecordWriter#broadcastEvent
+        recordWriter.broadcastEvent(event, isPriorityEvent);//
     }
 
     public void alignedBarrierTimeout(long checkpointId) throws IOException {

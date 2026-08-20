@@ -211,14 +211,12 @@ public class SingleCheckpointBarrierHandler extends CheckpointBarrierHandler {
     }
 
     @Override
-    public void processBarrier(
-            CheckpointBarrier barrier, InputChannelInfo channelInfo, boolean isRpcTriggered)
+    public void processBarrier(CheckpointBarrier barrier, InputChannelInfo channelInfo, boolean isRpcTriggered)
             throws IOException {
         long barrierId = barrier.getId();
         LOG.debug("{}: Received barrier from channel {} @ {}.", taskName, channelInfo, barrierId);
 
-        if (currentCheckpointId > barrierId
-                || (currentCheckpointId == barrierId && !isCheckpointPending())) {
+        if (currentCheckpointId > barrierId || (currentCheckpointId == barrierId && !isCheckpointPending())) {
             if (!barrier.getCheckpointOptions().isUnalignedCheckpoint()) {
                 inputs[channelInfo.getGateIdx()].resumeConsumption(channelInfo);
             }
@@ -237,21 +235,23 @@ public class SingleCheckpointBarrierHandler extends CheckpointBarrierHandler {
     protected void markCheckpointAlignedAndTransformState(
             InputChannelInfo alignedChannel,
             CheckpointBarrier barrier,
-            FunctionWithException<BarrierHandlerState, BarrierHandlerState, Exception>
-                    stateTransformer)
+            FunctionWithException<BarrierHandlerState, BarrierHandlerState, Exception> stateTransformer)
             throws IOException {
 
         alignedChannels.add(alignedChannel);
         if (alignedChannels.size() == 1) {
             if (targetChannelCount == 1) {
+                //当前 Task 总共就只有一个上游通道（比如并行度为 1 且没有 KeyBy 重新分区）。此时第一个 Barrier 到达，既是启动也是结束
                 markAlignmentStartAndEnd(barrier.getId(), barrier.getTimestamp());
             } else {
+                //Flink 会记录下当前的时间戳，开始计时对齐时间（Alignment Duration）。这个指标会作为 Metrics 汇报到 Flink Web UI 上，如果这个时间很长，说明作业出现了严重的网络反压
                 markAlignmentStart(barrier.getId(), barrier.getTimestamp());
             }
         }
 
         // we must mark alignment end before calling currentState.barrierReceived which might
         // trigger a checkpoint with unfinished future for alignment duration
+        //当目前登记的已对齐通道数量（alignedChannels.size()）正好等于预期的总通道数（targetChannelCount）时，说明最后那张多米诺骨牌也倒下了，所有通道的 Barrier 全部到齐
         if (alignedChannels.size() == targetChannelCount) {
             if (targetChannelCount > 1) {
                 markAlignmentEnd();

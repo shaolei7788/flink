@@ -491,7 +491,7 @@ public abstract class ResourceManager<WorkerType extends ResourceIDRetrievable>
         }
     }
 
-    //todo   ResourceManager 接收 TaskManager的注册
+    //todo   ResourceManager 接收 TaskManager的注册请求
     @Override
     public CompletableFuture<RegistrationResponse> registerTaskExecutor(
             final TaskExecutorRegistration taskExecutorRegistration, final Duration timeout) {

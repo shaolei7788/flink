@@ -268,7 +268,7 @@ class SubtaskCheckpointCoordinatorImpl implements SubtaskCheckpointCoordinator {
     }
 
     @Override
-    public void checkpointState(
+    public void checkpointState(//
             CheckpointMetaData metadata,
             CheckpointOptions options,
             CheckpointMetricsBuilder metrics,
@@ -287,6 +287,8 @@ class SubtaskCheckpointCoordinatorImpl implements SubtaskCheckpointCoordinator {
         // checkpoint alignments
 
         if (lastCheckpointId >= metadata.getCheckpointId()) {
+            //防止过期或乱序的 Barrier 触发无意义的快照。如果在触发本地快照的同时，JobManager 已经宣告这次 Checkpoint 取消了（比如通过 RPC 提前收到了通知），Subtask 会立刻停手，
+            //并且向更下游广播一个 CancelCheckpointMarker。这样能防止下游算子因为一直在死等这个 Barrier 对齐而导致严重的反压（Back-pressure）
             LOG.info(
                     "Out of order checkpoint barrier (aborted previously?): {} >= {}",
                     lastCheckpointId,
@@ -324,6 +326,8 @@ class SubtaskCheckpointCoordinatorImpl implements SubtaskCheckpointCoordinator {
         // if checkpoint has been previously unaligned, but was forced to be aligned (pointwise
         // connection), revert it here so that it can jump over output data
         if (options.getAlignment() == CheckpointOptions.AlignmentType.FORCED_ALIGNED) {
+            //如果是由于点对点连接（Pointwise，如 rescale/forward）在非对齐模式下被强转为了对齐（Forced Aligned），
+            //在这里将其还原并重新初始化输入端的 Checkpoint 行为，确保其可以“飞跃”输出数据
             options = options.withUnalignedSupported();
             initInputsCheckpoint(metadata.getCheckpointId(), options);
         }
@@ -339,28 +343,36 @@ class SubtaskCheckpointCoordinatorImpl implements SubtaskCheckpointCoordinator {
                 System.currentTimeMillis(),
                 metadata.getTimestamp(),
                 System.currentTimeMillis() - metadata.getTimestamp());
-        CheckpointBarrier checkpointBarrier =
-                new CheckpointBarrier(metadata.getCheckpointId(), metadata.getTimestamp(), options);
-        operatorChain.broadcastEvent(checkpointBarrier, options.isUnalignedCheckpoint());
+        CheckpointBarrier checkpointBarrier = new CheckpointBarrier(metadata.getCheckpointId(), metadata.getTimestamp(), options);
+        //【重点】
+        //如果 options.isUnalignedCheckpoint() 为 false（对齐模式）：这个 Barrier 作为一个普通事件，老老实实地被塞入到下游 PipelinedSubpartition 的 Buffer 队列尾部排队。
+        // 如果为 true（非对齐模式）：这就是前几轮讨论的“插队”逻辑。它会作为 PriorityEvent，绕过还在序列化器里排队的用户数据，直接强行塞入到输出 Buffer 队列的最头部，瞬间飞向下游，绝不拖泥带水
+        operatorChain.broadcastEvent(checkpointBarrier, options.isUnalignedCheckpoint());//
 
         // Step (3): Register alignment timer to timeout aligned barrier to unaligned barrier
+        //注册对齐超时定时器
+        //如果用户配置了对齐超时时间，这里会注册一个定时任务。
+        //如果 Barrier 在下游网络中被堵住、超时未完成对齐，该定时器就会触发，将当前的对齐 Checkpoint 现场就地降级/切换为非对齐 Checkpoint，以应对严重的反压
         registerAlignmentTimer(metadata.getCheckpointId(), operatorChain, checkpointBarrier);
 
         // Step (4): Prepare to spill the in-flight buffers for input and output
         if (options.needsChannelState()) {
             // output data already written while broadcasting event
+            //在非对齐模式下，当上面的步骤 (2) 成功把 Barrier 发送出去（广播完成）的瞬间，所有已经在输出管道里排队的普通数据 Buffer，在物理上都已经被定格了。
+            //此时调用 finishOutput，告诉 ChannelStateWriter：“我已经成功把 Barrier 塞到它们前面发出去了，现在可以把这些卡在输出端（Output）的积压数据 Buffer 打包持久化到 HDFS 了”
             channelStateWriter.finishOutput(metadata.getCheckpointId());
         }
 
         // Step (5): Take the state snapshot. This should be largely asynchronous, to not impact
         // progress of the
         // streaming topology
-
-        Map<OperatorID, OperatorSnapshotFutures> snapshotFutures =
-                CollectionUtil.newHashMapWithExpectedSize(operatorChain.getNumberOfOperators());
+        Map<OperatorID, OperatorSnapshotFutures> snapshotFutures = CollectionUtil.newHashMapWithExpectedSize(operatorChain.getNumberOfOperators());
         try {
-            if (takeSnapshotSync(
-                    snapshotFutures, metadata, metrics, options, operatorChain, isRunning)) {
+            //主线程执行。遍历 operatorChain 中的所有算子，
+            //让它们把内存里/RocksDB 里的当前状态（如 WordCount 计数）做个内存浅拷贝或建立硬链接。这一步必须在 Mailbox 主线程内同步做完，因为此时不能有新的数据流入改变状态
+            if (takeSnapshotSync(snapshotFutures, metadata, metrics, options, operatorChain, isRunning)) {
+                //同步阶段成功建立指针/副本后，主线程立刻解放，继续去处理业务数据流。该方法会把 snapshotFutures 丢给异步线程池，
+                //让异步线程慢慢把状态数据或者 RocksDB 的 SST 文件真正传输到远端的 HDFS/S3。传输完成后，异步线程会向 JobManager 发送 ACK
                 finishAndReportAsync(
                         snapshotFutures,
                         metadata,
@@ -389,10 +401,10 @@ class SubtaskCheckpointCoordinatorImpl implements SubtaskCheckpointCoordinator {
 
         long timerDelay = BarrierAlignmentUtil.getTimerDelay(clock, checkpointBarrier);
 
-        alignmentTimer =
-                registerTimer.registerTask(
+        alignmentTimer = registerTimer.registerTask(
                         () -> {
                             try {
+                                //
                                 operatorChain.alignedBarrierTimeout(checkpointId);
                             } catch (Exception e) {
                                 ExceptionUtils.rethrowIOException(e);
@@ -738,17 +750,23 @@ class SubtaskCheckpointCoordinatorImpl implements SubtaskCheckpointCoordinator {
         long checkpointId = checkpointMetaData.getCheckpointId();
         long started = System.nanoTime();
 
+        //提取非对齐模式下的网络状态
+        //如果是对齐（Aligned）**检查点，不需要记录通道状态，直接返回 EMPTY
+        //如果是非对齐（Unaligned）**检查点，在执行此方法前，
+        //网络层已经通过 channelStateWriter 开始把输入/输出端积压的 Buffer 往持久化存储里导出了。这里通过 getAndRemoveWriteResult 将这批正在写入的通道数据的 Future 结果集 捞出来
         ChannelStateWriteResult channelStateWriteResult =
                 checkpointOptions.needsChannelState()
                         ? channelStateWriter.getAndRemoveWriteResult(checkpointId)
                         : ChannelStateWriteResult.EMPTY;
 
+        //负责解析本次 Checkpoint 应该写到哪（是写到全局默认的 HDFS 路径，还是用户手动指定的 Savepoint 专属目录）
         CheckpointStreamFactory storage =
-                checkpointStorage.resolveCheckpointStorageLocation(
-                        checkpointId, checkpointOptions.getTargetLocation());
+                checkpointStorage.resolveCheckpointStorageLocation(checkpointId, checkpointOptions.getTargetLocation());
+        //让多个并发子任务能够将状态写进同一个物理大文件中，极大地减小了对 HDFS NameNode 的元数据压力
         storage = applyFileMergingCheckpoint(storage, checkpointOptions);
 
         try {
+            //RegularOperatorChain#snapshotState
             operatorChain.snapshotState(
                     operatorSnapshotsInProgress,
                     checkpointMetaData,

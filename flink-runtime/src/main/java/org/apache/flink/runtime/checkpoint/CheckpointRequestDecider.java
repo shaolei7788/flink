@@ -110,7 +110,9 @@ class CheckpointRequestDecider {
      */
     Optional<CheckpointTriggerRequest> chooseRequestToExecute(
             CheckpointTriggerRequest newRequest, boolean isTriggering, long lastCompletionMs) {
+        // maxQueuedRequests = 1000
         if (queuedRequests.size() >= maxQueuedRequests && !queuedRequests.last().isPeriodic) {
+            //当前排队的数量大于等于最大排队数量 直接返回 即不执行checkpoint
             // there are only non-periodic (ie user-submitted) requests enqueued - retain them and
             // drop the new one
             newRequest.completeExceptionally(new CheckpointException(TOO_MANY_CHECKPOINT_REQUESTS));

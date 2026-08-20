@@ -116,17 +116,22 @@ public class CheckpointCoordinator {
     private final JobID job;
 
     /** Default checkpoint properties. */
+    //静态配置参数集合。定义了当前检查点是普通的 Checkpoint 还是 Savepoint、作业取消时是否保留、是强一致还是弱一致等策略
     private final CheckpointProperties checkpointProperties;
 
     /** The executor used for asynchronous calls, like potentially blocking I/O. */
+    //用于执行非阻塞、异步调用的线程池。如异步去清除过期的检查点、写元数据等可能发生 I/O 阻塞的操作，防止阻塞 JobManager 的主线程
     private final Executor executor;
 
+    //专职垃圾回收。在检查点过期、作业被取消、或某个检查点因失败被废弃时，它负责在后台异步清理不再需要的状态数据（文件）
     private final CheckpointsCleaner checkpointsCleaner;
 
     /** The operator coordinators that need to be checkpointed. */
     private final Collection<OperatorCoordinatorCheckpointContext> coordinatorsToCheckpoint;
 
     /** Map from checkpoint ID to the pending checkpoint. */
+    //存放当前“正在进行中（尚未完成）”的检查点映射（Key 是检查点 ID，Value 是 PendingCheckpoint）。
+    // 当所有的 Operator 反馈 ACK 确认后，对应的项会转化为 CompletedCheckpoint 并移交
     @GuardedBy("lock")
     private final Map<Long, PendingCheckpoint> pendingCheckpoints;
 
@@ -134,21 +139,26 @@ public class CheckpointCoordinator {
      * Completed checkpoints. Implementations can be blocking. Make sure calls to methods accessing
      * this don't block the job manager actor and run asynchronously.
      */
+    //用于存储已经成功完成的检查点（CompletedCheckpoint）。Flink 在做故障恢复（Recovery）时，会从这里获取最新的可用检查点进行状态恢复
     private final CompletedCheckpointStore completedCheckpointStore;
 
     /**
      * The root checkpoint state backend, which is responsible for initializing the checkpoint,
      * storing the metadata, and cleaning up the checkpoint.
      */
+    //检查点存储的根视图。负责在 JobManager 端初始化检查点（如分配检查点在分布式存储中的元数据路径）、存储全局元数据，以及在检查点失败时清理目录
     private final CheckpointStorageCoordinatorView checkpointStorageView;
 
     /** A list of recent expired checkpoint IDs, to identify late messages (vs invalid ones). */
+    //最近刚过期的检查点 ID 队列。用来识别“迟到的消息”。
+    //当一个 Task 慢吞吞地发送 ACK 回来时，协调器可以通过它判断这个 ACK 是由于检查点刚好过期导致的，还是由于完全无效的错误导致的
     private final ArrayDeque<Long> recentExpiredCheckpoints;
 
     /**
      * Checkpoint ID counter to ensure ascending IDs. In case of job manager failures, these need to
      * be ascending across job managers.
      */
+    //全局检查点 ID（Checkpoint ID）计数器。它负责生成全局递增且唯一的 ID。即使 JobManager 发生故障切换（HA），也能保证新 Master 生成的 ID 依然严格递增
     private final CheckpointIDCounter checkpointIdCounter;
 
     /**
@@ -165,34 +175,43 @@ public class CheckpointCoordinator {
     private final long baseIntervalDuringBacklog;
 
     /** The max time (in ms) that a checkpoint may take. */
+    //超时限制。如果在规定时间内（如配置的 10 分钟）pendingCheckpoints 中的某个检查点没有收集齐所有 ACK，就判定为超时失败
     private final long checkpointTimeout;
 
     /**
      * The min time(in ms) to delay after a checkpoint could be triggered. Allows to enforce minimum
      * processing time between checkpoint attempts
      */
+    //最小暂停时间。强制限制两个检查点触发动作之间的最小间隔。防止前一个检查点耗时太长、刚结束就立马触发下一个，导致 Task 被检查点拖死
     private final long minPauseBetweenCheckpoints;
 
     /**
      * The timer that handles the checkpoint timeouts and triggers periodic checkpoints. It must be
      * single-threaded. Eventually it will be replaced by main thread executor.
      */
+    //单线程定时器。负责到点后触发周期性检查点，以及处理检查点超时事件
     private final ScheduledExecutor timer;
 
     /** The master checkpoint hooks executed by this checkpoint coordinator. */
+    //Master 端的检查点钩子。在检查点触发/恢复时，
+    //如果作业使用了一些第三方外部组件（例如某些外部文件系统或特殊 Connector），这些钩子可以先于算子在 JobManager 端做一些全局的预准备或恢复工作
     private final HashMap<String, MasterTriggerRestoreHook<?>> masterHooks;
 
+    //是否开启了“非对齐检查点”（Unaligned Checkpoints）。开启后，Barrier 可以超越通道中的缓冲数据，在大反压场景下极大地提高检查点成功率
     private final boolean unalignedCheckpointsEnabled;
 
+    //对齐超时时间。Flink 支持从“对齐CP”自动切换到“非对齐CP”。如果一个检查点在对齐状态下卡了超过这个时间，就会自动降级为非对齐检查点继续进行
     private final long alignedCheckpointTimeout;
 
     /** Actor that receives status updates from the execution graph this coordinator works for. */
+    //作业状态监听器。用于感知当前 Job 状态的变化（如 RUNNING、FAILED、CANCELED），从而决定何时开启或彻底关闭定时检查点
     private JobStatusListener jobStatusListener;
 
     /**
      * The current periodic trigger. Used to deduplicate concurrently scheduled checkpoints if any.
      */
     @GuardedBy("lock")
+    //当前正在生效的定时触发器及其句柄 用于取消或去重并发调度的检查点请求
     private ScheduledTrigger currentPeriodicTrigger;
 
     /** A handle to the current periodic trigger, to cancel it when necessary. */
@@ -206,24 +225,29 @@ public class CheckpointCoordinator {
      * <p>If it's value is {@link Long#MAX_VALUE}, it means there is not a next checkpoint
      * scheduled.
      */
+    //记录了下一次预计触发检查点的相对时间戳，用于精准计算定时和最小间隔
     @GuardedBy("lock")
     private long nextCheckpointTriggeringRelativeTime;
 
     /**
      * The timestamp (via {@link Clock#relativeTimeMillis()}) when the last checkpoint completed.
      */
+    //记录了上一次成功完成检查点的相对时间戳，用于精准计算定时和最小间隔
     private long lastCheckpointCompletionRelativeTime;
 
     /**
      * Flag whether a triggered checkpoint should immediately schedule the next checkpoint.
      * Non-volatile, because only accessed in synchronized scope
      */
+    //是否启用周期性自动触发检查点的标记
     private boolean periodicScheduling;
 
     /** Flag marking the coordinator as shut down (not accepting any messages any more). */
+    //协调器是否已关闭的标志。如果作业被取消或失败，该值变为 true，此时协调器将不再接受、触发或处理任何新的检查点消息
     private volatile boolean shutdown;
 
     /** Optional tracker for checkpoint statistics. */
+    //检查点统计跟踪器。你在 Flink UI 界面上看到的那些 Checkpoint 历史记录、成功/失败次数、端到端延迟、对齐时间等监控数据，全部是由它来收集和维护的
     private final CheckpointStatsTracker statsTracker;
 
     private final BiFunction<
@@ -621,32 +645,35 @@ public class CheckpointCoordinator {
             @Nullable String externalSavepointLocation,
             boolean isPeriodic) {
 
-        CheckpointTriggerRequest request =
-                new CheckpointTriggerRequest(props, externalSavepointLocation, isPeriodic);
-        chooseRequestToExecute(request).ifPresent(this::startTriggeringCheckpoint);
+        CheckpointTriggerRequest request = new CheckpointTriggerRequest(props, externalSavepointLocation, isPeriodic);//
+        Optional<CheckpointTriggerRequest> checkpointTriggerRequest = chooseRequestToExecute(request);//
+        checkpointTriggerRequest.ifPresent(this::startTriggeringCheckpoint);//
         return request.onCompletionPromise;
     }
 
     private void startTriggeringCheckpoint(CheckpointTriggerRequest request) {
         try {
             synchronized (lock) {
-                preCheckGlobalState(request.isPeriodic);
+                //进入方法后，首先进入全局唯一的 lock 临界区。preCheckGlobalState 会检查当前作业状态（是否处于 RUNNING，是否超过最大并发 Checkpoint 数等）进入方法后，
+                // 首先进入全局唯一的 lock 临界区。
+                // preCheckGlobalState 会检查当前作业状态（是否处于 RUNNING，是否超过最大并发 Checkpoint 数等）
+                preCheckGlobalState(request.isPeriodic);//request.isPeriodic =
             }
 
             // we will actually trigger this checkpoint!
+            //通过布尔标志位 isTriggering = true 进行强校验，确保在上一次触发的异步链条完全结束前，不会有第二个线程进来同时执行触发逻辑
             Preconditions.checkState(!isTriggering);
             isTriggering = true;
 
             final long timestamp = System.currentTimeMillis();
-
-            CompletableFuture<CheckpointPlan> checkpointPlanFuture =
-                    checkpointPlanCalculator.calculateCheckpointPlan();
+            //不阻塞，直接获取一个计算计划的 Future。该计划决定了当前哪些 Task（如 Source）需要接收 Barrier，哪些需要等待 ACK
+            CompletableFuture<CheckpointPlan> checkpointPlanFuture = checkpointPlanCalculator.calculateCheckpointPlan();
 
             boolean initializeBaseLocations = !baseLocationsForCheckpointInitialized;
             baseLocationsForCheckpointInitialized = true;
 
             CompletableFuture<Void> masterTriggerCompletionPromise = new CompletableFuture<>();
-
+            //申请 ID 与创建 Pending 账本
             final CompletableFuture<PendingCheckpoint> pendingCheckpointCompletableFuture =
                     checkpointPlanFuture
                             .thenApplyAsync(
@@ -655,8 +682,8 @@ public class CheckpointCoordinator {
                                             // this must happen outside the coordinator-wide lock,
                                             // because it communicates with external services
                                             // (in HA mode) and may block for a while.
-                                            long checkpointID =
-                                                    checkpointIdCounter.getAndIncrement();
+                                            //需要网络通信，严禁在 Coordinator 全局锁或主线程中执行
+                                            long checkpointID = checkpointIdCounter.getAndIncrement();
                                             return new Tuple2<>(plan, checkpointID);
                                         } catch (Throwable e) {
                                             throw new CompletionException(e);
@@ -664,8 +691,7 @@ public class CheckpointCoordinator {
                                     },
                                     executor)
                             .thenApplyAsync(
-                                    (checkpointInfo) ->
-                                            createPendingCheckpoint(
+                                    (checkpointInfo) -> createPendingCheckpoint(
                                                     timestamp,
                                                     request.props,
                                                     checkpointInfo.f0,
@@ -680,14 +706,13 @@ public class CheckpointCoordinator {
                             .thenApplyAsync(
                                     pendingCheckpoint -> {
                                         try {
-                                            CheckpointStorageLocation checkpointStorageLocation =
-                                                    initializeCheckpointLocation(
+                                            //这涉及到在远程文件系统（如 S3、HDFS）上创建本次 Checkpoint 的专属目录。由于是长耗时 I/O，必须异步
+                                            CheckpointStorageLocation checkpointStorageLocation = initializeCheckpointLocation(
                                                             pendingCheckpoint.getCheckpointID(),
                                                             request.props,
                                                             request.externalSavepointLocation,
                                                             initializeBaseLocations);
-                                            return Tuple2.of(
-                                                    pendingCheckpoint, checkpointStorageLocation);
+                                            return Tuple2.of(pendingCheckpoint, checkpointStorageLocation);
                                         } catch (Throwable e) {
                                             throw new CompletionException(e);
                                         }
@@ -717,6 +742,7 @@ public class CheckpointCoordinator {
             // has completed.
             // This is to ensure the tasks are checkpointed after the OperatorCoordinators in case
             // ExternallyInducedSource is used.
+            //MasterHook 状态快照
             final CompletableFuture<?> masterStatesComplete =
                     coordinatorCheckpointsComplete.thenComposeAsync(
                             ignored -> {
@@ -725,9 +751,7 @@ public class CheckpointCoordinator {
                                 // We use FutureUtils.getWithoutException() to make compiler happy
                                 // with checked
                                 // exceptions in the signature.
-                                PendingCheckpoint checkpoint =
-                                        FutureUtils.getWithoutException(
-                                                pendingCheckpointCompletableFuture);
+                                PendingCheckpoint checkpoint = FutureUtils.getWithoutException(pendingCheckpointCompletableFuture);
                                 if (checkpoint == null || checkpoint.isDisposed()) {
                                     // The disposed checkpoint will be handled later,
                                     // skip snapshotting the master states.
@@ -737,6 +761,7 @@ public class CheckpointCoordinator {
                             },
                             timer);
 
+            //将 Master 状态和 Coordinator 状态合并。只要两者都成功，masterTriggerCompletionPromise 就会被完成
             FutureUtils.forward(
                     CompletableFuture.allOf(masterStatesComplete, coordinatorCheckpointsComplete),
                     masterTriggerCompletionPromise);
@@ -745,15 +770,14 @@ public class CheckpointCoordinator {
                     masterTriggerCompletionPromise
                             .handleAsync(
                                     (ignored, throwable) -> {
-                                        final PendingCheckpoint checkpoint =
-                                                FutureUtils.getWithoutException(
-                                                        pendingCheckpointCompletableFuture);
+                                        final PendingCheckpoint checkpoint = FutureUtils.getWithoutException(pendingCheckpointCompletableFuture);
 
                                         Preconditions.checkState(
                                                 checkpoint != null || throwable != null,
                                                 "Either the pending checkpoint needs to be created or an error must have occurred.");
 
                                         if (throwable != null) {
+                                            // 任何一个异步环节报错，走失败清理
                                             // the initialization might not be finished yet
                                             if (checkpoint == null) {
                                                 onTriggerFailure(request, throwable);
@@ -761,8 +785,8 @@ public class CheckpointCoordinator {
                                                 onTriggerFailure(checkpoint, throwable);
                                             }
                                         } else {
-                                            triggerCheckpointRequest(
-                                                    request, timestamp, checkpoint);
+                                            // 【重点】全部中心化快照成功，向 TaskManager 下发指令
+                                            triggerCheckpointRequest(request, timestamp, checkpoint);//
                                         }
                                         return null;
                                     },
@@ -787,16 +811,18 @@ public class CheckpointCoordinator {
 
     private void triggerCheckpointRequest(
             CheckpointTriggerRequest request, long timestamp, PendingCheckpoint checkpoint) {
-        if (checkpoint.isDisposed()) {
+        if (checkpoint.isDisposed()) {//false
             onTriggerFailure(
                     checkpoint,
                     new CheckpointException(
                             CheckpointFailureReason.TRIGGER_CHECKPOINT_FAILURE,
                             checkpoint.getFailureCause()));
         } else {
-            triggerTasks(request, timestamp, checkpoint)
-                    .exceptionally(
+            //
+            CompletableFuture<Void> triggerTasksFuture = triggerTasks(request, timestamp, checkpoint);
+            triggerTasksFuture.exceptionally(
                             failure -> {
+                                //出现异常
                                 try (MdcUtils.MdcCloseable ignored =
                                         MdcUtils.withContext(MdcUtils.asContextData(job))) {
                                     LOG.info(
@@ -842,7 +868,7 @@ public class CheckpointCoordinator {
         if (this.forceFullSnapshot && !request.props.isSavepoint()) {
             type = FULL_CHECKPOINT;
         } else {
-            type = request.props.getCheckpointType();
+            type = request.props.getCheckpointType();//
         }
 
         final CheckpointOptions checkpointOptions =
@@ -855,15 +881,19 @@ public class CheckpointCoordinator {
 
         // send messages to the tasks to trigger their checkpoints
         List<CompletableFuture<Acknowledge>> acks = new ArrayList<>();
+        //获取所有的 Source 算子实例
         for (Execution execution : checkpoint.getCheckpointPlan().getTasksToTrigger()) {
             if (request.props.isSynchronous()) {
                 acks.add(
                         execution.triggerSynchronousSavepoint(
                                 checkpointId, timestamp, checkpointOptions));
             } else {
-                acks.add(execution.triggerCheckpoint(checkpointId, timestamp, checkpointOptions));
+                //触发请求
+                CompletableFuture<Acknowledge> acknowledgeCompletableFuture = execution.triggerCheckpoint(checkpointId, timestamp, checkpointOptions);//
+                acks.add(acknowledgeCompletableFuture);
             }
         }
+        //acks size = 1
         return FutureUtils.waitForAll(acks);
     }
 
@@ -1090,8 +1120,7 @@ public class CheckpointCoordinator {
             CheckpointTriggerRequest request) {
         synchronized (lock) {
             Optional<CheckpointTriggerRequest> checkpointTriggerRequest =
-                    requestDecider.chooseRequestToExecute(
-                            request, isTriggering, lastCheckpointCompletionRelativeTime);
+                    requestDecider.chooseRequestToExecute(request, isTriggering, lastCheckpointCompletionRelativeTime);//
             return checkpointTriggerRequest;
         }
     }
@@ -1207,7 +1236,7 @@ public class CheckpointCoordinator {
      * @throws CheckpointException If the checkpoint cannot be added to the completed checkpoint
      *     store.
      */
-    public boolean receiveAcknowledgeMessage(
+    public boolean receiveAcknowledgeMessage(//
             AcknowledgeCheckpoint message, String taskManagerLocationInfo)
             throws CheckpointException {
         if (shutdown || message == null) {
@@ -1264,7 +1293,7 @@ public class CheckpointCoordinator {
                                 taskManagerLocationInfo);
 
                         if (checkpoint.isFullyAcknowledged()) {
-                            completePendingCheckpoint(checkpoint);
+                            completePendingCheckpoint(checkpoint);//
                         }
                         break;
                     case DUPLICATE:
@@ -1396,9 +1425,8 @@ public class CheckpointCoordinator {
             pendingCheckpoints.remove(checkpointId);
             scheduleTriggerRequest();
         }
-
-        cleanupAfterCompletedCheckpoint(
-                pendingCheckpoint, checkpointId, completedCheckpoint, lastSubsumed, props);
+        //完成checkpoints
+        cleanupAfterCompletedCheckpoint(pendingCheckpoint, checkpointId, completedCheckpoint, lastSubsumed, props);//
     }
 
     private void reportCompletedCheckpoint(CompletedCheckpoint completedCheckpoint) {
@@ -1428,7 +1456,7 @@ public class CheckpointCoordinator {
         // record the time when this was completed, to calculate
         // the 'min delay between checkpoints'
         lastCheckpointCompletionRelativeTime = clock.relativeTimeMillis();
-
+        //
         logCheckpointInfo(completedCheckpoint);
 
         if (!props.isSavepoint() || props.isSynchronous()) {
@@ -1444,6 +1472,7 @@ public class CheckpointCoordinator {
         }
     }
 
+    //完成checkpoint
     private void logCheckpointInfo(CompletedCheckpoint completedCheckpoint) {
         LOG.info(
                 "Completed checkpoint {} for job {} ({} bytes, checkpointDuration={} ms, finalizationTime={} ms).",
@@ -2051,7 +2080,7 @@ public class CheckpointCoordinator {
             }
 
             periodicScheduling = true;
-            scheduleTriggerWithDelay(clock.relativeTimeMillis(), getRandomInitDelay());
+            scheduleTriggerWithDelay(clock.relativeTimeMillis(), getRandomInitDelay());//
         }
     }
 
@@ -2117,11 +2146,11 @@ public class CheckpointCoordinator {
         return ThreadLocalRandom.current().nextLong(minPauseBetweenCheckpoints, baseInterval + 1L);
     }
 
-    private void scheduleTriggerWithDelay(long currentRelativeTime, long initDelay) {
+    private void scheduleTriggerWithDelay(long currentRelativeTime, long initDelay) {//
         nextCheckpointTriggeringRelativeTime = currentRelativeTime + initDelay;
-        currentPeriodicTrigger = new ScheduledTrigger();
-        currentPeriodicTriggerFuture =
-                timer.schedule(currentPeriodicTrigger, initDelay, TimeUnit.MILLISECONDS);
+        //
+        currentPeriodicTrigger = new ScheduledTrigger();//
+        currentPeriodicTriggerFuture = timer.schedule(currentPeriodicTrigger, initDelay, TimeUnit.MILLISECONDS);
     }
 
     private void restoreStateToCoordinators(
@@ -2186,16 +2215,14 @@ public class CheckpointCoordinator {
                 }
 
                 long checkpointInterval = getCurrentCheckpointInterval();
-                if (checkpointInterval
-                        != CheckpointCoordinatorConfiguration.DISABLED_CHECKPOINT_INTERVAL) {
+                if (checkpointInterval != CheckpointCoordinatorConfiguration.DISABLED_CHECKPOINT_INTERVAL) {//true
                     nextCheckpointTriggeringRelativeTime += checkpointInterval;
                     currentPeriodicTriggerFuture =
                             timer.schedule(
                                     this,
                                     Math.max(
                                             0,
-                                            nextCheckpointTriggeringRelativeTime
-                                                    - clock.relativeTimeMillis()),
+                                            nextCheckpointTriggeringRelativeTime - clock.relativeTimeMillis()),
                                     TimeUnit.MILLISECONDS);
                 } else {
                     nextCheckpointTriggeringRelativeTime = Long.MAX_VALUE;
@@ -2205,7 +2232,8 @@ public class CheckpointCoordinator {
             }
 
             try {
-                triggerCheckpoint(checkpointProperties, null, true);
+                //触发Checkpoint
+                triggerCheckpoint(checkpointProperties, null, true);//
             } catch (Exception e) {
                 LOG.error("Exception while triggering checkpoint for job {}.", job, e);
             }

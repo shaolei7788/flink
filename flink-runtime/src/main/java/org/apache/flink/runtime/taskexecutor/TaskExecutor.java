@@ -491,7 +491,8 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
         try {
             // start by connecting to the ResourceManager
             // 获取resourceManager
-            // EmbeddedLeaderService$EmbeddedLeaderRetrievalService#start()
+            //miniCluster模式 EmbeddedLeaderService$EmbeddedLeaderRetrievalService#start()
+            //Standalone模式 StandaloneLeaderRetrievalService$EmbeddedLeaderRetrievalService#start()
             resourceManagerLeaderRetriever.start(new ResourceManagerLeaderListener());
 
             // tell the task slot table who's responsible for the task slot actions
@@ -1092,7 +1093,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
     // ----------------------------------------------------------------------
 
     @Override
-    public CompletableFuture<Acknowledge> triggerCheckpoint(
+    public CompletableFuture<Acknowledge> triggerCheckpoint(//
             ExecutionAttemptID executionAttemptID,
             long checkpointId,
             long checkpointTimestamp,
@@ -1106,6 +1107,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
                         checkpointId,
                         checkpointTimestamp,
                         executionAttemptID);
+                //【重点】
                 task.triggerCheckpointBarrier(checkpointId, checkpointTimestamp, checkpointOptions);
 
                 return CompletableFuture.completedFuture(Acknowledge.get());

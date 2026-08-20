@@ -189,7 +189,7 @@ public class RegularOperatorChain<OUT, OP extends StreamOperator<OUT>>
             if (!operatorWrapper.isClosed()) {
                 operatorSnapshotsInProgress.put(
                         operatorWrapper.getStreamOperator().getOperatorID(),
-                        buildOperatorSnapshotFutures(
+                        buildOperatorSnapshotFutures(//
                                 checkpointMetaData,
                                 checkpointOptions,
                                 operatorWrapper.getStreamOperator(),
@@ -198,6 +198,7 @@ public class RegularOperatorChain<OUT, OP extends StreamOperator<OUT>>
                                 storage));
             }
         }
+        //发送ack消息
         sendAcknowledgeCheckpointEvent(checkpointMetaData.getCheckpointId());
     }
 
@@ -210,8 +211,7 @@ public class RegularOperatorChain<OUT, OP extends StreamOperator<OUT>>
             CheckpointStreamFactory storage)
             throws Exception {
         OperatorSnapshotFutures snapshotInProgress =
-                checkpointStreamOperator(
-                        op, checkpointMetaData, checkpointOptions, storage, isRunning);
+                checkpointStreamOperator(op, checkpointMetaData, checkpointOptions, storage, isRunning);
         snapshotChannelStates(op, channelStateWriteResult, snapshotInProgress);
 
         return snapshotInProgress;
@@ -225,6 +225,7 @@ public class RegularOperatorChain<OUT, OP extends StreamOperator<OUT>>
             Supplier<Boolean> isRunning)
             throws Exception {
         try {
+            //
             return op.snapshotState(
                     checkpointMetaData.getCheckpointId(),
                     checkpointMetaData.getTimestamp(),

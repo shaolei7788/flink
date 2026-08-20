@@ -1081,7 +1081,7 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
      */
     public CompletableFuture<Acknowledge> triggerCheckpoint(
             long checkpointId, long timestamp, CheckpointOptions checkpointOptions) {
-        return triggerCheckpointHelper(checkpointId, timestamp, checkpointOptions);
+        return triggerCheckpointHelper(checkpointId, timestamp, checkpointOptions);//
     }
 
     /**
@@ -1104,12 +1104,10 @@ public class Execution implements AccessExecution, Archiveable<ArchivedExecution
 
         if (slot != null) {
             final TaskManagerGateway taskManagerGateway = slot.getTaskManagerGateway();
-
-            return taskManagerGateway.triggerCheckpoint(
-                    attemptId, getVertex().getJobId(), checkpointId, timestamp, checkpointOptions);
+            //给JobMaster 发送触发Checkpoint 请求
+            return taskManagerGateway.triggerCheckpoint(attemptId, getVertex().getJobId(), checkpointId, timestamp, checkpointOptions);//
         }
-        LOG.debug(
-                "The execution has no slot assigned. This indicates that the execution is no longer running.");
+        LOG.debug("The execution has no slot assigned. This indicates that the execution is no longer running.");
         return CompletableFuture.completedFuture(Acknowledge.get());
     }
 

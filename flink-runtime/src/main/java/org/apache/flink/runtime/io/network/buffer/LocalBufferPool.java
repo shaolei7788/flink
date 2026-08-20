@@ -72,8 +72,8 @@ import static org.apache.flink.util.concurrent.FutureUtils.assertNoException;
 // BufferProvider 提供了申请Buffer的方法
 // BufferRecycler 提供了回收MemorySegment的方法
 //LocalBufferPool中最大的buffer数 = task对应的下游任务数 * 每个下游任务需要的buffer + 额外多分配的buffer数。
-// 每个下游任务所需buffer数默认是2，由参数taskmanager.network.memory.buffers-per-channel控制；
-// 额外多分配的buffer数默认是8，由参数taskmanager.network.memory.floating-buffers-per-gate控制。
+// 每个下游任务所需buffer数默认是2，由参数 taskmanager.network.memory.buffers-per-channel控制；
+// 额外多分配的buffer数默认是8，由参数 taskmanager.network.memory.floating-buffers-per-gate控制。
 // 例如下游有两个reduce任务，
 // 那每个map任务的ResultPartition拥有的最大的buffer数就是2*2+8=12
 
@@ -399,7 +399,8 @@ public class LocalBufferPool implements BufferPool {
     @Override
     public BufferBuilder requestBufferBuilderBlocking(int targetChannel)
             throws InterruptedException {
-        return toBufferBuilder(requestMemorySegmentBlocking(targetChannel), targetChannel);
+        MemorySegment memorySegment = requestMemorySegmentBlocking(targetChannel);
+        return toBufferBuilder(memorySegment, targetChannel);//
     }
 
     private Buffer toBuffer(MemorySegment memorySegment) {
@@ -421,8 +422,7 @@ public class LocalBufferPool implements BufferPool {
         }
     }
 
-    private MemorySegment requestMemorySegmentBlocking(int targetChannel)
-            throws InterruptedException {
+    private MemorySegment requestMemorySegmentBlocking(int targetChannel) throws InterruptedException {
         MemorySegment segment;
         while ((segment = requestMemorySegment(targetChannel)) == null) {
             try {
