@@ -65,23 +65,29 @@ final class AlternatingWaitingForFirstBarrierUnaligned implements BarrierHandler
 
         // we received an out of order aligned barrier, we should book keep this channel as blocked,
         // as it is being blocked by the credit-based network
-        if (markChannelBlocked
-                && !checkpointBarrier.getCheckpointOptions().isUnalignedCheckpoint()) {
+        if (markChannelBlocked && !checkpointBarrier.getCheckpointOptions().isUnalignedCheckpoint()) {
+            //对齐 Barrier
             channelState.blockChannel(channelInfo);
         }
-
+        //强行将这个刚进来的 Barrier 克隆并魔改为“非对齐属性”
         CheckpointBarrier unalignedBarrier = checkpointBarrier.asUnaligned();
+        //通知输入网关（InputGate）初始化非对齐环境。
         controller.initInputsCheckpoint(unalignedBarrier);
         for (CheckpointableInput input : channelState.getInputs()) {
+            //遍历当前 Task 所有的输入源（Inputs），告诉它们：“非对齐检查点正式启动了，各单位注意拦截并准备抓取在途数据（In-flight Data）！”
             input.checkpointStarted(unalignedBarrier);
         }
+        //【重点】调用控制器，向当前 Task 的所有输出端（PipelinedSubpartition）下发刚刚升级好的 unalignedBarrier
         controller.triggerGlobalCheckpoint(unalignedBarrier);
         if (controller.allBarriersReceived()) {
+            //单通道直接通关
             for (CheckpointableInput input : channelState.getInputs()) {
                 input.checkpointStopped(unalignedBarrier.getId());
             }
+            //宣告当前快照采集结束
             return stopCheckpoint();
         }
+        //多通道开启漫长的“非对齐收集”
         return new AlternatingCollectingBarriersUnaligned(alternating, channelState);
     }
 

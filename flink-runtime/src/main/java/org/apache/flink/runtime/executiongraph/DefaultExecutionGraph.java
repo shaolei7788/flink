@@ -515,7 +515,8 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
                                         "Checkpoint Timer")));
 
         // create the coordinator that triggers and commits checkpoints and holds the state
-        checkpointCoordinator = new CheckpointCoordinator(
+        //
+        checkpointCoordinator = new CheckpointCoordinator(//
                         jobInformation.getJobId(),
                         chkConfig,
                         operatorCoordinators,
@@ -1013,7 +1014,7 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
 
     @Override
     public void transitionToRunning() {
-        if (!transitionState(JobStatus.CREATED, JobStatus.RUNNING)) {
+        if (!transitionState(JobStatus.CREATED, JobStatus.RUNNING)) {//
             throw new IllegalStateException(
                     "Job may only be scheduled from state " + JobStatus.CREATED);
         }
@@ -1186,7 +1187,7 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
 
     @Override
     public boolean transitionState(JobStatus current, JobStatus newState) {
-        return transitionState(current, newState, null);
+        return transitionState(current, newState, null);//
     }
 
     private void transitionState(JobStatus newState, Throwable error) {
@@ -1214,7 +1215,7 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
                     error);
 
             stateTimestamps[newState.ordinal()] = System.currentTimeMillis();
-            notifyJobStatusChange(current, newState, error);
+            notifyJobStatusChange(current, newState, error);//
             notifyJobStatusHooks(newState, error);
             return true;
         } else {
@@ -1651,14 +1652,14 @@ public class DefaultExecutionGraph implements ExecutionGraph, InternalExecutionG
         }
     }
 
-    private void notifyJobStatusChange(
-            JobStatus oldState, JobStatus newState, @Nullable Throwable cause) {
+    private void notifyJobStatusChange(JobStatus oldState, JobStatus newState, @Nullable Throwable cause) {//
         if (jobStatusListeners.size() > 0) {
             final long timestamp = System.currentTimeMillis();
 
             for (JobStatusListener listener : jobStatusListeners) {
                 try {
-                    listener.jobStatusChanges(getJobID(), newState, timestamp);
+                    //会开启checkpoint调度 DefaultSchedulerFactory#jobStatusChanges
+                    listener.jobStatusChanges(getJobID(), newState, timestamp);//
                 } catch (Throwable t) {
                     LOG.warn("Error while notifying JobStatusListener", t);
                 }

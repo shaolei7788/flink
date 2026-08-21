@@ -70,6 +70,8 @@ import static org.apache.flink.util.Preconditions.checkState;
  * <p>Note that the pending checkpoint, as well as the successful checkpoint keep the state handles
  * always as serialized values, never as actual values.
  */
+//进行中的检查点
+//它表示一个已经触发（Started）但尚未收集齐所有任务（Tasks）确认应答（ACK）的检查点
 @NotThreadSafe
 public class PendingCheckpoint implements Checkpoint {
 
@@ -90,25 +92,38 @@ public class PendingCheckpoint implements Checkpoint {
 
     private final JobID jobId;
 
+    //该检查点的全局唯一、递增 ID 从1开始
     private final long checkpointId;
 
+    //检查点被触发时的系统时间戳
     private final long checkpointTimestamp;
 
+    //作用：核心数据收集仓。存放已经完成 ACK 的各个算子（Operator）的状态元数据句柄（OperatorState）。设计意图：当一个 TaskManager 节点成功持久化状态并 ACK 后，
+    //它上报的 TaskStateSnapshot 会被解析并按算子 ID（OperatorID）归类合并到这个 Map 中。当快照转正时，这个 Map 就是 CompletedCheckpoint 的核心内容
     private final Map<OperatorID, OperatorState> operatorStates;
 
+    //它记录了在触发那一刻，整个拓扑中哪些 Task、哪些 Coordinator 需要参与本次快照。
+    //它为后面的 ACK 集合初始化提供了依据，解耦了动态拓扑变化（如正在流转的挂起状态）对快照逻辑的干扰
     private final CheckpointPlan checkpointPlan;
 
+    //还未汇报 ACK 的 Task 剩余清单
     private final Map<ExecutionAttemptID, ExecutionVertex> notYetAcknowledgedTasks;
 
+    //还未确认的控制面算子协调器（OperatorCoordinator）清单。设计意图：对应 isFullyAcknowledged() 中的第二维。只有当这个 Set 变为空时，控制面的快照才算完成
     private final Set<OperatorID> notYetAcknowledgedOperatorCoordinators;
 
+    //作用：存放已经收集完毕的 MasterHook 全局外部状态列表。
+    //设计意图：当主控节点的自定义钩子（MasterHook）成功执行并返回快照数据后，序列化后的字节数据会暂存在这里，最终一起写入元数据元文件（_metadata）
     private final List<MasterState> masterStates;
 
+    //还未返回的 MasterHook（由字符串标识）清单。设计意图：对应 isFullyAcknowledged() 中的第三维。跟踪主控节点全局钩子的异步执行状态
     private final Set<String> notYetAcknowledgedMasterStates;
 
     /** Set of acknowledged tasks. */
+    //已经成功汇报 ACK 的 Task 清单。设计意图：与notYetAcknowledgedTasks配合使用。防止由于网络波动、RPC 重试导致同一个 Task 重复提交 ACK 引起计数错乱（幂等去重）
     private final Set<ExecutionAttemptID> acknowledgedTasks;
 
+    //定义该检查点的行为行为特征（如：是自动触发的 Checkpoint，还是用户手动触发的 Savepoint？失败时是容错报错还是直接跳过？）
     /** The checkpoint properties. */
     private final CheckpointProperties props;
 
@@ -116,23 +131,41 @@ public class PendingCheckpoint implements Checkpoint {
      * The promise to fulfill once the checkpoint has been completed. Note that it will be completed
      * only after the checkpoint is successfully added to CompletedCheckpointStore.
      */
+    //作用：转正承诺（Promise）。
+    // 设计意图：异步编程的核心。上层代码（如调度器或触发线程）不需要同步等待 Checkpoint 完成。它们只需监听这个 Future。
+    // 当 PendingCheckpoint 真正成功转换并写入持久化存储（CompletedCheckpointStore）后，该 Future 会被 complete(completedCheckpoint) 激活
     private final CompletableFuture<CompletedCheckpoint> onCompletionPromise;
 
+    //作用：监控指标快照收集器。设计意图：它是 Flink Web UI 上的数据源。
+    //当 PendingCheckpoint 内部的 ACK 状态发生变更时，会同步更新到这个 Stats 对象中，
+    //这样用户就能实时在前端看到“Checkpoint 进行到 85%，还剩 3 个 Task 没 ACK”的动态画面
     @Nullable private final PendingCheckpointStats pendingCheckpointStats;
 
+    //作用：Master 侧触发阶段完成的承诺。
+    // 设计意图：专门用于协调。在分布式 Barrier 发出之前，
+    // Master 侧需要先初始化存储、触发 MasterHooks。这个 Future 标志着“Master 准备工作已完毕，可以开始等 TaskManager 的 ACK 了”
     private final CompletableFuture<Void> masterTriggerCompletionPromise;
 
     /** Target storage location to persist the checkpoint metadata to. */
-    @Nullable private CheckpointStorageLocation targetLocation;
+    //本次快照元数据的最终持久化物理路径
+    @Nullable
+    private CheckpointStorageLocation targetLocation;
 
+    //已确认的 Task 计数器
     private int numAcknowledgedTasks;
 
+    //表示该对象内部的垃圾回收逻辑是否已经开始执行
     private boolean disposed;
 
+    //表示底层的物理文件（存储在 HDFS/S3 里的孤儿数据）是否已经被彻底删除干净
     private boolean discarded;
 
+    //作用：超时炸弹的引信句柄。设计意图：在触发 Checkpoint 的同时，会向线程池提交一个定时取消任务（Timeout Task）。该属性持有这个定时任务的句柄。
+    // 一旦 Checkpoint 提前成功或因其他原因失败，必须调用 cancellerHandle.cancel(false) 把这个定时炸弹拆除，否则会引发不必要的二次销毁
     private volatile ScheduledFuture<?> cancellerHandle;
 
+    //作用：记录导致该检查点死掉的最终死因（如：CheckpointExpiredException、JobFailoverException）。
+    //设计意图：用于追溯和可观测性。当这个 PendingCheckpoint 被废弃时，它会把死因填充进这个字段，并最终反馈给 Web UI 或系统日志，方便架构师排查究竟是哪个 Task 拖垮了检查点
     private CheckpointException failureCause;
 
     // --------------------------------------------------------------------------------------------
@@ -236,8 +269,12 @@ public class PendingCheckpoint implements Checkpoint {
     }
 
     public boolean isFullyAcknowledged() {
-        return areTasksFullyAcknowledged()
+        return
+                //[数据面] 所有 TaskManager 上的 Task 均已 ACK
+                areTasksFullyAcknowledged()
+                //[控制面] 所有 OperatorCoordinator 均已 ACK
                 && areCoordinatorsFullyAcknowledged()
+                //[主控面] 所有 MasterHook 状态均已安全保存
                 && areMasterStatesFullyAcknowledged();
     }
 
@@ -391,7 +428,7 @@ public class PendingCheckpoint implements Checkpoint {
             if (disposed) {
                 return TaskAcknowledgeResult.DISCARDED;
             }
-
+            //
             final ExecutionVertex vertex = notYetAcknowledgedTasks.remove(executionAttemptId);
 
             if (vertex == null) {

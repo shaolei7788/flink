@@ -212,7 +212,7 @@ public class DefaultCheckpointStatsTracker implements CheckpointStatsTracker {
 
         // Latest snapshot is empty
         latestSnapshot =
-                new CheckpointStatsSnapshot(
+                new CheckpointStatsSnapshot(//
                         counts.createSnapshot(),
                         summary.createSnapshot(),
                         history.createSnapshot(),

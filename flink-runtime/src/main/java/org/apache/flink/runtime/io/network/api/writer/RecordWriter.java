@@ -90,14 +90,15 @@ public abstract class RecordWriter<T extends IOReadableWritable> implements Avai
 
         checkArgument(timeout >= ExecutionOptions.DISABLED_NETWORK_BUFFER_TIMEOUT);
         this.flushAlways = (timeout == ExecutionOptions.FLUSH_AFTER_EVERY_RECORD);
-        if (timeout == ExecutionOptions.DISABLED_NETWORK_BUFFER_TIMEOUT
-                || timeout == ExecutionOptions.FLUSH_AFTER_EVERY_RECORD) {
+        if (timeout == ExecutionOptions.DISABLED_NETWORK_BUFFER_TIMEOUT || timeout == ExecutionOptions.FLUSH_AFTER_EVERY_RECORD) {
             outputFlusher = null;
         } else {
-            String threadName =
-                    taskName == null
+            String threadName = taskName == null
                             ? DEFAULT_OUTPUT_FLUSH_THREAD_NAME
                             : DEFAULT_OUTPUT_FLUSH_THREAD_NAME + " for " + taskName;
+
+            //TODO
+            //timeout = 20000;
             //创建OutputFlusher线程 timeout 默认100
             outputFlusher = new OutputFlusher(threadName, timeout);
             //【重点】 启动线程

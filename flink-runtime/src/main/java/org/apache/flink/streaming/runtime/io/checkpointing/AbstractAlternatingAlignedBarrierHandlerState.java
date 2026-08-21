@@ -53,8 +53,8 @@ abstract class AbstractAlternatingAlignedBarrierHandlerState implements BarrierH
         if (checkpointBarrier.getCheckpointOptions().isUnalignedCheckpoint()) {
             BarrierHandlerState unalignedState =
                     alignedCheckpointTimeout(controller, checkpointBarrier);
-            return unalignedState.barrierReceived(
-                    controller, channelInfo, checkpointBarrier, markChannelBlocked);
+            //AlternatingWaitingForFirstBarrierUnaligned#barrierReceived
+            return unalignedState.barrierReceived(controller, channelInfo, checkpointBarrier, markChannelBlocked);
         }
 
         state.removeSeenAnnouncement(channelInfo);

@@ -325,7 +325,7 @@ class SubtaskCheckpointCoordinatorImpl implements SubtaskCheckpointCoordinator {
 
         // if checkpoint has been previously unaligned, but was forced to be aligned (pointwise
         // connection), revert it here so that it can jump over output data
-        if (options.getAlignment() == CheckpointOptions.AlignmentType.FORCED_ALIGNED) {
+        if (options.getAlignment() == CheckpointOptions.AlignmentType.FORCED_ALIGNED) {//false
             //如果是由于点对点连接（Pointwise，如 rescale/forward）在非对齐模式下被强转为了对齐（Forced Aligned），
             //在这里将其还原并重新初始化输入端的 Checkpoint 行为，确保其可以“飞跃”输出数据
             options = options.withUnalignedSupported();
@@ -346,7 +346,7 @@ class SubtaskCheckpointCoordinatorImpl implements SubtaskCheckpointCoordinator {
         CheckpointBarrier checkpointBarrier = new CheckpointBarrier(metadata.getCheckpointId(), metadata.getTimestamp(), options);
         //【重点】
         //如果 options.isUnalignedCheckpoint() 为 false（对齐模式）：这个 Barrier 作为一个普通事件，老老实实地被塞入到下游 PipelinedSubpartition 的 Buffer 队列尾部排队。
-        // 如果为 true（非对齐模式）：这就是前几轮讨论的“插队”逻辑。它会作为 PriorityEvent，绕过还在序列化器里排队的用户数据，直接强行塞入到输出 Buffer 队列的最头部，瞬间飞向下游，绝不拖泥带水
+        // 如果为 true（非对齐模式）：这就是前几轮讨论的“插队”逻辑。它会作为 PriorityEvent，绕过还在序列化器里排队的用户数据，直接强行塞入到输出 Buffer 队列的最头部
         operatorChain.broadcastEvent(checkpointBarrier, options.isUnalignedCheckpoint());//
 
         // Step (3): Register alignment timer to timeout aligned barrier to unaligned barrier

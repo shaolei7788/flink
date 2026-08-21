@@ -123,13 +123,12 @@ public class CheckpointedInputGate implements PullingAsyncDataInput<BufferOrEven
     }
 
     private void waitForPriorityEvents(InputGate inputGate, MailboxExecutor mailboxExecutor) {
-        final CompletableFuture<?> priorityEventAvailableFuture =
-                inputGate.getPriorityEventAvailableFuture();//
+        final CompletableFuture<?> priorityEventAvailableFuture = inputGate.getPriorityEventAvailableFuture();//
         assertNoException(
                 priorityEventAvailableFuture.thenRun(
                         () -> {
                             try {
-                                //
+                                //MailboxExecutorImpl#execute
                                 mailboxExecutor.execute(
                                         MailboxExecutor.MailOptions.urgent(),
                                         this::processPriorityEvents,
@@ -154,6 +153,7 @@ public class CheckpointedInputGate implements PullingAsyncDataInput<BufferOrEven
         Optional<BufferOrEvent> next = inputGate.pollNext();//
 
         if (!next.isPresent()) {//false
+            //如果底层网络队列此时是空的，没拉到任何东西
             return handleEmptyBuffer();
         }
 
@@ -163,18 +163,8 @@ public class CheckpointedInputGate implements PullingAsyncDataInput<BufferOrEven
             //
             return handleEvent(bufferOrEvent);//
         } else if (bufferOrEvent.isBuffer()) {
-            /**
-             * https://issues.apache.org/jira/browse/FLINK-19537 This is not entirely true, as it's
-             * ignoring the buffer/bytes accumulated in the record deserializers. If buffer is
-             * processed here, it doesn't mean it was fully processed (so we can over estimate the
-             * amount of processed bytes). On the other hand some records/bytes might be processed
-             * without polling anything from this {@link CheckpointedInputGate} (underestimating the
-             * amount of processed bytes). All in all this should have been calculated on the {@link
-             * StreamTaskNetworkInput} level, where we have an access to the records deserializers.
-             * However the current is on average accurate and it might be just good enough (at least
-             * for the time being).
-             */
             //this = CheckpointBarrierTracker  CheckpointBarrierHandler#addProcessedBytes
+            //统计消费了多少字节
             barrierHandler.addProcessedBytes(bufferOrEvent.getBuffer().getSize());
         }
         return next;
@@ -183,18 +173,23 @@ public class CheckpointedInputGate implements PullingAsyncDataInput<BufferOrEven
     private Optional<BufferOrEvent> handleEvent(BufferOrEvent bufferOrEvent) throws IOException {
         Class<? extends AbstractEvent> eventClass = bufferOrEvent.getEvent().getClass();
         if (eventClass == CheckpointBarrier.class) {
+            //处理checkpoint barrier事件
             CheckpointBarrier checkpointBarrier = (CheckpointBarrier) bufferOrEvent.getEvent();
             //SingleCheckpointBarrierHandler#processBarrier
             barrierHandler.processBarrier(checkpointBarrier, bufferOrEvent.getChannelInfo(), false);//
         } else if (eventClass == CancelCheckpointMarker.class) {
+            //撤销检查点
             barrierHandler.processCancellationBarrier(
                     (CancelCheckpointMarker) bufferOrEvent.getEvent(),
                     bufferOrEvent.getChannelInfo());
         } else if (eventClass == EndOfData.class) {
+            //数据读取完毕
             inputGate.acknowledgeAllRecordsProcessed(bufferOrEvent.getChannelInfo());
         } else if (eventClass == EndOfPartitionEvent.class) {
+            //数据分区关闭
             barrierHandler.processEndOfPartition(bufferOrEvent.getChannelInfo());
         } else if (eventClass == EventAnnouncement.class) {
+            //屏障预告分支
             EventAnnouncement eventAnnouncement = (EventAnnouncement) bufferOrEvent.getEvent();
             AbstractEvent announcedEvent = eventAnnouncement.getAnnouncedEvent();
             checkState(
@@ -207,6 +202,7 @@ public class CheckpointedInputGate implements PullingAsyncDataInput<BufferOrEven
                     eventAnnouncement.getSequenceNumber(),
                     bufferOrEvent.getChannelInfo());
         } else if (bufferOrEvent.getEvent().getClass() == EndOfOutputChannelStateEvent.class) {
+            //通道状态恢复结束
             upstreamRecoveryTracker.handleEndOfRecovery(bufferOrEvent.getChannelInfo());
         }
         return Optional.of(bufferOrEvent);

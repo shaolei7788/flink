@@ -315,7 +315,7 @@ public abstract class BufferWritingResultPartition extends ResultPartition {
         BufferBuilder buffer = unicastBufferBuilders[targetSubpartition];
 
         if (buffer == null) {
-            //System.out.println(Thread.currentThread().getName() + ": Creating buffer for subpartition " + targetSubpartition);
+            System.out.println(Thread.currentThread().getName() + ": Creating buffer for subpartition " + targetSubpartition);
             //情况 B（首次写入或旧 Buffer 已满）：如果 buffer == null，说明这是任务刚启动、或者上一个 Buffer 刚刚写满并被“封口”清空了。
             // 向 Task 的本地内存池（LocalBufferPool）申请一块全新的、干净的 32KB 内存块（MemorySegment）
             buffer = requestNewUnicastBufferBuilder(targetSubpartition);//

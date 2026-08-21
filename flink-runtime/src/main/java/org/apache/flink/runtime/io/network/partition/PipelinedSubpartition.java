@@ -210,8 +210,9 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
             }
 
             // Add the bufferConsumer and update the stats
-            //调用 addBuffer 把 bufferConsumer 加入 buffers 队列，如果是对齐barrier，则放入buffer队首，非对齐或普通数据则加入队尾
+            //调用 addBuffer 把 bufferConsumer 加入 buffers 队列，如果是非对齐barrier，则放入buffer队首，对齐或普通数据则加入队尾
             if (addBuffer(bufferConsumer, partialRecordLength)) {//
+                 //非对齐 addBuffer 返回true
                 prioritySequenceNumber = sequenceNumber;
             }
             //读取这个 bufferConsumer 的大小，瞬间累加到前面提到的 totalNumberOfBuffers 和 totalNumberOfBytes 计数器中，为 Web UI 和 Metrics 提供最实时的发送吞吐量监控
@@ -246,6 +247,7 @@ public class PipelinedSubpartition extends ResultSubpartition implements Channel
         } else if (Buffer.DataType.TIMEOUTABLE_ALIGNED_CHECKPOINT_BARRIER == bufferConsumer.getDataType()) {
             processTimeoutableCheckpointBarrier(bufferConsumer);
         }
+        //普通数据或对齐检查点
         //【重点】
         buffers.add(new BufferConsumerWithPartialRecordLength(bufferConsumer, partialRecordLength));
         return false;

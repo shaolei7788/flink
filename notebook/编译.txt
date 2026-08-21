@@ -8,7 +8,7 @@ mvn clean package -o  -DskipTests -Djdk21 -Pjava21-target -Drat.skip=true -Dchec
 
 只编译特定的子模块
 mvn clean package -o -pl flink-rpc/flink-rpc-akka,flink-rpc/flink-rpc-akka-loader -DskipTests -Dcheckstyle.skip -Dcheckstyle.failOnViolation=false -Dspotbugs.skip=true -Denforcer.skip=true -Dspotless.skip=true -Djdk21 -Pjava21-target
-mvn clean package -o -pl flink-examples -DskipTests -Dcheckstyle.skip -Dcheckstyle.failOnViolation=false -Dspotbugs.skip=true -Denforcer.skip=true -Dspotless.skip=true -Djdk21 -Pjava21-target
+mvn clean package -o -pl flink-runtime -DskipTests -Dcheckstyle.skip -Dcheckstyle.failOnViolation=false -Dspotbugs.skip=true -Denforcer.skip=true -Dspotless.skip=true -Djdk21 -Pjava21-target
 
 
 idea 本地运行 StandaloneSessionClusterEntrypoint 跟 TaskManagerRunner 进程

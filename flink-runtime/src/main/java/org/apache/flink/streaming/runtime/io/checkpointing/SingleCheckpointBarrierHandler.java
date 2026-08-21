@@ -216,20 +216,28 @@ public class SingleCheckpointBarrierHandler extends CheckpointBarrierHandler {
         long barrierId = barrier.getId();
         LOG.debug("{}: Received barrier from channel {} @ {}.", taskName, channelInfo, barrierId);
 
+        //情况 A (currentCheckpointId > barrierId)：这是一个迟到的旧屏障
+        //情况 B (currentCheckpointId == barrierId && !isCheckpointPending())：这是一个重复的屏障，或者当前 Checkpoint 已经在本算子做完了
         if (currentCheckpointId > barrierId || (currentCheckpointId == barrierId && !isCheckpointPending())) {
             if (!barrier.getCheckpointOptions().isUnalignedCheckpoint()) {
                 inputs[channelInfo.getGateIdx()].resumeConsumption(channelInfo);
             }
             return;
         }
-
+        //当一个全新的、比当前 currentCheckpointId 还要大的 Checkpoint ID 第一次到达时，
+        //这个方法会被触发。它负责在 Handler 内部开辟全新的上下文，把旧的对齐通道列表清空，重置计时器，并向系统宣告：“属于新检查点的时代开始了”
         checkNewCheckpoint(barrier);
         checkState(currentCheckpointId == barrierId);
+        FunctionWithException<BarrierHandlerState, BarrierHandlerState, Exception> stateTransformer = new FunctionWithException<>() {
 
-        markCheckpointAlignedAndTransformState(
-                channelInfo,
-                barrier,
-                state -> state.barrierReceived(context, channelInfo, barrier, !isRpcTriggered));
+            @Override
+            public BarrierHandlerState apply(BarrierHandlerState state) throws Exception {
+                //state = AlternatingWaitingForFirstBarrier
+                //AbstractAlternatingAlignedBarrierHandlerState#barrierReceived
+                return state.barrierReceived(context, channelInfo, barrier, !isRpcTriggered);
+            }
+        };
+        markCheckpointAlignedAndTransformState(channelInfo, barrier, stateTransformer);
     }
 
     protected void markCheckpointAlignedAndTransformState(
@@ -259,6 +267,7 @@ public class SingleCheckpointBarrierHandler extends CheckpointBarrierHandler {
         }
 
         try {
+            //BarrierHandlerState#barrierReceived
             currentState = stateTransformer.apply(currentState);
         } catch (CheckpointException e) {
             abortInternal(currentCheckpointId, e);
@@ -284,6 +293,7 @@ public class SingleCheckpointBarrierHandler extends CheckpointBarrierHandler {
                 taskName,
                 trigger.getId(),
                 trigger.getTimestamp());
+        //
         notifyCheckpoint(trigger);
     }
 
@@ -485,6 +495,7 @@ public class SingleCheckpointBarrierHandler extends CheckpointBarrierHandler {
         @Override
         public void triggerGlobalCheckpoint(CheckpointBarrier checkpointBarrier)
                 throws IOException {
+            //
             SingleCheckpointBarrierHandler.this.triggerCheckpoint(checkpointBarrier);
         }
 

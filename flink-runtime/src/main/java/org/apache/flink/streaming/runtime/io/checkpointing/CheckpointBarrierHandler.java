@@ -143,7 +143,7 @@ public abstract class CheckpointBarrierHandler implements Closeable {
                             .setBytesProcessedDuringAlignment(0L)
                             .setCheckpointStartDelayNanos(0);
         }
-
+        //StreamTask#triggerCheckpointOnBarrier
         toNotifyOnCheckpoint.triggerCheckpointOnBarrier(
                 checkpointMetaData, checkpointBarrier.getCheckpointOptions(), checkpointMetrics);
     }

@@ -42,6 +42,7 @@ public class CheckpointCoordinatorDeActivator implements JobStatusListener {
     @Override
     public void jobStatusChanges(JobID jobId, JobStatus newJobStatus, long timestamp) {
         if (newJobStatus == JobStatus.RUNNING && allTasksOutputNonBlocking) {
+            // 开启了checkpoint allTasksOutputNonBlocking = true
             // start the checkpoint scheduler if there is no blocking edge
             //CheckpointCoordinator#startCheckpointScheduler
             coordinator.startCheckpointScheduler();//

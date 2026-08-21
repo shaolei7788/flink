@@ -1427,7 +1427,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
 
         FlinkSecurityManager.monitorUserSystemExitForCurrentThread();
         try {
-            performCheckpoint(checkpointMetaData, checkpointOptions, checkpointMetrics);
+            performCheckpoint(checkpointMetaData, checkpointOptions, checkpointMetrics);//
         } catch (CancelTaskException e) {
             LOG.info(
                     "Operator {} was cancelled while performing checkpoint {}.",
@@ -1461,7 +1461,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
             CheckpointOptions checkpointOptions,
             CheckpointMetricsBuilder checkpointMetrics)
             throws Exception {
-
+        //CheckpointType{name='Checkpoint', sharingFilesStrategy=FORWARD_BACKWARD}
         final SnapshotType checkpointType = checkpointOptions.getCheckpointType();
         LOG.debug(
                 "Starting checkpoint {} {} on task {}",

@@ -666,6 +666,7 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
     }
 
     // TODO: This method needs a leader session ID
+    //TaskExecutor（算子任务所在的节点）向 JobMaster 汇报 Checkpoint 成功完成 的核心入口
     @Override
     public void acknowledgeCheckpoint(
             final JobID jobID,
@@ -673,12 +674,15 @@ public class JobMaster extends FencedRpcEndpoint<JobMasterId>
             final long checkpointId,
             final CheckpointMetrics checkpointMetrics,
             @Nullable final SerializedValue<TaskStateSnapshot> checkpointState) {
+        System.out.println(checkpointId + ",acknowledgeCheckpoint:" + executionAttemptID);
         try (MdcUtils.MdcCloseable ignored = MdcUtils.withContext(MdcUtils.asContextData(jobID))) {
-            schedulerNG.acknowledgeCheckpoint(
+            //SchedulerBase#acknowledgeCheckpoint
+            schedulerNG.acknowledgeCheckpoint(//
                     jobID,
                     executionAttemptID,
                     checkpointId,
                     checkpointMetrics,
+                    //反序列化 TaskStateSnapshot
                     deserializeTaskStateSnapshot(checkpointState, getClass().getClassLoader()));
         }
     }

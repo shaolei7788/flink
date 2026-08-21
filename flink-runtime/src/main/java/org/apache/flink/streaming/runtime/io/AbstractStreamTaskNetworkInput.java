@@ -172,6 +172,7 @@ public abstract class AbstractStreamTaskNetworkInput<
                     //System.out.println("StreamTaskNetworkOutput#processElement:" + Thread.currentThread().getName());
                     final boolean breakBatchEmitting = processElement(element, output);
                     // check() 方式是执行 -> !this.mailboxProcessor.hasMail() && taskIsAvailable()
+                    // 从这里可以看出 是每处理一条数据就检查邮箱里面有没有邮件 没有邮件继续处理数据 有数据就跳出当前循环
                     if (canEmitBatchOfRecords.check() && !breakBatchEmitting) {
                         // 继续处理 Buffer 中的下一条记录
                         continue;
@@ -206,7 +207,7 @@ public abstract class AbstractStreamTaskNetworkInput<
                     checkState(
                             checkpointedInputGate.getAvailableFuture().isDone(),
                             "Finished BarrierHandler should be available");
-                    //宣告当前 Task 负责的所有上游并发通道的数据已经全部消费完毕，任务即将进入
+                    //宣告当前 Task 负责的所有上游并发通道的数据已经全部消费完毕，任务即将结束
                     return DataInputStatus.END_OF_INPUT;
                 }
                 return DataInputStatus.NOTHING_AVAILABLE;

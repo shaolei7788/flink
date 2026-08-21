@@ -640,13 +640,17 @@ public class CheckpointCoordinator {
     }
 
     @VisibleForTesting
-    CompletableFuture<CompletedCheckpoint> triggerCheckpoint(
+    CompletableFuture<CompletedCheckpoint> triggerCheckpoint(//
+            //检查点配置信息，比如它是对齐的还是非对齐的？是增量的还是全量的？是普通的 Checkpoint 还是一个用户指定的 Savepoint
             CheckpointProperties props,
             @Nullable String externalSavepointLocation,
             boolean isPeriodic) {
 
         CheckpointTriggerRequest request = new CheckpointTriggerRequest(props, externalSavepointLocation, isPeriodic);//
+        //检查最大并发数限制：如果当前已经有一个 Checkpoint 在做了，且你配置的 maxConcurrentCheckpoints 是 1，那么当前这个定时请求会被直接拒绝（丢弃），或者让高优先级的 Savepoint 请求在队列里排队挂起。
+        //检查最小暂停时间（Min Pause）：如果上一个 Checkpoint 刚刚完成才过去了 5 秒，而你配置了 minPauseBetweenCheckpoints 必须大于 30 秒，决策器会判定当前不合规，强制把这个请求压入队列延迟执行
         Optional<CheckpointTriggerRequest> checkpointTriggerRequest = chooseRequestToExecute(request);//
+        //如果判定当前可以立刻执行，它就会把请求包裹原封不动吐出来；如果判定应该排队或拒绝，则返回 Optional.empty()
         checkpointTriggerRequest.ifPresent(this::startTriggeringCheckpoint);//
         return request.onCompletionPromise;
     }
@@ -818,7 +822,7 @@ public class CheckpointCoordinator {
                             CheckpointFailureReason.TRIGGER_CHECKPOINT_FAILURE,
                             checkpoint.getFailureCause()));
         } else {
-            //
+            //给sourceTask发送checkpoint请求
             CompletableFuture<Void> triggerTasksFuture = triggerTasks(request, timestamp, checkpoint);
             triggerTasksFuture.exceptionally(
                             failure -> {
@@ -1111,8 +1115,7 @@ public class CheckpointCoordinator {
 
     private Optional<CheckpointTriggerRequest> chooseQueuedRequestToExecute() {
         synchronized (lock) {
-            return requestDecider.chooseQueuedRequestToExecute(
-                    isTriggering, lastCheckpointCompletionRelativeTime);
+            return requestDecider.chooseQueuedRequestToExecute(isTriggering, lastCheckpointCompletionRelativeTime);
         }
     }
 
@@ -1171,8 +1174,7 @@ public class CheckpointCoordinator {
         }
 
         final long checkpointId = message.getCheckpointId();
-        final CheckpointException checkpointException =
-                message.getSerializedCheckpointException().unwrap();
+        final CheckpointException checkpointException = message.getSerializedCheckpointException().unwrap();
         final String reason = checkpointException.getMessage();
 
         PendingCheckpoint checkpoint;
@@ -1198,8 +1200,7 @@ public class CheckpointCoordinator {
                         job,
                         taskManagerLocationInfo,
                         checkpointException.getCause());
-                abortPendingCheckpoint(
-                        checkpoint, checkpointException, message.getTaskExecutionId());
+                abortPendingCheckpoint(checkpoint, checkpointException, message.getTaskExecutionId());
             } else if (LOG.isDebugEnabled()) {
                 if (recentExpiredCheckpoints.contains(checkpointId)) {
                     // message is for an expired checkpoint
@@ -1236,9 +1237,7 @@ public class CheckpointCoordinator {
      * @throws CheckpointException If the checkpoint cannot be added to the completed checkpoint
      *     store.
      */
-    public boolean receiveAcknowledgeMessage(//
-            AcknowledgeCheckpoint message, String taskManagerLocationInfo)
-            throws CheckpointException {
+    public boolean receiveAcknowledgeMessage(AcknowledgeCheckpoint message, String taskManagerLocationInfo) throws CheckpointException {//
         if (shutdown || message == null) {
             return false;
         }
@@ -1279,11 +1278,13 @@ public class CheckpointCoordinator {
             }
 
             if (checkpoint != null && !checkpoint.isDisposed()) {
-
-                switch (checkpoint.acknowledgeTask(
+                //
+                PendingCheckpoint.TaskAcknowledgeResult acknowledgeResult = checkpoint.acknowledgeTask(
                         message.getTaskExecutionId(),
                         message.getSubtaskState(),
-                        message.getCheckpointMetrics())) {
+                        message.getCheckpointMetrics());
+
+                switch (acknowledgeResult) {
                     case SUCCESS:
                         LOG.debug(
                                 "Received acknowledge message for checkpoint {} from task {} of job {} at {}.",
@@ -1293,6 +1294,7 @@ public class CheckpointCoordinator {
                                 taskManagerLocationInfo);
 
                         if (checkpoint.isFullyAcknowledged()) {
+                            //完成checkpoint
                             completePendingCheckpoint(checkpoint);//
                         }
                         break;
@@ -1446,7 +1448,7 @@ public class CheckpointCoordinator {
         }
     }
 
-    private void cleanupAfterCompletedCheckpoint(
+    private void cleanupAfterCompletedCheckpoint(//
             PendingCheckpoint pendingCheckpoint,
             long checkpointId,
             CompletedCheckpoint completedCheckpoint,
@@ -1464,7 +1466,7 @@ public class CheckpointCoordinator {
             dropSubsumedCheckpoints(checkpointId);
 
             // send the "notify complete" call to all vertices, coordinators, etc.
-            sendAcknowledgeMessages(
+            sendAcknowledgeMessages(//
                     pendingCheckpoint.getCheckpointPlan().getTasksToCommitTo(),
                     checkpointId,
                     completedCheckpoint.getTimestamp(),
@@ -1473,7 +1475,7 @@ public class CheckpointCoordinator {
     }
 
     //完成checkpoint
-    private void logCheckpointInfo(CompletedCheckpoint completedCheckpoint) {
+    private void logCheckpointInfo(CompletedCheckpoint completedCheckpoint) {//
         LOG.info(
                 "Completed checkpoint {} for job {} ({} bytes, checkpointDuration={} ms, finalizationTime={} ms).",
                 completedCheckpoint.getCheckpointID(),
@@ -2061,7 +2063,7 @@ public class CheckpointCoordinator {
     // --------------------------------------------------------------------------------------------
     //  Periodic scheduling of checkpoints
     // --------------------------------------------------------------------------------------------
-
+    //开始调度Checkpoint
     public void startCheckpointScheduler() {
         synchronized (lock) {
             if (shutdown) {
@@ -2148,8 +2150,8 @@ public class CheckpointCoordinator {
 
     private void scheduleTriggerWithDelay(long currentRelativeTime, long initDelay) {//
         nextCheckpointTriggeringRelativeTime = currentRelativeTime + initDelay;
-        //
         currentPeriodicTrigger = new ScheduledTrigger();//
+        //调度ScheduledTrigger
         currentPeriodicTriggerFuture = timer.schedule(currentPeriodicTrigger, initDelay, TimeUnit.MILLISECONDS);
     }
 
@@ -2218,6 +2220,7 @@ public class CheckpointCoordinator {
                 if (checkpointInterval != CheckpointCoordinatorConfiguration.DISABLED_CHECKPOINT_INTERVAL) {//true
                     nextCheckpointTriggeringRelativeTime += checkpointInterval;
                     currentPeriodicTriggerFuture =
+                            //下次触发checkpoint时间
                             timer.schedule(
                                     this,
                                     Math.max(
@@ -2394,8 +2397,7 @@ public class CheckpointCoordinator {
         final CheckpointProperties props;
         final @Nullable String externalSavepointLocation;
         final boolean isPeriodic;
-        private final CompletableFuture<CompletedCheckpoint> onCompletionPromise =
-                new CompletableFuture<>();
+        private final CompletableFuture<CompletedCheckpoint> onCompletionPromise = new CompletableFuture<>();
 
         CheckpointTriggerRequest(
                 CheckpointProperties props,

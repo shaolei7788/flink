@@ -103,17 +103,22 @@ public class ExecutionGraphHandler {
             final long checkpointId,
             final CheckpointMetrics checkpointMetrics,
             final TaskStateSnapshot checkpointState) {
-        processCheckpointCoordinatorMessage(
-                "AcknowledgeCheckpoint",
-                coordinator ->
-                        coordinator.receiveAcknowledgeMessage(//
-                                new AcknowledgeCheckpoint(
-                                        jobID,
-                                        executionAttemptID,
-                                        checkpointId,
-                                        checkpointMetrics,
-                                        checkpointState),
-                                retrieveTaskManagerLocation(executionAttemptID)));
+        ThrowingConsumer<CheckpointCoordinator, Exception> consumer = new ThrowingConsumer<>() {
+
+            @Override
+            public void accept(CheckpointCoordinator coordinator) throws Exception {
+                //
+                coordinator.receiveAcknowledgeMessage(//
+                        new AcknowledgeCheckpoint(
+                                jobID,
+                                executionAttemptID,
+                                checkpointId,
+                                checkpointMetrics,
+                                checkpointState),
+                        retrieveTaskManagerLocation(executionAttemptID));
+            }
+        };
+        processCheckpointCoordinatorMessage("AcknowledgeCheckpoint", consumer);
     }
 
     public void declineCheckpoint(final DeclineCheckpoint decline) {
@@ -125,26 +130,23 @@ public class ExecutionGraphHandler {
                                 retrieveTaskManagerLocation(decline.getTaskExecutionId())));
     }
 
-    private void processCheckpointCoordinatorMessage(
-            String messageType, ThrowingConsumer<CheckpointCoordinator, Exception> process) {
+    private void processCheckpointCoordinatorMessage(String messageType, ThrowingConsumer<CheckpointCoordinator, Exception> process) {
         mainThreadExecutor.assertRunningInMainThread();
 
-        final CheckpointCoordinator checkpointCoordinator =
-                executionGraph.getCheckpointCoordinator();
+        final CheckpointCoordinator checkpointCoordinator = executionGraph.getCheckpointCoordinator();
 
         if (checkpointCoordinator != null) {
             ioExecutor.execute(
                     () -> {
                         try {
-                            //
+                            //会调用acknowledgeCheckpoint consumer对象的accept
                             process.accept(checkpointCoordinator);
                         } catch (Exception t) {
                             log.warn("Error while processing " + messageType + " message", t);
                         }
                     });
         } else {
-            String errorMessage =
-                    "Received " + messageType + " message for job {} with no CheckpointCoordinator";
+            String errorMessage = "Received " + messageType + " message for job {} with no CheckpointCoordinator";
             if (executionGraph.getState() == JobStatus.RUNNING) {
                 log.error(errorMessage, executionGraph.getJobID());
             } else {
@@ -153,10 +155,9 @@ public class ExecutionGraphHandler {
         }
     }
 
+    //获取TaskManager 位置信息
     private String retrieveTaskManagerLocation(ExecutionAttemptID executionAttemptID) {
-        final Optional<Execution> currentExecution =
-                Optional.ofNullable(
-                        executionGraph.getRegisteredExecutions().get(executionAttemptID));
+        final Optional<Execution> currentExecution = Optional.ofNullable(executionGraph.getRegisteredExecutions().get(executionAttemptID));
 
         return currentExecution
                 .map(Execution::getAssignedResourceLocation)

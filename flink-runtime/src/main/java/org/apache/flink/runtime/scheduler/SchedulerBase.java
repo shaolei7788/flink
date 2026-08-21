@@ -294,7 +294,7 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
                 SchedulerUtils.createCheckpointStatsTrackerIfCheckpointingIsEnabled(
                         jobGraph,
                         () ->
-                                new DefaultCheckpointStatsTracker(
+                                new DefaultCheckpointStatsTracker(//
                                         jobMasterConfiguration.get(
                                                 WebOptions.CHECKPOINTS_HISTORY_SIZE),
                                         jobManagerJobMetricGroup,
@@ -671,7 +671,7 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
 
     protected final void transitionToRunning() {
         //DefaultExecutionGraph#transitionToRunning 将状态从创建改为运行
-        executionGraph.transitionToRunning();
+        executionGraph.transitionToRunning();//
     }
 
     public ExecutionVertex getExecutionVertex(final ExecutionVertexID executionVertexId) {
@@ -1110,9 +1110,8 @@ public abstract class SchedulerBase implements SchedulerNG, CheckpointScheduling
             final long checkpointId,
             final CheckpointMetrics checkpointMetrics,
             final TaskStateSnapshot checkpointState) {
-
-        executionGraphHandler.acknowledgeCheckpoint(
-                jobID, executionAttemptID, checkpointId, checkpointMetrics, checkpointState);
+        //ExecutionGraphHandler#acknowledgeCheckpoint
+        executionGraphHandler.acknowledgeCheckpoint(jobID, executionAttemptID, checkpointId, checkpointMetrics, checkpointState);//
     }
 
     @Override
