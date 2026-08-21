@@ -11,6 +11,8 @@ import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.util.Collector;
 
+import java.time.Duration;
+
 // Function(代码逻辑) -> Transformation(逻辑结构) -> Operator(运行时实例)
 //      定义：用户业务逻辑的最小承载体。
 //      所处阶段：API 开发阶段。
@@ -52,8 +54,10 @@ public class WordCountStream {
 		env.enableCheckpointing(1000 * 30);
 		// 模式 Exactly-Once、At-Least-Once
 		env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
-        //使用非对齐checkpoint
+        //使用非对齐checkpoint，需要跟下面的配合使用
         env.getCheckpointConfig().enableUnalignedCheckpoints();
+        //设置为对齐模式，checkpoint 超时时间为20s，20s未完成checkpoint，则升级为非对齐
+        env.getCheckpointConfig().setAlignedCheckpointTimeout(Duration.ofSeconds(20));
 		//两个 checkpoint 之间最小间隔
 		env.getCheckpointConfig().setMinPauseBetweenCheckpoints(5000);
 		//超时时间

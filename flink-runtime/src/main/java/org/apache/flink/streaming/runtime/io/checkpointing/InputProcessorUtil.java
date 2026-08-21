@@ -105,7 +105,7 @@ public class InputProcessorUtil {
                                 Arrays.stream(inputs)
                                         .mapToLong(gate -> gate.getChannelInfos().size())
                                         .sum();
-                return createBarrierHandler(
+                return createBarrierHandler(//
                         toNotifyOnCheckpoint,
                         jobConf,
                         config,
@@ -153,7 +153,7 @@ public class InputProcessorUtil {
                 config.getConfiguration()
                         .get(CheckpointingOptions.ENABLE_CHECKPOINTS_AFTER_TASKS_FINISH);
         if (CheckpointingOptions.isUnalignedCheckpointEnabled(jobConf)) {
-            return SingleCheckpointBarrierHandler.alternating(
+            return SingleCheckpointBarrierHandler.alternating(//
                     taskName,
                     toNotifyOnCheckpoint,
                     checkpointCoordinator,
