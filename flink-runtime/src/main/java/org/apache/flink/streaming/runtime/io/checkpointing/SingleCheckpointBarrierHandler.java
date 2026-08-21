@@ -352,14 +352,15 @@ public class SingleCheckpointBarrierHandler extends CheckpointBarrierHandler {
     }
 
     private void registerAlignmentTimer(CheckpointBarrier announcedBarrier) {
+        // timerDelay = 13536
         long timerDelay = BarrierAlignmentUtil.getTimerDelay(getClock(), announcedBarrier);
 
-        this.currentAlignmentTimer =
-                registerTimer.registerTask(
+        this.currentAlignmentTimer = registerTimer.registerTask(
                         () -> {
                             long barrierId = announcedBarrier.getId();
                             try {
                                 if (currentCheckpointId == barrierId && !getAllBarriersReceivedFuture(barrierId).isDone()) {
+                                    //
                                     currentState = currentState.alignedCheckpointTimeout(context, announcedBarrier);
                                 }
                             } catch (CheckpointException ex) {
