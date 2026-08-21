@@ -977,6 +977,7 @@ public abstract class OperatorChain<OUT, OP extends StreamOperator<OUT>>
                         x ->
                                 operatorEventDispatcher
                                         .getOperatorEventGateway(x)
+                                        //OperatorEventDispatcherImpl#sendEventToCoordinator
                                         .sendEventToCoordinator(
                                                 new AcknowledgeCheckpointEvent(checkpointId)));
     }

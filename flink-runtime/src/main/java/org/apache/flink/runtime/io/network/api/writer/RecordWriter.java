@@ -98,7 +98,7 @@ public abstract class RecordWriter<T extends IOReadableWritable> implements Avai
                             : DEFAULT_OUTPUT_FLUSH_THREAD_NAME + " for " + taskName;
 
             //TODO
-            //timeout = 20000;
+            timeout = 20000;
             //创建OutputFlusher线程 timeout 默认100
             outputFlusher = new OutputFlusher(threadName, timeout);
             //【重点】 启动线程

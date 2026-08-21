@@ -185,17 +185,18 @@ public class RegularOperatorChain<OUT, OP extends StreamOperator<OUT>>
             ChannelStateWriter.ChannelStateWriteResult channelStateWriteResult,
             CheckpointStreamFactory storage)
             throws Exception {
+        // getAllOperators(true) 获取所有的operator
         for (StreamOperatorWrapper<?, ?> operatorWrapper : getAllOperators(true)) {
             if (!operatorWrapper.isClosed()) {
-                operatorSnapshotsInProgress.put(
-                        operatorWrapper.getStreamOperator().getOperatorID(),
-                        buildOperatorSnapshotFutures(//
-                                checkpointMetaData,
-                                checkpointOptions,
-                                operatorWrapper.getStreamOperator(),
-                                isRunning,
-                                channelStateWriteResult,
-                                storage));
+                OperatorSnapshotFutures operatorSnapshotFutures = buildOperatorSnapshotFutures(//
+                        checkpointMetaData,
+                        checkpointOptions,
+                        operatorWrapper.getStreamOperator(),
+                        isRunning,
+                        channelStateWriteResult,
+                        storage);
+                //
+                operatorSnapshotsInProgress.put(operatorWrapper.getStreamOperator().getOperatorID(),operatorSnapshotFutures);
             }
         }
         //发送ack消息
@@ -210,8 +211,7 @@ public class RegularOperatorChain<OUT, OP extends StreamOperator<OUT>>
             ChannelStateWriter.ChannelStateWriteResult channelStateWriteResult,
             CheckpointStreamFactory storage)
             throws Exception {
-        OperatorSnapshotFutures snapshotInProgress =
-                checkpointStreamOperator(op, checkpointMetaData, checkpointOptions, storage, isRunning);
+        OperatorSnapshotFutures snapshotInProgress = checkpointStreamOperator(op, checkpointMetaData, checkpointOptions, storage, isRunning);//
         snapshotChannelStates(op, channelStateWriteResult, snapshotInProgress);
 
         return snapshotInProgress;
@@ -225,7 +225,7 @@ public class RegularOperatorChain<OUT, OP extends StreamOperator<OUT>>
             Supplier<Boolean> isRunning)
             throws Exception {
         try {
-            //
+            //StreamMap#snapshotState
             return op.snapshotState(
                     checkpointMetaData.getCheckpointId(),
                     checkpointMetaData.getTimestamp(),

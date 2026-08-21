@@ -89,7 +89,7 @@ public final class OperatorEventDispatcherImpl implements OperatorEventDispatche
 
     @Override
     public OperatorEventGateway getOperatorEventGateway(OperatorID operatorId) {
-        return new OperatorEventGatewayImpl(toCoordinator, operatorId);
+        return new OperatorEventGatewayImpl(toCoordinator, operatorId);//
     }
 
     // ------------------------------------------------------------------------
@@ -100,8 +100,7 @@ public final class OperatorEventDispatcherImpl implements OperatorEventDispatche
 
         private final OperatorID operatorId;
 
-        private OperatorEventGatewayImpl(
-                TaskOperatorEventGateway toCoordinator, OperatorID operatorId) {
+        private OperatorEventGatewayImpl(TaskOperatorEventGateway toCoordinator, OperatorID operatorId) {
             this.toCoordinator = toCoordinator;
             this.operatorId = operatorId;
         }
@@ -116,7 +115,7 @@ public final class OperatorEventDispatcherImpl implements OperatorEventDispatche
                 // unchecked exception and let it bubble up
                 throw new FlinkRuntimeException("Cannot serialize operator event", e);
             }
-
+            //
             toCoordinator.sendOperatorEventToCoordinator(operatorId, serializedEvent);
         }
     }
