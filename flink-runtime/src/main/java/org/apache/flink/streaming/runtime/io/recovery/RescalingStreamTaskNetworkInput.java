@@ -157,7 +157,7 @@ public final class RescalingStreamTaskNetworkInput<T>
                 "Not all data has been fully consumed");
 
         close();
-        return new StreamTaskNetworkInput<>(
+        return new StreamTaskNetworkInput<>(//
                 checkpointedInputGate,
                 inputSerializer,
                 ioManager,

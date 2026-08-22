@@ -143,6 +143,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import static org.apache.flink.configuration.TaskManagerOptions.BUFFER_DEBLOAT_PERIOD;
 import static org.apache.flink.runtime.metrics.MetricNames.GATE_RESTORE_DURATION;
@@ -382,6 +383,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
                 timerService,
                 uncaughtExceptionHandler,
                 actionExecutor,
+                //
                 new TaskMailboxImpl(Thread.currentThread()));
     }
 
@@ -411,17 +413,16 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
                     .getIOMetricGroup()
                     .registerMailboxSizeSupplier(() -> mailbox.size());
 
-            // this::processInput =
-            //new MailboxDefaultAction() {
-            //     @Override
-            //     public void runDefaultAction(Controller controller) throws Exception {
-            //         this.processInput(controller); // 调用当前类的 processInput 读数据
-            //     }
-            // }
-            this.mailboxProcessor =
-                    new MailboxProcessor(
-                            //this::processInput 把读数据的函数作为“默认行为”传给邮箱处理器
-                            this::processInput, mailbox, actionExecutor, mailboxMetricsControl);
+            MailboxDefaultAction defaultAction = new MailboxDefaultAction() {
+                @Override
+                public void runDefaultAction(Controller controller) throws Exception {
+                    StreamTask.this.processInput(controller); // 调用当前类的 processInput 读数据
+                }
+            };
+            //this::processInput 把读数据的函数作为“默认行为”传给邮箱处理器
+            //原代码 this.mailboxProcessor = new MailboxProcessor(this::processInput, mailbox, actionExecutor, mailboxMetricsControl);
+            //自己改的，方便理解
+            this.mailboxProcessor = new MailboxProcessor(defaultAction, mailbox, actionExecutor, mailboxMetricsControl);
 
             // Should be closed last.
             resourceCloser.registerCloseable(mailboxProcessor);
@@ -925,7 +926,9 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         }
 
         return CompletableFuture.allOf(recoveredFutures.toArray(new CompletableFuture[0]))
-                .thenRun(mailboxProcessor::suspend);
+                .thenRun(
+                        //会发送毒药邮件
+                        mailboxProcessor::suspend);
     }
 
     private void ensureNotCanceled() {

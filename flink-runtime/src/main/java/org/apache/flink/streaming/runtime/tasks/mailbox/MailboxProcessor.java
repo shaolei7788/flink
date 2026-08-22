@@ -72,24 +72,36 @@ public class MailboxProcessor implements Closeable {
      * The mailbox data-structure that manages request for special actions, like timers,
      * checkpoints, ...
      */
+    //TaskMailboxImpl
+    //作用：核心邮箱队列，负责存放所有非默认的、需要被 Mailbox 线程执行的控制消息（称为 Mail）。
+    //机制：存放的 Mail 通常是控制类事件（如：触发 Checkpoint 的命令、Timer 到期触发的逻辑、下游反压信号等）。
+    //当队列中有 Mail 时，Mailbox 线程会优先暂停数据处理，先去执行队列里的命令
     protected final TaskMailbox mailbox;
 
     /**
      * Action that is repeatedly executed if no action request is in the mailbox. Typically record
      * processing.
      */
+    //作用：默认循环行为，也就是在邮箱队列中没有控制消息时，线程应该持续重复做的事情。机制：在 Flink 算子中，这个默认行为绝大多数情况下就是“处理一条数据记录 (Record Processing)”。
+    //由于数据量极大，如果把每条数据都包装成 Mail 放进队列会产生巨大的内存开销，因此设计了该属性，让线程在“闲时”一直疯狂处理数据
     protected final MailboxDefaultAction mailboxDefaultAction;
 
     /**
      * Control flag to terminate the mailbox processor. Once it was terminated could not be
      * restarted again. Must only be accessed from mailbox thread.
      */
+    //作用：终结状态控制器，用来决定整个 Mailbox 循环是否应该彻底退出（终止）。
+    //机制：当 StreamTask 正常结束、被取消（Cancel）或发生不可恢复的异常时，该值会被设为 false，
+    //标志着 MailboxProcessor 的生命周期结束。一旦转为 false，它无法再被重启，整个线程将退出退出
     private boolean mailboxLoopRunning;
 
     /**
      * Control flag to temporary suspend the mailbox loop/processor. After suspending the mailbox
      * processor can be still later resumed. Must only be accessed from mailbox thread.
      */
+    //作用：临时暂停标识，用来控制整个 Mailbox 处理器是否暂时停止消费和运行。
+    //机制：它与 mailboxLoopRunning 不同。
+    //如果是 suspended = true，说明只是阶段性暂停（例如 Task 正在进行某些重大的内部状态切换或初始化），后续可以通过将其设为 false 重新恢复（Resume） 循环
     private boolean suspended;
 
     /**
@@ -97,10 +109,18 @@ public class MailboxProcessor implements Closeable {
      * suspended default action (suspended if not-null) and to reuse the object as return value in
      * consecutive suspend attempts. Must only be accessed from mailbox thread.
      */
+    //作用：数据处理（默认行为）的暂停凭证（可重用标记）。机制：当上游没有数据流入，或者下游发生反压导致当前算子无法继续处理数据时，
+    //Flink 需要暂停 MailboxDefaultAction（即停止调用处理数据的方法）。
+    //该属性用来记录当前的暂停状态（非空即代表处于暂停中）。为了避免频繁暂停/恢复时产生大量碎片对象，Flink 会复用这个凭证对象作为返回值
     private DefaultActionSuspension suspendedDefaultAction;
 
+    //作用：动作执行包装器/代理。机制：虽然 Mailbox 模型实现了单线程化，但在某些历史遗留逻辑或特定的异常处理、状态同步切换中，仍需要统一的执行入口。
+    //actionExecutor 确保了所有在 Mailbox 线程中跑的外部动作（Action）都包裹在一个标准的异常处理或特定的上下文切面中执行，是 StreamTask 与 MailboxProcessor 之间的胶水
     private final StreamTaskActionExecutor actionExecutor;
 
+    //作用：邮箱监控度量控制器。机制：用来收集和统计 Mailbox 的运行指标。
+    //比如：当前邮箱队列里堆积了多少个控制 Mail（Mailbox Size）、Mailbox 线程被阻塞/延迟了多久等。
+    //这些指标最终会暴露给 Flink UI，方便用户排查是否有严重的定时器阻塞或 Checkpoint 卡顿问题
     private final MailboxMetricsController mailboxMetricsControl;
 
     @VisibleForTesting
@@ -112,8 +132,7 @@ public class MailboxProcessor implements Closeable {
         this(mailboxDefaultAction, StreamTaskActionExecutor.IMMEDIATE);
     }
 
-    public MailboxProcessor(
-            MailboxDefaultAction mailboxDefaultAction, StreamTaskActionExecutor actionExecutor) {
+    public MailboxProcessor(MailboxDefaultAction mailboxDefaultAction, StreamTaskActionExecutor actionExecutor) {
         this(mailboxDefaultAction, new TaskMailboxImpl(Thread.currentThread()), actionExecutor);
     }
 
@@ -129,8 +148,8 @@ public class MailboxProcessor implements Closeable {
                         new DescriptiveStatisticsHistogram(10), new SimpleCounter()));
     }
 
-    //
-    public MailboxProcessor(
+
+    public MailboxProcessor(//
             MailboxDefaultAction mailboxDefaultAction,
             TaskMailbox mailbox,
             StreamTaskActionExecutor actionExecutor,
@@ -213,14 +232,12 @@ public class MailboxProcessor implements Closeable {
      * be called again.
      */
     public void runMailboxLoop() throws Exception {
-        suspended = !mailboxLoopRunning;
+        suspended = !mailboxLoopRunning;//mailboxLoopRunning 从构造器设置为true
         //获取最新的TaskMailbox，并设置为本地TaskMailbox
         // mailbox = TaskMailboxImpl
         final TaskMailbox localMailbox = mailbox;
-        //检查是否是Mailbox主线程
-        checkState(
-                localMailbox.isMailboxThread(),
-                "Method must be executed by declared mailbox thread!");
+        //检查是否是 Mailbox主线程
+        checkState(localMailbox.isMailboxThread(), "Method must be executed by declared mailbox thread!");
 
         assert localMailbox.getState() == TaskMailbox.State.OPEN : "Mailbox must be opened!";
         //创建MailboxController，可以控制Mailbox的循环，临时暂停和恢复mailboxDefaultAction(默认动作)
@@ -228,7 +245,7 @@ public class MailboxProcessor implements Closeable {
         //System.out.println(Thread.currentThread().getName() + " 处理runMailboxLoop");
         //如果它返回 true，主线程就继续处理邮件或读取数据；如果返回 false，主线程就会立刻退出死循环，从而启动 Task 的关闭流程
         // 【第一道关卡】只要Task 没死没被 Cancel，大循环就能一直转
-        while (isNextLoopPossible()) {
+        while (isNextLoopPossible()) {//
             // The blocking `processMail` call will not return until default action is available.
             // 1. 如果邮箱里有紧急信令或普通 Mail，优先把邮箱“清空”
             //一次性处理完所有“积压在本地缓冲”的 Mail，而不是只处理一条
@@ -238,9 +255,9 @@ public class MailboxProcessor implements Closeable {
             // 3 退场交人：当这 5 封邮件全部消灭干净、tryTakeFromBatch() 返回空时，内部的 while 循环打破，processMail 方法结束。
             // 4 轮到数据：控制权回到外层，主线程高高兴兴地去执行 runDefaultAction，读取并处理一小批/一条网络流数据。
             processMail(localMailbox, false);//
-            if (isNextLoopPossible()) {
+            if (isNextLoopPossible()) {//
                 // 2. 邮箱空了，执行“默认行为”——也就是源源不断地读取并处理 upstream 流数据
-                // 执行mailboxDefaultAction.runDefaultAction方法 就是执行 processInput
+                // 执行mailboxDefaultAction.runDefaultAction方法 会调用 StreamTask.this.processInput
                 //对于sourceTask SourceStreamTask#processInput
                 //其它Task  StreamTask#processInput
                 mailboxDefaultAction.runDefaultAction(mailboxController); // lock is acquired inside default action as needed
@@ -250,6 +267,7 @@ public class MailboxProcessor implements Closeable {
 
     /** Suspend the running of the loop which was started by {@link #runMailboxLoop()}}. */
     public void suspend() {
+        //发送毒药邮件
         sendPoisonMail(() -> suspended = true);
     }
 
@@ -338,6 +356,7 @@ public class MailboxProcessor implements Closeable {
                     // #close may cause a
                     // MailboxStateException in #sendPriorityMail.
                     if (mailbox.getState() == TaskMailbox.State.OPEN) {
+                        //
                         sendControlMail(mail, "poison mail");
                     }
                 });
@@ -375,7 +394,7 @@ public class MailboxProcessor implements Closeable {
 
         // Take mails in a non-blockingly and execute them.
         //todo 非阻塞从batch队列拿所有邮件并处理
-        boolean processed = isBatchAvailable && processMailsNonBlocking(singleStep);
+        boolean processed = isBatchAvailable && processMailsNonBlocking(singleStep);//
         // singleStep 一定是false
         if (singleStep) {
             return processed;
@@ -388,7 +407,7 @@ public class MailboxProcessor implements Closeable {
         return processed;
     }
 
-    //默认行为不可用时的专属阻塞等待
+    //默认行为不可用时处理邮件
     private boolean processMailsWhenDefaultActionUnavailable() throws Exception {
         boolean processedSomething = false;
         Optional<Mail> maybeMail;
@@ -419,7 +438,7 @@ public class MailboxProcessor implements Closeable {
             Mail mail = maybeMail.get();
             // MailboxMetricsController#scheduleLatencyMeasurement 会每隔1s 发送一个邮件
             //mail =  Measure mailbox latency metric 用于监控 Task 线程的健康度与响应速度（例如 Web UI 或 Prometheus 上的 mailboxLatency 指标
-//            System.out.println("processMailsWhenDefaultActionUnavailable:  " +  mail);
+            System.out.println("processMailsWhenDefaultActionUnavailable:  " +  mail);
 //            if("resume default action".equals(mail.toString())){
 //                System.out.println("恢复默认读取动作:" + mail);
 //            }
@@ -432,6 +451,7 @@ public class MailboxProcessor implements Closeable {
         return processedSomething;
     }
 
+    //非阻塞式运行 batch队列的所有邮件
     private boolean processMailsNonBlocking(boolean singleStep) throws Exception {
         long processedMails = 0;
         Optional<Mail> maybeMail;
@@ -441,9 +461,9 @@ public class MailboxProcessor implements Closeable {
                 maybePauseIdleTimer();
             }
             Mail mail = maybeMail.get();
-            System.out.println("processMailsNonBlocking : " + mail);
+            //System.out.println(Thread.currentThread().getName() + "  processMailsNonBlocking : " + mail);
             //运行邮件
-            runMail(mail);
+            runMail(mail);//
             if (singleStep) {
                 break;
             }
@@ -464,8 +484,8 @@ public class MailboxProcessor implements Closeable {
             // start latency measurement on first mail that is not suspending mailbox execution,
             // i.e., on first non-poison mail, otherwise latency measurement is not started to avoid
             // overhead
-            if (!mailboxMetricsControl.isLatencyMeasurementStarted()
-                    && mailboxMetricsControl.isLatencyMeasurementSetup()) {
+            if (!mailboxMetricsControl.isLatencyMeasurementStarted() && mailboxMetricsControl.isLatencyMeasurementSetup()) {
+                //定时投递 Measure邮件
                 mailboxMetricsControl.startLatencyMeasurement();
             }
         }
@@ -515,6 +535,7 @@ public class MailboxProcessor implements Closeable {
         // 'Suspended' can be false only when 'mailboxLoopRunning' is true.
         return !suspended;
     }
+
 
     @VisibleForTesting
     public boolean isMailboxLoopRunning() {
