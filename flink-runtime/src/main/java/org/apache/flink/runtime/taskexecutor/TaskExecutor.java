@@ -844,8 +844,7 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
                 throw new TaskSubmissionException("Could not submit task.", e);
             }
 
-            Task task =
-                    new Task(
+            Task task = new Task(
                             jobInformation,
                             taskInformation,
                             tdd.getExecutionAttemptId(),
@@ -894,12 +893,10 @@ public class TaskExecutor extends RpcEndpoint implements TaskExecutorGateway {
                 //开始任务线程
                 task.startTaskThread();
 
-                setupResultPartitionBookkeeping(
-                        tdd.getJobId(), tdd.getProducedPartitions(), task.getTerminationFuture());
+                setupResultPartitionBookkeeping(tdd.getJobId(), tdd.getProducedPartitions(), task.getTerminationFuture());
                 return CompletableFuture.completedFuture(Acknowledge.get());
             } else {
-                final String message =
-                        "TaskManager already contains a task for id " + task.getExecutionId() + '.';
+                final String message = "TaskManager already contains a task for id " + task.getExecutionId() + '.';
 
                 log.debug(message);
                 throw new TaskSubmissionException(message);

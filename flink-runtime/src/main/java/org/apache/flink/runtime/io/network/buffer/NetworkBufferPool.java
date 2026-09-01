@@ -63,11 +63,11 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 //在Task实例之间进行共享
 
 //在TaskManager节点启动时，会在创建和初始化ShuffleEnviorment的过程中创建NetworkBufferPool，
-// NetworkBufferPool创建时会通过ByteBuffer从堆外申请一定数量的Segement（默认64M，每块segement32kb，一共2048块segement），
+// NetworkBufferPool创建时会通过ByteBuffer从堆外申请一定数量的Segement（默认64M，每块 Segement 32kb，一共2048块 Segement），
 // 所有Task实例中的ResultPartition和InputGate所需要的Buffer都从NetworkBufferPool申请
 
 //NetworkBufferPool与整个TaskManager绑定，用于提供TaskManager所需的Buffer
-// LocalBufferPool为ResultPartition和InputGate提供Buffer LocalBufferPool设计的主要目的：缓存Segement、避免反复申请、释放Segement的开销
+// LocalBufferPool 为ResultPartition和InputGate提供Buffer LocalBufferPool设计的主要目的：缓存 Segement、避免反复申请、释放Segement 的开销
 public class NetworkBufferPool
         implements BufferPoolFactory, MemorySegmentProvider, AvailabilityProvider {
 
@@ -105,7 +105,7 @@ public class NetworkBufferPool
     public NetworkBufferPool(int numberOfSegmentsToAllocate, int segmentSize) {
         this(numberOfSegmentsToAllocate, segmentSize, Duration.ofMillis(Integer.MAX_VALUE));
     }
-    //一个TaskManager只会创建一个NetworkBufferPool
+    //一个TaskManager只会创建一个 NetworkBufferPool
     /** Allocates all {@link MemorySegment} instances managed by this pool. */
     public NetworkBufferPool(
             int numberOfSegmentsToAllocate,//2048
@@ -126,16 +126,14 @@ public class NetworkBufferPool
             this.availableMemorySegments = new ArrayDeque<>(numberOfSegmentsToAllocate);
         } catch (OutOfMemoryError err) {
             throw new OutOfMemoryError(
-                    "Could not allocate buffer queue of length "
-                            + numberOfSegmentsToAllocate
-                            + " - "
-                            + err.getMessage());
+                    "Could not allocate buffer queue of length " + numberOfSegmentsToAllocate + " - " + err.getMessage());
         }
 
         try {
             //
             for (int i = 0; i < numberOfSegmentsToAllocate; i++) {
-                availableMemorySegments.add(MemorySegmentFactory.allocateUnpooledOffHeapMemory(segmentSize, null));
+                MemorySegment memorySegment = MemorySegmentFactory.allocateUnpooledOffHeapMemory(segmentSize, null);
+                availableMemorySegments.add(memorySegment);
             }
         } catch (OutOfMemoryError err) {
             int allocated = availableMemorySegments.size();
@@ -286,6 +284,7 @@ public class NetworkBufferPool
 
         final MemorySegment segment = availableMemorySegments.poll();
         if (availableMemorySegments.isEmpty() && segment != null) {
+            // availableMemorySegments 队列为空
             availabilityHelper.resetUnavailable();
         }
         return segment;
@@ -482,7 +481,7 @@ public class NetworkBufferPool
                 maxOverdraftBuffersPerGate);
     }
 
-    private BufferPool internalCreateBufferPool(
+    private BufferPool internalCreateBufferPool(//
             int numRequiredBuffers,
             int maxUsedBuffers,
             int numSubpartitions,
@@ -511,8 +510,8 @@ public class NetworkBufferPool
 
             this.numTotalRequiredBuffers += numRequiredBuffers;
 
-            // We are good to go, create a new buffer pool and redistribute
-            // non-fixed size buffers.
+            // We are good to go, create a new buffer pool and redistribute non-fixed size buffers.
+            //
             LocalBufferPool localBufferPool = new LocalBufferPool(//
                             this,
                             numRequiredBuffers,

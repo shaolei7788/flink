@@ -223,16 +223,12 @@ public class NettyShuffleEnvironment
             ShuffleIOOwnerContext ownerContext,
             List<ResultPartitionDeploymentDescriptor> resultPartitionDeploymentDescriptors) {
         synchronized (lock) {
-            Preconditions.checkState(
-                    !isClosed, "The NettyShuffleEnvironment has already been shut down.");
+            Preconditions.checkState(!isClosed, "The NettyShuffleEnvironment has already been shut down.");
 
-            ResultPartition[] resultPartitions =
-                    new ResultPartition[resultPartitionDeploymentDescriptors.size()];
-            for (int partitionIndex = 0;
-                    partitionIndex < resultPartitions.length;
-                    partitionIndex++) {
-                resultPartitions[partitionIndex] =
-                        resultPartitionFactory.create(
+            ResultPartition[] resultPartitions = new ResultPartition[resultPartitionDeploymentDescriptors.size()];
+            for (int partitionIndex = 0; partitionIndex < resultPartitions.length; partitionIndex++) {
+                //ResultPartitionFactory#create
+                resultPartitions[partitionIndex] = resultPartitionFactory.create(//
                                 ownerContext.getOwnerName(),
                                 partitionIndex,
                                 resultPartitionDeploymentDescriptors.get(partitionIndex));

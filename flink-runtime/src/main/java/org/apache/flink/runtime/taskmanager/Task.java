@@ -413,9 +413,7 @@ public class Task
 
         // produced intermediate result partitions
         final ResultPartitionWriter[] resultPartitionWriters =
-                shuffleEnvironment
-                        .createResultPartitionWriters(
-                                taskShuffleContext, resultPartitionDeploymentDescriptors)
+                shuffleEnvironment.createResultPartitionWriters(taskShuffleContext, resultPartitionDeploymentDescriptors)//
                         .toArray(new ResultPartitionWriter[] {});
 
         this.partitionWriters = resultPartitionWriters;
@@ -429,9 +427,7 @@ public class Task
         this.inputGates = new IndexedInputGate[gates.length];
         int counter = 0;
         for (IndexedInputGate gate : gates) {
-            inputGates[counter++] =
-                    new InputGateWithMetrics(
-                            gate, metrics.getIOMetricGroup().getNumBytesInCounter());
+            inputGates[counter++] = new InputGateWithMetrics(gate, metrics.getIOMetricGroup().getNumBytesInCounter());
         }
 
         invokableHasBeenCanceled = new AtomicBoolean(false);
@@ -666,20 +662,18 @@ public class Task
 
             LOG.debug("Registering task at network: {}.", this);
             //初始化当前 Task 的所有数据输出通道（ResultPartition）和数据输入通道（InputGate），使该 Task 具备发送和接收网络数据的能力
-            setupPartitionsAndGates(partitionWriters, inputGates);
+            setupPartitionsAndGates(partitionWriters, inputGates);//
 
             for (ResultPartitionWriter partitionWriter : partitionWriters) {
+                //TaskEventDispatcher#registerPartition
                 taskEventDispatcher.registerPartition(partitionWriter.getPartitionId());
             }
 
             // next, kick off the background copying of files for the distributed cache
             try {
-                for (Map.Entry<String, DistributedCache.DistributedCacheEntry> entry :
-                        DistributedCache.readFileInfoFromConfig(jobConfiguration)) {
+                for (Map.Entry<String, DistributedCache.DistributedCacheEntry> entry : DistributedCache.readFileInfoFromConfig(jobConfiguration)) {
                     LOG.info("Obtaining local cache file for '{}'.", entry.getKey());
-                    Future<Path> cp =
-                            fileCache.createTmpFile(
-                                    entry.getKey(), entry.getValue(), jobId, executionId);
+                    Future<Path> cp = fileCache.createTmpFile(entry.getKey(), entry.getValue(), jobId, executionId);
                     distributedCacheEntries.put(entry.getKey(), cp);
                 }
             } catch (Exception e) {
@@ -701,10 +695,9 @@ public class Task
             TaskKvStateRegistry kvStateRegistry =
                     kvStateService.createKvStateTaskRegistry(jobId, getJobVertexId());
             //todo 构建一个环境对象
-            //在作业执行阶段由Task实例持有，提供状态后端、分布式缓存等运行时资源 每个Task实例持有独立的RuntimeEnvironment
+            //在作业执行阶段由Task实例持有，提供状态后端、分布式缓存等运行时资源 每个Task实例持有独立的 RuntimeEnvironment
             //StreamExecutionEnvironment在作业开发阶段使用，负责构建执行拓扑图（StreamGraph）
-            Environment env =
-                    new RuntimeEnvironment(
+            Environment env = new RuntimeEnvironment(//
                             jobId,
                             jobType,
                             vertexId,
@@ -1660,8 +1653,7 @@ public class Task
 
         final Class<? extends TaskInvokable> invokableClass;
         try {
-            invokableClass =
-                    Class.forName(className, true, classLoader).asSubclass(TaskInvokable.class);
+            invokableClass = Class.forName(className, true, classLoader).asSubclass(TaskInvokable.class);
         } catch (Throwable t) {
             throw new Exception("Could not load the task's invokable class.", t);
         }
@@ -1677,7 +1669,7 @@ public class Task
         // instantiate the class
         try {
             //noinspection ConstantConditions  --> cannot happen
-            //创建StreamTask 实例
+            //创建 StreamTask 实例   StreamTask(Environment env)
             return statelessCtor.newInstance(environment);
         } catch (InvocationTargetException e) {
             // directly forward exceptions from the eager initialization

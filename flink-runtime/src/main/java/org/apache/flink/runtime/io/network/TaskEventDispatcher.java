@@ -40,6 +40,18 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  * <p>Backwards events only work for tasks, which produce pipelined results, where both the
  * producing and consuming task are running at the same time.
  */
+//1. 核心作用：建立“分区”与“处理器”的映射
+//   键（ResultPartitionID）：唯一标识上游任务（Task）产生的某一个特定的结果分区（Result Partition）。
+//   值（TaskEventHandler）：负责处理发送给该分区的事件的处理器。每个正在运行的、需要接收外部事件（如迭代流中的反馈事件、下游的反向控制信号等）的结果分区，
+//   都会将其对应的处理器注册到这个 HashMap 中。
+//2. 工作机制：反向事件路由在 Flink 中，数据通常是顺着拓扑结构从上游流向下游的。但在某些特殊场景（例如 迭代流 Iteration）中，下游的任务需要将某些控制事件（例如进度通知、迭代终止信号）反向发送给上游的任务。
+//    1.注册：当上游任务初始化其 ResultPartition 时，会为该分区创建一个 TaskEventHandler，
+//    并调用 TaskEventDispatcher.registerPartition() 将其存入 registeredHandlers。
+//    2.触发：当下游任务通过网络传输（如通过 RemoteInputChannel）向上传递一个 TaskEvent 时，网络层会接收到这个事件。
+//    3.路由：TaskEventDispatcher 会根据事件携带的 ResultPartitionID，在 registeredHandlers 中查找对应的 TaskEventHandler。
+//    4.分发：一旦找到，就会将事件转交给该处理器，由处理器触发上游任务相应的逻辑。
+//3. 生命周期管理这个 HashMap 不是静态不变的，它伴随着任务的生命周期动态变化：任务启动/分区创建：调用 registerPartition 写入 Map。
+//   任务结束/分区销毁：调用 劈销/注销 方法（如 unregistratePartition）从 Map 中移除，防止内存泄漏。
 public class TaskEventDispatcher implements TaskEventPublisher {
     private static final Logger LOG = LoggerFactory.getLogger(TaskEventDispatcher.class);
 

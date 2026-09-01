@@ -124,8 +124,7 @@ public class NettyShuffleServiceFactory
             int numberOfSlots,
             String[] tmpDirPaths) {
         NettyConfig nettyConfig = config.nettyConfig();
-        ConnectionManager connectionManager =
-                nettyConfig != null
+        ConnectionManager connectionManager = nettyConfig != null
                         ? new NettyConnectionManager(//
                                 resultPartitionManager,
                                 taskEventPublisher,
@@ -173,8 +172,7 @@ public class NettyShuffleServiceFactory
                             .collect(Collectors.joining("\n\t")));
         }
         //创建NetworkBufferPool 对象 会初始化segment
-        NetworkBufferPool networkBufferPool =
-                new NetworkBufferPool(//
+        NetworkBufferPool networkBufferPool = new NetworkBufferPool(//
                         config.numNetworkBuffers(),
                         config.networkBufferSize(),
                         config.getRequestSegmentsTimeout());

@@ -143,7 +143,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
 
 import static org.apache.flink.configuration.TaskManagerOptions.BUFFER_DEBLOAT_PERIOD;
 import static org.apache.flink.runtime.metrics.MetricNames.GATE_RESTORE_DURATION;
@@ -383,7 +382,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
                 timerService,
                 uncaughtExceptionHandler,
                 actionExecutor,
-                //
+                // 邮箱实现类
                 new TaskMailboxImpl(Thread.currentThread()));
     }
 

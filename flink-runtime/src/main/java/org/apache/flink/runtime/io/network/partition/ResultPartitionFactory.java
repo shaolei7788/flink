@@ -144,7 +144,7 @@ public class ResultPartitionFactory {
                 desc.getMaxParallelism(),
                 desc.isBroadcast(),
                 desc.getShuffleDescriptor(),
-                createBufferPoolFactory(desc.getNumberOfSubpartitions(), desc.getPartitionType()),
+                createBufferPoolFactory(desc.getNumberOfSubpartitions(), desc.getPartitionType()),//
                 desc.isNumberOfPartitionConsumerUndefined());
     }
 
@@ -177,8 +177,7 @@ public class ResultPartitionFactory {
         if (type == ResultPartitionType.PIPELINED
                 || type == ResultPartitionType.PIPELINED_BOUNDED
                 || type == ResultPartitionType.PIPELINED_APPROXIMATE) {
-            final PipelinedResultPartition pipelinedPartition =
-                    new PipelinedResultPartition(
+            final PipelinedResultPartition pipelinedPartition = new PipelinedResultPartition(
                             taskNameWithSubtaskAndId,
                             partitionIndex,
                             id,
@@ -191,8 +190,7 @@ public class ResultPartitionFactory {
 
             for (int i = 0; i < subpartitions.length; i++) {
                 if (type == ResultPartitionType.PIPELINED_APPROXIMATE) {
-                    subpartitions[i] =
-                            new PipelinedApproximateSubpartition(
+                    subpartitions[i] = new PipelinedApproximateSubpartition(
                                     i,
                                     configuredNetworkBuffersPerChannel,
                                     startingBufferSize,
@@ -343,33 +341,36 @@ public class ResultPartitionFactory {
      * regression if processing input is based on at-least one buffer available on output side.
      */
     @VisibleForTesting
-    SupplierWithException<BufferPool, IOException> createBufferPoolFactory(
-            int numberOfSubpartitions, ResultPartitionType type) {
+    SupplierWithException<BufferPool, IOException> createBufferPoolFactory(int numberOfSubpartitions, ResultPartitionType type) {
         boolean enableTieredStorage = tieredResultPartitionFactory != null;
         int tieredStorageExclusiveBuffers =
                 enableTieredStorage
                         ? ResultPartitionFactory.getNumTotalGuaranteedBuffers(
                                 tieredResultPartitionFactory)
                         : 0;
-        return () -> {
-            Pair<Integer, Integer> pair =
-                    NettyShuffleUtils.getMinMaxNetworkBuffersPerResultPartition(
-                            configuredNetworkBuffersPerChannel,
-                            floatingNetworkBuffersPerGate,
-                            sortShuffleMinParallelism,
-                            sortShuffleMinBuffers,
-                            numberOfSubpartitions,
-                            enableTieredStorage,
-                            tieredStorageExclusiveBuffers,
-                            type);
-            //LocalBufferPool NetworkBufferPool#createBufferPool
-            return bufferPoolFactory.createBufferPool(//
-                    pair.getLeft(),
-                    pair.getRight(),
-                    numberOfSubpartitions,
-                    maxBuffersPerChannel,
-                    isOverdraftBufferNeeded(type) ? maxOverdraftBuffersPerGate : 0);
+        SupplierWithException<BufferPool, IOException> supplier = new SupplierWithException<>() {
+
+            @Override
+            public BufferPool get() throws IOException {
+                Pair<Integer, Integer> pair = NettyShuffleUtils.getMinMaxNetworkBuffersPerResultPartition(
+                        configuredNetworkBuffersPerChannel,
+                        floatingNetworkBuffersPerGate,
+                        sortShuffleMinParallelism,
+                        sortShuffleMinBuffers,
+                        numberOfSubpartitions,
+                        enableTieredStorage,
+                        tieredStorageExclusiveBuffers,
+                        type);
+                //LocalBufferPool NetworkBufferPool#createBufferPool
+                return bufferPoolFactory.createBufferPool(//
+                        pair.getLeft(),
+                        pair.getRight(),
+                        numberOfSubpartitions,
+                        maxBuffersPerChannel,
+                        isOverdraftBufferNeeded(type) ? maxOverdraftBuffersPerGate : 0);
+            }
         };
+        return supplier;
     }
 
     static BoundedBlockingSubpartitionType getBoundedBlockingType() {

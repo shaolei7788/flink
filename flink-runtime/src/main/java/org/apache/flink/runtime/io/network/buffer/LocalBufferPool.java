@@ -280,7 +280,7 @@ public class LocalBufferPool implements BufferPool {
         synchronized (this.availableMemorySegments) {
             //它会判断当前池子里的空闲内存数量是否大于 0。如果大于 0，它会将一个名为 availabilityHelper（通常是 CompletableFuture）的状态设置为 Available（可用）
             // 会从NetWorkBuffer 申请segment
-            checkAndUpdateAvailability();
+            checkAndUpdateAvailability();//
         }
     }
 
@@ -598,13 +598,12 @@ public class LocalBufferPool implements BufferPool {
         }
         boolean needRequestingNotificationOfGlobalPoolAvailable = false;
         // There aren't availableMemorySegments, and we continue to request new memory segment from global pool.
-        // 从networkbuffer 申请segment
+        // 从 Networkbuffer 申请segment
         if (!requestMemorySegmentFromGlobal()) {//
             // If we can not get a buffer from global pool, we should request from it when it
             // becomes available. It should be noted that if we are already in this status, do not
             // need to repeat the request.
-            needRequestingNotificationOfGlobalPoolAvailable =
-                    !requestingNotificationOfGlobalPoolAvailable;
+            needRequestingNotificationOfGlobalPoolAvailable = !requestingNotificationOfGlobalPoolAvailable;
         }
         return AvailabilityStatus.from(shouldBeAvailable(), needRequestingNotificationOfGlobalPoolAvailable);
     }
