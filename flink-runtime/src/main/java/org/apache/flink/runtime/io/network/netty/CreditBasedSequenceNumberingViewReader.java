@@ -302,7 +302,7 @@ class CreditBasedSequenceNumberingViewReader
     public BufferAndAvailability getNextBuffer() throws IOException {
         //PipelinedSubpartitionView#getNextBuffer
         //最终会从 PipelinedSubpartition的buffers队列获取数据
-        BufferAndBacklog next = subpartitionView.getNextBuffer();
+        BufferAndBacklog next = subpartitionView.getNextBuffer();//
         if (next != null) {
             //next.buffer().isBuffer()：判断这是否是一个普通的数据 Buffer
             //如果是普通数据，则将本地缓存的、下游给的可用信用额度（Credit）先减 1。防守断言：如果减完之后发现小了 0（即变成了 -1），
