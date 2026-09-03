@@ -215,8 +215,7 @@ public class DefaultDispatcherResourceManagerComponentFactory
             // （例如：触发 Savepoint、停止作业并生成 Savepoint、清理/释放过期的 Savepoint 等）时，系统无法立即返回结果。
             // Flink 采用的是 “异步提交 + 轮询查询” 的设计模式，而 DispatcherOperationCaches 正是这一模式的核心后端支撑
             final DispatcherOperationCaches dispatcherOperationCaches =
-                    new DispatcherOperationCaches(
-                            configuration.get(RestOptions.ASYNC_OPERATION_STORE_DURATION));
+                    new DispatcherOperationCaches(configuration.get(RestOptions.ASYNC_OPERATION_STORE_DURATION));
 
             //初始化基础公共服务后，将这些服务打包组合，专门作为参数传递给 DispatcherRunner 及其内部的 Dispatcher（调度器）组件。
             // 由于 Dispatcher 负责管理所有作业（Jobs）的生命周期，它需要依赖大量的外部集群基础组件

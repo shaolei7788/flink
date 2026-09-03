@@ -135,7 +135,7 @@ public final class JobSubmitHandler
                 finalizedExecutionPlanFuture.thenCompose(
                         //提交作业
                         //会通过Pekko 将作业正式递交给 Dispatcher
-                        // Dispatcher#submitJob。  600s
+                        // Dispatcher#submitJob  600s
                         executionPlan -> gateway.submitJob(executionPlan, timeout));
         //使用 thenCombine 将 jobSubmissionFuture（代表提交成功）和最开始的 executionPlanFuture（为了拿作业 ID）进行合并组合
         //当且仅当上述的所有异步链路（反序列化 \(\rightarrow \) 文件上传 \(\rightarrow \) RPC 提交成功）全部顺利完成时，该方法最终返回一个 JobSubmitResponseBody。

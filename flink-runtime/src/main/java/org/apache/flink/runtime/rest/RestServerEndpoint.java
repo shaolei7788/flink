@@ -185,7 +185,8 @@ public abstract class RestServerEndpoint implements RestService {
 
             final Router router = new Router();
             final CompletableFuture<String> restAddressFuture = new CompletableFuture<>();
-            // handlers = 是一个大集合 DispatcherRestEndpoint#initializeHandlers
+            // handlers = 是一个大集合
+            // DispatcherRestEndpoint#initializeHandlers
             handlers = initializeHandlers(restAddressFuture);
 
             /* sort the handlers such that they are ordered the following:

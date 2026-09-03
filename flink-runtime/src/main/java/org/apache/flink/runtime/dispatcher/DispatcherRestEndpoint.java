@@ -92,7 +92,7 @@ public class DispatcherRestEndpoint extends WebMonitorEndpoint<DispatcherGateway
 
         //作业提交入口。处理通过 Web UI 或 CLI 提交的 JAR 包及拓扑结构，将作业递交给 Dispatcher 启动
         JobSubmitHandler jobSubmitHandler = new JobSubmitHandler(leaderRetriever, timeout, responseHeaders, executor, clusterConfiguration);
-        //todo 添加JobSubmitHandler
+        //todo 添加 JobSubmitHandler
         handlers.add(Tuple2.of(jobSubmitHandler.getMessageHeaders(), jobSubmitHandler));
 
         return handlers;
